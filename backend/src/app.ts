@@ -10,6 +10,22 @@ export function createApp(): Express {
   app.use(cors());
   app.use(express.json());
 
+  app.get('/', (_req, res) => {
+    res.json({
+      service: 'statedge-backend',
+      version: '0.0.1',
+      endpoints: [
+        '/health',
+        '/api/teams',
+        '/api/search/players?query=',
+        '/api/compare/player-vs-team?playerId=&teamId=&range=',
+        '/api/compare/player-vs-player?aId=&bId=&range=',
+        '/api/compare/team-vs-team?aId=&bId=&range=',
+        '/api/ai/summary (POST)',
+      ],
+    });
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'statedge-backend' });
   });
@@ -18,6 +34,12 @@ export function createApp(): Express {
   app.use('/api/teams', teamsRouter);
   app.use('/api/compare', compareRouter);
   app.use('/api/ai', aiRouter);
+
+  // Explicit JSON 404 — avoids Express's default HTML response, which
+  // can trip the Vercel serverless adapter on unmatched paths.
+  app.use((req, res) => {
+    res.status(404).json({ error: 'Not found', path: req.url });
+  });
 
   return app;
 }
