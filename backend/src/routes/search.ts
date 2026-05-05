@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { NbaUpstreamBlockedError, searchPlayers } from '../nba/client.js';
+import { isDbConfigured, searchPlayersFromDb } from '../db.js';
 
 export const searchRouter: Router = Router();
 
@@ -10,8 +11,11 @@ searchRouter.get('/players', async (req, res) => {
     return;
   }
   try {
-    const results = await searchPlayers(query);
-    res.json({ results });
+    // Prefer DB cache (works in any environment). Fall back to live NBA API if not configured.
+    const results = isDbConfigured()
+      ? await searchPlayersFromDb(query)
+      : await searchPlayers(query);
+    res.json({ results, source: isDbConfigured() ? 'db' : 'live' });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
       res.status(504).json({ error: err.message, code: 'upstream_blocked' });

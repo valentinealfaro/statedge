@@ -1,5 +1,9 @@
 -- StatEdge schema. Run against your Postgres (Neon, local, etc).
 
+-- Used for diacritic-insensitive player search ("jokic" → "Jokić").
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+
 CREATE TABLE IF NOT EXISTS users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   firebase_uid    TEXT UNIQUE NOT NULL,
