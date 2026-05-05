@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import { comparePlayerVsTeam, type CompareResponse, type Player, type StatKey, type Team } from './api';
+import { AiSummary } from './AiSummary';
 
 type Props = {
   player: Player;
@@ -164,6 +165,26 @@ export function ComparisonView({ player, team }: Props) {
               ))}
             </tbody>
           </table>
+
+          <AiSummary
+            payload={{
+              type: 'player_vs_team',
+              player: { id: player.id, name: player.fullName, team: player.teamAbbreviation },
+              opponent: { id: team.id, name: team.fullName, abbr: team.abbreviation },
+              range,
+              vsTeamSummary: data.report.vsTeam,
+              seasonAverage: data.report.seasonAverage,
+              delta: data.report.delta,
+              gameLog: data.report.gamesAgainstTeam.map((g) => ({
+                date: g.date,
+                opp: g.opponentAbbr,
+                result: g.result,
+                pts: g.points,
+                reb: g.rebounds,
+                ast: g.assists,
+              })),
+            }}
+          />
         </>
       )}
     </div>

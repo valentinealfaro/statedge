@@ -166,3 +166,82 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 
 .muted { color: #8a93a6; font-size: 14px; }
 .error { color: #ef6a6a; font-size: 14px; }
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #1f2330;
+  padding-bottom: 8px;
+}
+.mode-tab {
+  background: none;
+  border: none;
+  color: #8a93a6;
+  padding: 8px 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -9px;
+}
+.mode-tab.active {
+  color: #e6e8ee;
+  border-bottom-color: #5b8def;
+}
+
+.vs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.vs-table th, .vs-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #1f2330;
+  text-align: center;
+  font-size: 16px;
+}
+.vs-table th {
+  color: #c8cfdc;
+  font-size: 14px;
+  font-weight: 600;
+}
+.vs-table .label {
+  color: #8a93a6;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.ai {
+  margin-top: 28px;
+  padding: 16px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+}
+.ai-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.ai-head h3 { margin: 0; }
+.ai-body {
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #c8cfdc;
+  margin: 0;
+}
+.primary {
+  background: #5b8def;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.primary:disabled { opacity: 0.5; cursor: default; }

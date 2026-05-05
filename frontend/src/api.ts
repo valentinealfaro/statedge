@@ -86,3 +86,66 @@ export async function comparePlayerVsTeam(
   }
   return (await res.json()) as CompareResponse;
 }
+
+export type Side<TKey extends string> = {
+  summaries: Record<TKey, StatSummary>;
+  sampleSize: number;
+};
+
+export type PvpResponse = {
+  aId: number;
+  bId: number;
+  report: {
+    range: 'last5' | 'last10' | 'last20' | 'season';
+    a: Side<StatKey>;
+    b: Side<StatKey>;
+    delta: Record<StatKey, number>;
+  };
+};
+
+export type TeamStatKey = 'points' | 'rebounds' | 'assists' | 'fgPct' | 'fg3Pct' | 'turnovers';
+
+export type TvtResponse = {
+  a: Team;
+  b: Team;
+  report: {
+    range: 'last5' | 'last10' | 'last20' | 'season';
+    a: Side<TeamStatKey>;
+    b: Side<TeamStatKey>;
+    delta: Record<TeamStatKey, number>;
+  };
+};
+
+export async function comparePlayerVsPlayer(
+  aId: number,
+  bId: number,
+  range: 'last5' | 'last10' | 'last20' | 'season',
+): Promise<PvpResponse> {
+  const res = await fetch(`/api/compare/player-vs-player?aId=${aId}&bId=${bId}&range=${range}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  return (await res.json()) as PvpResponse;
+}
+
+export async function compareTeamVsTeam(
+  aId: number,
+  bId: number,
+  range: 'last5' | 'last10' | 'last20' | 'season',
+): Promise<TvtResponse> {
+  const res = await fetch(`/api/compare/team-vs-team?aId=${aId}&bId=${bId}&range=${range}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  return (await res.json()) as TvtResponse;
+}
+
+export async function getAiSummary(payload: unknown): Promise<{ summary: string }> {
+  const res = await fetch('/api/ai/summary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 503) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? 'AI unavailable');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { summary: string };
+}

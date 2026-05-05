@@ -176,3 +176,67 @@ function parseGameDate(s: string): string {
   if (isNaN(d.getTime())) return s;
   return d.toISOString().slice(0, 10);
 }
+
+export type TeamGame = {
+  gameId: string;
+  date: string;
+  matchup: string;
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fgPct: number;
+  fg3Pct: number;
+  ftPct: number;
+};
+
+const teamLogCache = new Map<string, { at: number; games: TeamGame[] }>();
+
+export async function getTeamGameLog(
+  teamId: number,
+  season: string = currentSeason(),
+): Promise<TeamGame[]> {
+  const key = `${teamId}:${season}`;
+  const hit = teamLogCache.get(key);
+  if (hit && Date.now() - hit.at < GAMELOG_TTL) return hit.games;
+
+  const data = await fetchStats('teamgamelog', {
+    TeamID: String(teamId),
+    Season: season,
+    SeasonType: 'Regular Season',
+  });
+  const set = data.resultSets.find((r) => r.name === 'TeamGameLog');
+  if (!set) throw new Error('TeamGameLog result set missing');
+
+  const rows = rowsToObjects(set);
+  const games: TeamGame[] = rows.map((r) => {
+    const matchup = String(r.MATCHUP ?? '');
+    const isHome = matchup.includes(' vs. ');
+    const opponentAbbr = matchup.split(/ vs\. | @ /)[1] ?? '';
+    return {
+      gameId: String(r.Game_ID),
+      date: parseGameDate(String(r.GAME_DATE)),
+      matchup,
+      opponentAbbr,
+      isHome,
+      result: (r.WL as 'W' | 'L') || null,
+      points: Number(r.PTS ?? 0),
+      rebounds: Number(r.REB ?? 0),
+      assists: Number(r.AST ?? 0),
+      steals: Number(r.STL ?? 0),
+      blocks: Number(r.BLK ?? 0),
+      turnovers: Number(r.TOV ?? 0),
+      fgPct: Number(r.FG_PCT ?? 0),
+      fg3Pct: Number(r.FG3_PCT ?? 0),
+      ftPct: Number(r.FT_PCT ?? 0),
+    };
+  });
+
+  teamLogCache.set(key, { at: Date.now(), games });
+  return games;
+}

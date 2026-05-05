@@ -1,6 +1,7 @@
-import type { PlayerGame } from '../nba/client.js';
+import type { PlayerGame, TeamGame } from '../nba/client.js';
 
 export type StatKey = 'points' | 'rebounds' | 'assists' | 'minutes' | 'fgPct' | 'fg3Pct';
+export type TeamStatKey = 'points' | 'rebounds' | 'assists' | 'fgPct' | 'fg3Pct' | 'turnovers';
 
 export type StatSummary = {
   avg: number;
@@ -99,6 +100,67 @@ export function calculatePlayerVsTeam(
 
 function rangeToCount(r: 'last5' | 'last10' | 'last20'): number {
   return r === 'last5' ? 5 : r === 'last10' ? 10 : 20;
+}
+
+export type Side<TKey extends string> = {
+  summaries: Record<TKey, StatSummary>;
+  sampleSize: number;
+};
+
+export type PlayerVsPlayerReport = {
+  range: 'last5' | 'last10' | 'last20' | 'season';
+  a: Side<StatKey>;
+  b: Side<StatKey>;
+  delta: Record<StatKey, number>;     // a.avg - b.avg
+};
+
+export type TeamVsTeamReport = {
+  range: 'last5' | 'last10' | 'last20' | 'season';
+  a: Side<TeamStatKey>;
+  b: Side<TeamStatKey>;
+  delta: Record<TeamStatKey, number>;
+};
+
+function takeRange<T>(games: T[], range: 'last5' | 'last10' | 'last20' | 'season'): T[] {
+  return range === 'season' ? games : games.slice(0, rangeToCount(range));
+}
+
+export function calculatePlayerVsPlayer(
+  aGames: PlayerGame[],
+  bGames: PlayerGame[],
+  range: PlayerVsPlayerReport['range'],
+): PlayerVsPlayerReport {
+  const aSlice = takeRange(aGames, range);
+  const bSlice = takeRange(bGames, range);
+  const a: Side<StatKey> = { summaries: {} as Record<StatKey, StatSummary>, sampleSize: aSlice.length };
+  const b: Side<StatKey> = { summaries: {} as Record<StatKey, StatSummary>, sampleSize: bSlice.length };
+  const delta = {} as Record<StatKey, number>;
+  for (const k of STAT_KEYS) {
+    a.summaries[k] = summarize(aSlice.map((g) => g[k] as number));
+    b.summaries[k] = summarize(bSlice.map((g) => g[k] as number));
+    delta[k] = round(a.summaries[k].avg - b.summaries[k].avg, 2);
+  }
+  return { range, a, b, delta };
+}
+
+const TEAM_STAT_KEYS: TeamStatKey[] = ['points', 'rebounds', 'assists', 'fgPct', 'fg3Pct', 'turnovers'];
+
+export function calculateTeamVsTeam(
+  aGames: TeamGame[],
+  bGames: TeamGame[],
+  range: TeamVsTeamReport['range'],
+): TeamVsTeamReport {
+  const aSlice = takeRange(aGames, range);
+  const bSlice = takeRange(bGames, range);
+  const a: Side<TeamStatKey> = { summaries: {} as Record<TeamStatKey, StatSummary>, sampleSize: aSlice.length };
+  const b: Side<TeamStatKey> = { summaries: {} as Record<TeamStatKey, StatSummary>, sampleSize: bSlice.length };
+  const delta = {} as Record<TeamStatKey, number>;
+  for (const k of TEAM_STAT_KEYS) {
+    a.summaries[k] = summarize(aSlice.map((g) => g[k] as number));
+    b.summaries[k] = summarize(bSlice.map((g) => g[k] as number));
+    delta[k] = round(a.summaries[k].avg - b.summaries[k].avg, 2);
+  }
+  return { range, a, b, delta };
 }
 
 function mean(xs: number[]): number {
