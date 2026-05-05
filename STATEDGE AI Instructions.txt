@@ -1,0 +1,568 @@
+# 🧠 STATEDGE AI — COMPLETE BUILD SPEC (FINAL MERGED VERSION)
+
+---
+
+# 🔥 PRODUCT OVERVIEW
+
+StatEdge AI is a **sports data comparison platform** that allows users to:
+
+* Compare Player vs Team
+* Compare Player vs Player
+* Compare Team vs Team
+* Analyze trends over time (5 games → 5 years)
+* Get AI-generated insights (paid feature)
+
+⚠️ This is NOT a betting platform
+⚠️ NO odds, NO gambling advice
+
+---
+
+# 🧱 FINAL DATA STACK (FREE — YOUR SETUP)
+
+We are combining ALL your sources correctly:
+
+---
+
+## 🏀 NBA DATA
+
+Source: National Basketball Association (via stats endpoints)
+
+Use:
+
+```txt
+nba_api (wrapper)
+https://github.com/swar/nba_api
+```
+
+Pulls from:
+
+```txt
+stats.nba.com
+```
+
+---
+
+## ⚾ MLB DATA
+
+Source: Major League Baseball
+
+Use:
+
+```txt
+https://statsapi.mlb.com
+```
+
+Wrapper:
+
+```txt
+https://github.com/toddrob99/MLB-StatsAPI
+```
+
+---
+
+## 🏈 NFL DATA
+
+Source: National Football League
+
+Use:
+
+```txt
+nflverse / nflfastR
+```
+
+Backup:
+
+* ESPN API
+
+---
+
+## 📡 ESPN API (NO SIGNUP)
+
+Use directly:
+
+```txt
+https://site.api.espn.com/apis/site/v2/sports/
+```
+
+Examples:
+
+```txt
+NBA:
+.../basketball/nba/scoreboard
+
+NFL:
+.../football/nfl/scoreboard
+
+MLB:
+.../baseball/mlb/scoreboard
+```
+
+---
+
+# ⚠️ DATA STRATEGY (CRITICAL)
+
+```txt
+NBA → main stats (nba_api)
+MLB → main stats (MLB API)
+NFL → main stats (nflverse)
+ESPN → live games + schedules
+```
+
+DO NOT:
+❌ Call APIs on every user request
+
+DO:
+
+```txt
+API → Database → Your App
+```
+
+---
+
+# 🏗️ TECH STACK
+
+Frontend:
+
+* React + Vite
+
+Backend:
+
+* Node.js + Express
+
+Database:
+
+* PostgreSQL
+
+Cache:
+
+* Redis
+
+Auth:
+
+* Firebase Auth (Google + Email)
+
+Payments:
+
+* Stripe
+
+Charts:
+
+* Recharts
+
+AI:
+
+* OpenAI API
+
+---
+
+# 🔐 AUTH SYSTEM
+
+Users MUST:
+
+* Sign up OR login to access
+
+---
+
+## FREE PLAN (STRICT)
+
+* Login required
+* 2 comparisons per day
+* Max 2 players per comparison
+* Last 5 games only
+* Basic stats only
+* ❌ No AI
+* ❌ No saving
+
+---
+
+## PRO PLAN ($19/month)
+
+* Unlimited comparisons
+* Last 10 games + season
+* AI summaries
+* Save comparisons
+
+---
+
+## ELITE PLAN ($49/month)
+
+* 3–5 year history
+* Advanced filters
+* Export reports
+* Alerts
+
+---
+
+# 🗄️ DATABASE STRUCTURE
+
+Tables:
+
+```txt
+users
+players
+teams
+games
+player_game_stats
+team_game_stats
+saved_comparisons
+```
+
+---
+
+# 📊 CORE DATA FIELDS
+
+## Player Stats
+
+```txt
+points
+rebounds
+assists
+minutes
+FG%
+3PT%
+turnovers
+steals
+blocks
+```
+
+---
+
+## Game Data
+
+```txt
+date
+opponent
+home/away
+result
+```
+
+---
+
+# 🔁 DATA IMPORT SYSTEM
+
+## CRON JOBS
+
+### Daily (3 AM)
+
+* Sync players
+* Sync teams
+* Sync completed games
+* Sync player stats
+
+---
+
+### Every 30 minutes (game days)
+
+* Sync new games
+* Sync ESPN scoreboard
+
+---
+
+# ⚙️ BACKEND API
+
+---
+
+## Player Search
+
+```txt
+GET /api/search/players?query=
+```
+
+---
+
+## Team Search
+
+```txt
+GET /api/search/teams?query=
+```
+
+---
+
+## Player vs Team
+
+```txt
+GET /api/compare/player-vs-team
+```
+
+Params:
+
+```txt
+playerId
+teamId
+range
+```
+
+---
+
+## Player vs Player
+
+```txt
+GET /api/compare/player-vs-player
+```
+
+---
+
+## Team vs Team
+
+```txt
+GET /api/compare/team-vs-team
+```
+
+---
+
+## AI Summary
+
+```txt
+POST /api/ai/summary
+```
+
+(PAID ONLY)
+
+---
+
+# 🧠 COMPARISON ENGINE
+
+Create:
+
+```txt
+/services/comparisonEngine.ts
+```
+
+---
+
+## FUNCTIONS
+
+```ts
+calculatePlayerVsTeam()
+calculatePlayerVsPlayer()
+calculateTeamVsTeam()
+calculateTrendDirection()
+calculateConsistencyScore()
+calculatePerformanceDelta()
+```
+
+---
+
+## CONSISTENCY SCORE
+
+```ts
+score = 100 - (stdDev / avg) * 100
+```
+
+---
+
+## TREND LOGIC
+
+```ts
+Compare first half vs second half
+
+Return:
+- Trending Up
+- Trending Down
+- Stable
+```
+
+---
+
+# 🤖 AI PROMPT
+
+```txt
+You are a professional sports data analyst.
+
+Do NOT give betting advice.
+
+Analyze:
+- trends
+- matchups
+- consistency
+- performance
+
+Return:
+1. Summary
+2. Trends
+3. Breakdown
+4. Risks
+5. Insight
+```
+
+---
+
+# 💻 FRONTEND STRUCTURE
+
+---
+
+## LANDING PAGE
+
+Sections:
+
+* Hero
+* Search bar
+* Features
+* Pricing
+* CTA
+
+---
+
+## AUTH PAGE
+
+* Login
+* Signup
+* Google login
+
+---
+
+## DASHBOARD
+
+* Search
+* Recent comparisons
+* Trending players
+
+---
+
+## COMPARISON PAGE
+
+```txt
+Search inputs
+
+Matchup header
+
+Stat cards:
+- Points
+- Rebounds
+- Assists
+- Consistency
+
+Charts:
+- Trend graph
+- Game logs
+
+AI summary (locked for free)
+
+Upgrade CTA
+```
+
+---
+
+# 🔒 PAYWALL LOGIC
+
+```txt
+If not logged in → redirect
+
+If free:
+- limit to 2 comparisons/day
+- block AI
+- block deep stats
+```
+
+---
+
+# 💳 STRIPE SETUP
+
+Plans:
+
+```txt
+Pro → $19/month
+Elite → $49/month
+```
+
+Webhook:
+
+```txt
+Update subscription_status
+```
+
+---
+
+# 📈 TRACKING
+
+Track:
+
+```txt
+comparisons per user
+popular players
+conversion rate
+API usage
+AI cost
+```
+
+---
+
+# 🚀 MVP BUILD ORDER
+
+---
+
+## WEEK 1
+
+* Auth
+* Database
+* NBA API connection
+
+---
+
+## WEEK 2
+
+* Player vs Team
+* UI
+
+---
+
+## WEEK 3
+
+* Charts
+* Free limits
+
+---
+
+## WEEK 4
+
+* Stripe
+* AI
+* Launch
+
+---
+
+# ⚠️ LEGAL DISCLAIMER
+
+```txt
+This platform provides sports statistics and analysis only. No betting advice is given.
+```
+
+---
+
+# 🎯 FINAL SYSTEM FLOW
+
+```txt
+NBA API + MLB API + NFL data + ESPN
+        ↓
+    Your Database
+        ↓
+Comparison Engine
+        ↓
+Frontend UI
+        ↓
+AI Insights (paid)
+```
+
+---
+
+# 🔥 FINAL GOAL
+
+User thinks:
+
+“I’ve never seen stats broken down like this before.”
+
+---
+
+# 🚀 NEXT STEP
+
+Build ONLY:
+
+```txt
+NBA Player vs Team (MVP)
+```
+
+Then expand.
+
+---
+
+👉 This is your full system. Build this EXACTLY.

@@ -1,0 +1,14 @@
+{
+  "name": "statedge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "StatEdge AI - sports stats comparison platform",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend"
+  }
+}
