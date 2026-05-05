@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import {
   comparePlayerVsTeam,
+  type ComboKey,
   type CompareResponse,
   type Player,
   type SeasonRange,
@@ -17,6 +18,7 @@ import {
   type Team,
 } from './api';
 import { AiSummary } from './AiSummary';
+import { ComboPicker } from './ComboPicker';
 import { SeasonTabs } from './SeasonTabs';
 
 type Props = {
@@ -38,6 +40,7 @@ const STAT_LABELS: Record<StatKey, string> = {
 export function ComparisonView({ player, team }: Props) {
   const [range, setRange] = useState<Range>('last5');
   const [seasons, setSeasons] = useState<SeasonRange>('current');
+  const [combo, setCombo] = useState<ComboKey>('PRA');
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +103,13 @@ export function ComparisonView({ player, team }: Props) {
 
       {data && data.report.gamesAgainstTeam.length > 0 && (
         <>
+          <ComboPicker
+            combos={data.combos}
+            gamesAnalyzed={data.gamesAnalyzed}
+            selected={combo}
+            onSelect={setCombo}
+          />
+
           <div className="cards">
             {(['points', 'rebounds', 'assists', 'minutes', 'fgPct', 'fg3Pct'] as StatKey[]).map(
               (k) => {

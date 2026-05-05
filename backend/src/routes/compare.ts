@@ -22,6 +22,7 @@ import {
   calculateTeamVsTeam,
   type PlayerVsTeamReport,
 } from '../services/comparisonEngine.js';
+import { calculateComboStats } from '../services/statCombos.js';
 
 export const compareRouter: Router = Router();
 
@@ -107,7 +108,15 @@ compareRouter.get('/player-vs-team', async (req, res) => {
   try {
     const seasonGames = await fetchPlayerGameLog(playerId, seasonRange);
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
-    res.json({ team, seasons: seasonsFor(seasonRange), seasonRange, report });
+    const combos = calculateComboStats(report.gamesAgainstTeam);
+    res.json({
+      team,
+      seasons: seasonsFor(seasonRange),
+      seasonRange,
+      gamesAnalyzed: report.gamesAgainstTeam.length,
+      combos,
+      report,
+    });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
       res.status(504).json({ error: err.message, code: 'upstream_blocked' });

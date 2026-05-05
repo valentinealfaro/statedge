@@ -57,10 +57,14 @@ export type PlayerGame = {
 
 export type SeasonRange = 'current' | 'last2' | 'last3' | 'last5';
 
+export type ComboKey = 'PRA' | 'PR' | 'PA' | 'RA' | 'STOCKS';
+
 export type CompareResponse = {
   team: Team;
   seasons: string[];          // e.g. ["2025-26","2024-25"]
   seasonRange: SeasonRange;
+  gamesAnalyzed: number;
+  combos: Record<ComboKey, number>;
   report: {
     playerId: number;
     teamId: number;
