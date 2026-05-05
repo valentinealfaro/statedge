@@ -72,21 +72,26 @@ export const LAST10_LABELS: Record<Last10StatId, string> = {
   double_double: 'Double-Double',
 };
 
+// Some fields (oreb, dreb, fgm, etc.) were added to PlayerGame after some
+// seasons were already cached, so they may be undefined for older rows.
+// `n` coerces undefined → 0 so we never emit null/NaN to the client.
+const n = (v: number | undefined | null): number => (typeof v === 'number' ? v : 0);
+
 const STAT_MAP: Record<Exclude<Last10StatId, 'double_double'>, (g: PlayerGame) => number> = {
   points: (g) => g.points,
   rebounds: (g) => g.rebounds,
   assists: (g) => g.assists,
-  three_pt_made: (g) => g.fg3m,
-  fg_made: (g) => g.fgm,
-  fg_attempted: (g) => g.fga,
-  ft_made: (g) => g.ftm,
-  ft_attempted: (g) => g.fta,
-  personal_fouls: (g) => g.pf,
+  three_pt_made: (g) => n(g.fg3m),
+  fg_made: (g) => n(g.fgm),
+  fg_attempted: (g) => n(g.fga),
+  ft_made: (g) => n(g.ftm),
+  ft_attempted: (g) => n(g.fta),
+  personal_fouls: (g) => n(g.pf),
   steals: (g) => g.steals,
   blocks: (g) => g.blocks,
   turnovers: (g) => g.turnovers,
-  offensive_rebounds: (g) => g.oreb,
-  defensive_rebounds: (g) => g.dreb,
+  offensive_rebounds: (g) => n(g.oreb),
+  defensive_rebounds: (g) => n(g.dreb),
   pra: (g) => g.points + g.rebounds + g.assists,
   pr: (g) => g.points + g.rebounds,
   pa: (g) => g.points + g.assists,
