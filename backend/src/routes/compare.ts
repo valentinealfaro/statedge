@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayerGameLog, getTeamGameLog } from '../nba/client.js';
+import { getPlayerGameLog, getTeamGameLog, NbaUpstreamBlockedError } from '../nba/client.js';
 import { teamById } from '../nba/teams.js';
 import {
   calculatePlayerVsTeam,
@@ -38,6 +38,10 @@ compareRouter.get('/player-vs-team', async (req, res) => {
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
     res.json({ team, report });
   } catch (err) {
+    if (err instanceof NbaUpstreamBlockedError) {
+      res.status(504).json({ error: err.message, code: 'upstream_blocked' });
+      return;
+    }
     console.error('player-vs-team failed', err);
     res.status(502).json({ error: 'upstream NBA stats request failed' });
   }
@@ -62,6 +66,10 @@ compareRouter.get('/player-vs-player', async (req, res) => {
     const report = calculatePlayerVsPlayer(aGames, bGames, range);
     res.json({ aId, bId, report });
   } catch (err) {
+    if (err instanceof NbaUpstreamBlockedError) {
+      res.status(504).json({ error: err.message, code: 'upstream_blocked' });
+      return;
+    }
     console.error('player-vs-player failed', err);
     res.status(502).json({ error: 'upstream NBA stats request failed' });
   }
@@ -93,6 +101,10 @@ compareRouter.get('/team-vs-team', async (req, res) => {
     const report = calculateTeamVsTeam(aGames, bGames, range);
     res.json({ a: aTeam, b: bTeam, report });
   } catch (err) {
+    if (err instanceof NbaUpstreamBlockedError) {
+      res.status(504).json({ error: err.message, code: 'upstream_blocked' });
+      return;
+    }
     console.error('team-vs-team failed', err);
     res.status(502).json({ error: 'upstream NBA stats request failed' });
   }

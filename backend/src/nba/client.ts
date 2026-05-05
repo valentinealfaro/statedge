@@ -23,14 +23,36 @@ type StatsResponse = {
   }>;
 };
 
+const FETCH_TIMEOUT_MS = 8000;
+
+export class NbaUpstreamBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NbaUpstreamBlockedError';
+  }
+}
+
 async function fetchStats(endpoint: string, params: Record<string, string>): Promise<StatsResponse> {
   const qs = new URLSearchParams(params).toString();
   const url = `${BASE}/${endpoint}?${qs}`;
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) {
-    throw new Error(`NBA stats ${endpoint} ${res.status}: ${await res.text().catch(() => '')}`);
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
+    if (!res.ok) {
+      throw new Error(`NBA stats ${endpoint} ${res.status}: ${await res.text().catch(() => '')}`);
+    }
+    return (await res.json()) as StatsResponse;
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      throw new NbaUpstreamBlockedError(
+        `stats.nba.com timed out after ${FETCH_TIMEOUT_MS}ms — likely blocked from this datacenter IP. Populate the DB via "npm run db:sync-players" and serve from cache.`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return (await res.json()) as StatsResponse;
 }
 
 function rowsToObjects(rs: StatsResponse['resultSets'][number]): Record<string, unknown>[] {

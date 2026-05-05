@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { searchPlayers } from '../nba/client.js';
+import { NbaUpstreamBlockedError, searchPlayers } from '../nba/client.js';
 
 export const searchRouter: Router = Router();
 
@@ -13,6 +13,10 @@ searchRouter.get('/players', async (req, res) => {
     const results = await searchPlayers(query);
     res.json({ results });
   } catch (err) {
+    if (err instanceof NbaUpstreamBlockedError) {
+      res.status(504).json({ error: err.message, code: 'upstream_blocked' });
+      return;
+    }
     console.error('player search failed', err);
     res.status(502).json({ error: 'upstream NBA stats request failed' });
   }
