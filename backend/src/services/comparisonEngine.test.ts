@@ -65,9 +65,9 @@ function pgame(overrides: Partial<PlayerGame> = {}): PlayerGame {
     steals: 1,
     blocks: 1,
     turnovers: 3,
-    fgPct: 0.5,
-    fg3Pct: 0.4,
-    ftPct: 0.85,
+    fgm: 9, fga: 18, fg3m: 2, fg3a: 5, ftm: 5, fta: 6,
+    fgPct: 0.5, fg3Pct: 0.4, ftPct: 0.85,
+    pf: 2,
     ...overrides,
   };
 }
@@ -120,9 +120,9 @@ function tgame(overrides: Partial<TeamGame> = {}): TeamGame {
     steals: 7,
     blocks: 5,
     turnovers: 14,
-    fgPct: 0.48,
-    fg3Pct: 0.36,
-    ftPct: 0.78,
+    fgm: 40, fga: 85, fg3m: 12, fg3a: 33, ftm: 18, fta: 24,
+    fgPct: 0.48, fg3Pct: 0.36, ftPct: 0.78,
+    pf: 18,
     ...overrides,
   };
 }

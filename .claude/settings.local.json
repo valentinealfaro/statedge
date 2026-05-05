@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(npm *)"
+      "PowerShell(npm *)",
+      "PowerShell(cd C:\\\\Users\\\\alfar\\\\Projects\\\\StatEdge\\\\backend; $env:SEASON='2023-24'; npm run db:sync-games)"
     ]
   }
 }

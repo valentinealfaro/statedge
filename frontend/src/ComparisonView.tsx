@@ -159,32 +159,48 @@ export function ComparisonView({ player, team }: Props) {
           </div>
 
           <h3>Game log</h3>
-          <table className="games">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Matchup</th>
-                <th>W/L</th>
-                <th>MIN</th>
-                <th>PTS</th>
-                <th>REB</th>
-                <th>AST</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.report.gamesAgainstTeam.map((g) => (
-                <tr key={g.gameId}>
-                  <td>{g.date}</td>
-                  <td>{g.matchup}</td>
-                  <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
-                  <td>{g.minutes}</td>
-                  <td>{g.points}</td>
-                  <td>{g.rebounds}</td>
-                  <td>{g.assists}</td>
+          <div className="games-scroll">
+            <table className="games">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Matchup</th>
+                  <th>W/L</th>
+                  <th>MIN</th>
+                  <th>PTS</th>
+                  <th>REB</th>
+                  <th>AST</th>
+                  <th>STL</th>
+                  <th>BLK</th>
+                  <th>TO</th>
+                  <th>FG</th>
+                  <th>3P</th>
+                  <th>FT</th>
+                  <th>PF</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.report.gamesAgainstTeam.map((g) => (
+                  <tr key={g.gameId}>
+                    <td>{g.date}</td>
+                    <td>{g.matchup}</td>
+                    <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
+                    <td>{g.minutes}</td>
+                    <td>{g.points}</td>
+                    <td>{g.rebounds}</td>
+                    <td>{g.assists}</td>
+                    <td>{g.steals}</td>
+                    <td>{g.blocks}</td>
+                    <td>{g.turnovers}</td>
+                    <td>{g.fgm ?? '—'}/{g.fga ?? '—'}</td>
+                    <td>{g.fg3m ?? '—'}/{g.fg3a ?? '—'}</td>
+                    <td>{g.ftm ?? '—'}/{g.fta ?? '—'}</td>
+                    <td>{g.pf ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <AiSummary
             payload={{

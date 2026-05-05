@@ -43,9 +43,16 @@ export type PlayerGame = {
   steals: number;
   blocks: number;
   turnovers: number;
+  fgm?: number;
+  fga?: number;
+  fg3m?: number;
+  fg3a?: number;
+  ftm?: number;
+  fta?: number;
   fgPct: number;
   fg3Pct: number;
   ftPct: number;
+  pf?: number;
 };
 
 export type SeasonRange = 'current' | 'last2' | 'last3' | 'last5';

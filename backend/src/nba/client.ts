@@ -152,9 +152,18 @@ export type PlayerGame = {
   steals: number;
   blocks: number;
   turnovers: number;
+  // Shooting splits (made / attempted) and percentages.
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
   fgPct: number;
   fg3Pct: number;
   ftPct: number;
+  // Personal fouls.
+  pf: number;
 };
 
 const gameLogCache = new Map<string, { at: number; games: PlayerGame[] }>();
@@ -195,9 +204,16 @@ export async function getPlayerGameLog(
       steals: Number(r.STL ?? 0),
       blocks: Number(r.BLK ?? 0),
       turnovers: Number(r.TOV ?? 0),
+      fgm: Number(r.FGM ?? 0),
+      fga: Number(r.FGA ?? 0),
+      fg3m: Number(r.FG3M ?? 0),
+      fg3a: Number(r.FG3A ?? 0),
+      ftm: Number(r.FTM ?? 0),
+      fta: Number(r.FTA ?? 0),
       fgPct: Number(r.FG_PCT ?? 0),
       fg3Pct: Number(r.FG3_PCT ?? 0),
       ftPct: Number(r.FT_PCT ?? 0),
+      pf: Number(r.PF ?? 0),
     };
   });
 
@@ -225,9 +241,16 @@ export type TeamGame = {
   steals: number;
   blocks: number;
   turnovers: number;
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
   fgPct: number;
   fg3Pct: number;
   ftPct: number;
+  pf: number;
 };
 
 const teamLogCache = new Map<string, { at: number; games: TeamGame[] }>();
@@ -266,9 +289,16 @@ export async function getTeamGameLog(
       steals: Number(r.STL ?? 0),
       blocks: Number(r.BLK ?? 0),
       turnovers: Number(r.TOV ?? 0),
+      fgm: Number(r.FGM ?? 0),
+      fga: Number(r.FGA ?? 0),
+      fg3m: Number(r.FG3M ?? 0),
+      fg3a: Number(r.FG3A ?? 0),
+      ftm: Number(r.FTM ?? 0),
+      fta: Number(r.FTA ?? 0),
       fgPct: Number(r.FG_PCT ?? 0),
       fg3Pct: Number(r.FG3_PCT ?? 0),
       ftPct: Number(r.FT_PCT ?? 0),
+      pf: Number(r.PF ?? 0),
     };
   });
 

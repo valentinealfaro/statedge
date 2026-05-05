@@ -180,8 +180,10 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   padding: 12px;
 }
 
+.games-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .games {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -189,6 +191,7 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   text-align: left;
   padding: 8px 10px;
   border-bottom: 1px solid #1f2330;
+  white-space: nowrap;
 }
 .games th { color: #8a93a6; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 
