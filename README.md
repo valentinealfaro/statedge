@@ -11,16 +11,34 @@ backend/    Express + TypeScript API
 frontend/   React + Vite (added later)
 ```
 
-## Run the backend
+## Run it
 
+You need two terminals.
+
+**Terminal 1 — backend:**
 ```bash
 cd backend
 npm install
 npm run dev
 ```
 
-Then open http://localhost:4000/health — you should see `{"status":"ok"}`.
+**Terminal 2 — frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173 — search for `lebron`, `jokic`, etc.
+
+Backend health: http://localhost:4000/health
+Player search API: http://localhost:4000/api/search/players?query=lebron
+
+## Database
+
+Schema lives at [`backend/db/schema.sql`](./backend/db/schema.sql). Not yet wired into the running app — see "Next steps" in the spec. Recommended host: [Neon](https://neon.tech) free tier.
 
 ## Status
 
-Week 1 of 4 — scaffolding. Database, auth, NBA sync, and frontend come next.
+Week 1 of 4. Done: backend scaffold, NBA player search via stats.nba.com, frontend search UI.
+Next: connect Neon Postgres, sync players/teams/games into DB, then build the comparison page.
