@@ -10,3 +10,5 @@ build/
 coverage/
 *.tsbuildinfo
 .vercel/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks/
