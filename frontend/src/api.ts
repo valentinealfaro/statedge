@@ -59,12 +59,46 @@ export type SeasonRange = 'current' | 'last2' | 'last3' | 'last5';
 
 export type ComboKey = 'PRA' | 'PR' | 'PA' | 'RA' | 'STOCKS';
 
+export type SelectedStat =
+  | 'points' | 'rebounds' | 'assists'
+  | 'PRA' | 'PR' | 'PA' | 'RA' | 'STOCKS';
+
+export type AdvancedStats = {
+  selectedStat: SelectedStat;
+  gamesAnalyzed: number;
+  doubleDouble: { count: number; rate: number };
+  tripleDouble: { count: number; rate: number };
+  consistency: { score: number; label: 'Volatile' | 'Moderate' | 'Consistent' | 'Very Consistent' };
+  trend: {
+    last5Avg: number;
+    last10Avg: number;
+    percentChange: number;
+    label: 'Trending Up' | 'Trending Down' | 'Stable' | 'Not Enough Data';
+  };
+  performanceVsTeam: {
+    vsTeamAvg: number;
+    seasonAvg: number;
+    difference: number;
+    percentChange: number;
+    label: 'Better vs Team' | 'About Average' | 'Worse vs Team' | 'Not Enough Data';
+  };
+  homeAway: {
+    homeAvg: number;
+    awayAvg: number;
+    difference: number;
+    betterLocation: 'Home' | 'Away' | 'Even';
+    homeGames: number;
+    awayGames: number;
+  };
+};
+
 export type CompareResponse = {
   team: Team;
   seasons: string[];          // e.g. ["2025-26","2024-25"]
   seasonRange: SeasonRange;
   gamesAnalyzed: number;
   combos: Record<ComboKey, number>;
+  advanced: AdvancedStats;
   report: {
     playerId: number;
     teamId: number;
@@ -96,9 +130,10 @@ export async function comparePlayerVsTeam(
   teamId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
   seasons: SeasonRange = 'current',
+  selectedStat: SelectedStat = 'PRA',
 ): Promise<CompareResponse> {
   const res = await fetch(
-    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}&seasons=${seasons}`,
+    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}&seasons=${seasons}&selectedStat=${selectedStat}`,
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');

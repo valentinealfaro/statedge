@@ -154,6 +154,63 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .tab.active { background: #5b8def; color: white; border-color: #5b8def; }
 
+.stat-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.stat-picker .picker-label {
+  font-size: 12px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.picker-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.picker-row.combos { opacity: 0.92; }
+.pick-btn {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: #c8cfdc;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pick-btn:hover { border-color: #5b8def; }
+.pick-btn.active { background: #5b8def; color: white; border-color: #5b8def; }
+
+.adv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.adv-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+}
+.adv-k {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.adv-v {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+.adv-v.adv-small { font-size: 18px; font-weight: 600; }
+.adv-unit { font-size: 14px; color: #8a93a6; font-weight: 500; }
+.adv-arrow, .adv-vs { color: #8a93a6; font-weight: 400; }
+.adv-sub { font-size: 13px; color: #c8cfdc; }
+
 .combo {
   margin-bottom: 20px;
   padding: 16px;

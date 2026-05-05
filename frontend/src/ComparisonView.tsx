@@ -10,16 +10,17 @@ import {
 } from 'recharts';
 import {
   comparePlayerVsTeam,
-  type ComboKey,
   type CompareResponse,
   type Player,
   type SeasonRange,
+  type SelectedStat,
   type StatKey,
   type Team,
 } from './api';
+import { AdvancedCards } from './AdvancedCards';
 import { AiSummary } from './AiSummary';
-import { ComboPicker } from './ComboPicker';
 import { SeasonTabs } from './SeasonTabs';
+import { STAT_LABELS, StatPicker } from './StatPicker';
 
 type Props = {
   player: Player;
@@ -28,7 +29,7 @@ type Props = {
 
 type Range = 'last5' | 'last10' | 'last20' | 'season';
 
-const STAT_LABELS: Record<StatKey, string> = {
+const PER_STAT_LABELS: Record<StatKey, string> = {
   points: 'Points',
   rebounds: 'Rebounds',
   assists: 'Assists',
@@ -37,10 +38,23 @@ const STAT_LABELS: Record<StatKey, string> = {
   fg3Pct: '3PT%',
 };
 
+function statAvgFor(data: CompareResponse, stat: SelectedStat): number {
+  switch (stat) {
+    case 'points':   return data.report.vsTeam.points.avg;
+    case 'rebounds': return data.report.vsTeam.rebounds.avg;
+    case 'assists':  return data.report.vsTeam.assists.avg;
+    case 'PRA':      return data.combos.PRA;
+    case 'PR':       return data.combos.PR;
+    case 'PA':       return data.combos.PA;
+    case 'RA':       return data.combos.RA;
+    case 'STOCKS':   return data.combos.STOCKS;
+  }
+}
+
 export function ComparisonView({ player, team }: Props) {
   const [range, setRange] = useState<Range>('last5');
   const [seasons, setSeasons] = useState<SeasonRange>('current');
-  const [combo, setCombo] = useState<ComboKey>('PRA');
+  const [selectedStat, setSelectedStat] = useState<SelectedStat>('PRA');
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,11 +62,11 @@ export function ComparisonView({ player, team }: Props) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    comparePlayerVsTeam(player.id, team.id, range, seasons)
+    comparePlayerVsTeam(player.id, team.id, range, seasons, selectedStat)
       .then(setData)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [player.id, team.id, range, seasons]);
+  }, [player.id, team.id, range, seasons, selectedStat]);
 
   return (
     <div className="comparison">
@@ -103,12 +117,20 @@ export function ComparisonView({ player, team }: Props) {
 
       {data && data.report.gamesAgainstTeam.length > 0 && (
         <>
-          <ComboPicker
-            combos={data.combos}
-            gamesAnalyzed={data.gamesAnalyzed}
-            selected={combo}
-            onSelect={setCombo}
-          />
+          <StatPicker value={selectedStat} onChange={setSelectedStat} />
+
+          <div className="combo">
+            <div className="combo-display">
+              <div className="combo-label">{STAT_LABELS[selectedStat]} · vs {team.abbreviation}</div>
+              <div className="combo-value">{statAvgFor(data, selectedStat).toFixed(1)}</div>
+              <div className="combo-meta">
+                Average across {data.gamesAnalyzed} game{data.gamesAnalyzed === 1 ? '' : 's'}
+              </div>
+            </div>
+          </div>
+
+          <h3>Advanced metrics</h3>
+          <AdvancedCards advanced={data.advanced} />
 
           <div className="cards">
             {(['points', 'rebounds', 'assists', 'minutes', 'fgPct', 'fg3Pct'] as StatKey[]).map(
@@ -119,7 +141,7 @@ export function ComparisonView({ player, team }: Props) {
                 const isPct = k === 'fgPct' || k === 'fg3Pct';
                 return (
                   <div key={k} className="card">
-                    <div className="k">{STAT_LABELS[k]}</div>
+                    <div className="k">{PER_STAT_LABELS[k]}</div>
                     <div className="v">{isPct ? `${(s.avg * 100).toFixed(1)}%` : s.avg}</div>
                     <div className="meta">
                       <span>

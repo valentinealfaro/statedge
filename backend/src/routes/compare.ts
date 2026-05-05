@@ -23,6 +23,11 @@ import {
   type PlayerVsTeamReport,
 } from '../services/comparisonEngine.js';
 import { calculateComboStats } from '../services/statCombos.js';
+import {
+  calculateAdvancedStats,
+  SELECTED_STATS,
+  type SelectedStat,
+} from '../services/advancedStats.js';
 
 export const compareRouter: Router = Router();
 
@@ -105,16 +110,23 @@ compareRouter.get('/player-vs-team', async (req, res) => {
 
   const seasonRange = parseSeasonRange(req.query.seasons);
 
+  const rawStat = String(req.query.selectedStat ?? 'PRA');
+  const selectedStat: SelectedStat = (SELECTED_STATS as readonly string[]).includes(rawStat)
+    ? (rawStat as SelectedStat)
+    : 'PRA';
+
   try {
     const seasonGames = await fetchPlayerGameLog(playerId, seasonRange);
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
     const combos = calculateComboStats(report.gamesAgainstTeam);
+    const advanced = calculateAdvancedStats(report.gamesAgainstTeam, seasonGames, selectedStat);
     res.json({
       team,
       seasons: seasonsFor(seasonRange),
       seasonRange,
       gamesAnalyzed: report.gamesAgainstTeam.length,
       combos,
+      advanced,
       report,
     });
   } catch (err) {
