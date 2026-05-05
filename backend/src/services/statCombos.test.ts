@@ -21,6 +21,8 @@ function pg(overrides: Partial<PlayerGame> = {}): PlayerGame {
     minutes: 35,
     points: 25,
     rebounds: 7,
+    oreb: 2,
+    dreb: 5,
     assists: 8,
     steals: 2,
     blocks: 1,

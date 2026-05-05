@@ -39,6 +39,8 @@ export type PlayerGame = {
   minutes: number;
   points: number;
   rebounds: number;
+  oreb?: number;
+  dreb?: number;
   assists: number;
   steals: number;
   blocks: number;
@@ -199,6 +201,54 @@ export async function compareTeamVsTeam(
   );
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as TvtResponse;
+}
+
+// --- Last 10 Games ---
+
+export type Last10StatId =
+  | 'points' | 'rebounds' | 'assists'
+  | 'three_pt_made' | 'fg_made' | 'fg_attempted'
+  | 'ft_made' | 'ft_attempted' | 'personal_fouls'
+  | 'steals' | 'blocks' | 'turnovers'
+  | 'offensive_rebounds' | 'defensive_rebounds'
+  | 'pra' | 'pr' | 'pa' | 'ra' | 'stocks'
+  | 'double_double';
+
+export type Last10NumericReport = {
+  selectedStat: Exclude<Last10StatId, 'double_double'>;
+  label: string;
+  gamesAnalyzed: number;
+  average: number;
+  high: number;
+  low: number;
+  values: number[];
+  hitCountAboveAverage: number;
+  gameLog: PlayerGame[];
+};
+
+export type Last10DoubleDoubleReport = {
+  selectedStat: 'double_double';
+  label: string;
+  gamesAnalyzed: number;
+  doubleDouble: { count: number; rate: number; values: boolean[] };
+  gameLog: PlayerGame[];
+};
+
+export type Last10Response = (Last10NumericReport | Last10DoubleDoubleReport) & {
+  playerId: number;
+  availableStats: Last10StatId[];
+  labels: Record<Last10StatId, string>;
+};
+
+export async function getPlayerLast10(
+  playerId: number,
+  selectedStat: Last10StatId,
+): Promise<Last10Response> {
+  const res = await fetch(
+    `${API_BASE}/api/player/${playerId}/last-10?selectedStat=${selectedStat}`,
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  return (await res.json()) as Last10Response;
 }
 
 export async function getAiSummary(payload: unknown): Promise<{ summary: string }> {

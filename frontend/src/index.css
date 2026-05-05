@@ -181,6 +181,25 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .pick-btn:hover { border-color: #5b8def; }
 .pick-btn.active { background: #5b8def; color: white; border-color: #5b8def; }
 
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.chip {
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: #c8cfdc;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip:hover { border-color: #5b8def; }
+.chip.active { background: #5b8def; color: white; border-color: #5b8def; }
+
 .adv-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

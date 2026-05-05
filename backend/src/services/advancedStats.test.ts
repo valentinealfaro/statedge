@@ -20,7 +20,7 @@ function pg(overrides: Partial<PlayerGame> = {}): PlayerGame {
     isHome: true,
     result: 'W',
     minutes: 35,
-    points: 25, rebounds: 7, assists: 8, steals: 1, blocks: 1, turnovers: 3,
+    points: 25, rebounds: 7, oreb: 2, dreb: 5, assists: 8, steals: 1, blocks: 1, turnovers: 3,
     fgm: 9, fga: 18, fg3m: 2, fg3a: 5, ftm: 5, fta: 6,
     fgPct: 0.5, fg3Pct: 0.4, ftPct: 0.85,
     pf: 2,

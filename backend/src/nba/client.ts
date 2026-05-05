@@ -147,7 +147,9 @@ export type PlayerGame = {
   result: 'W' | 'L' | null;
   minutes: number;
   points: number;
-  rebounds: number;
+  rebounds: number;       // total
+  oreb: number;           // offensive
+  dreb: number;           // defensive
   assists: number;
   steals: number;
   blocks: number;
@@ -200,6 +202,8 @@ export async function getPlayerGameLog(
       minutes: Number(r.MIN ?? 0),
       points: Number(r.PTS ?? 0),
       rebounds: Number(r.REB ?? 0),
+      oreb: Number(r.OREB ?? 0),
+      dreb: Number(r.DREB ?? 0),
       assists: Number(r.AST ?? 0),
       steals: Number(r.STL ?? 0),
       blocks: Number(r.BLK ?? 0),

@@ -61,6 +61,8 @@ function pgame(overrides: Partial<PlayerGame> = {}): PlayerGame {
     minutes: 35,
     points: 25,
     rebounds: 7,
+    oreb: 2,
+    dreb: 5,
     assists: 8,
     steals: 1,
     blocks: 1,

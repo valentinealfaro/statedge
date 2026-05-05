@@ -5,14 +5,16 @@ import { TeamPicker } from './TeamPicker';
 import { ComparisonView } from './ComparisonView';
 import { PlayerVsPlayerView } from './PlayerVsPlayerView';
 import { TeamVsTeamView } from './TeamVsTeamView';
+import { Last10View } from './Last10View';
 import type { Player, Team } from './api';
 
-type Mode = 'pvt' | 'pvp' | 'tvt';
+type Mode = 'pvt' | 'pvp' | 'tvt' | 'last10';
 
 const MODE_LABELS: Record<Mode, string> = {
   pvt: 'Player vs Team',
   pvp: 'Player vs Player',
   tvt: 'Team vs Team',
+  last10: 'Last 10 Games',
 };
 
 export function Compare() {
@@ -23,6 +25,7 @@ export function Compare() {
   const [pB, setPB] = useState<Player | null>(null);
   const [tA, setTA] = useState<Team | null>(null);
   const [tB, setTB] = useState<Team | null>(null);
+  const [solo, setSolo] = useState<Player | null>(null);
 
   function reset() {
     setPlayer(null);
@@ -31,6 +34,7 @@ export function Compare() {
     setPB(null);
     setTA(null);
     setTB(null);
+    setSolo(null);
   }
 
   function changeMode(m: Mode) {
@@ -91,7 +95,14 @@ export function Compare() {
         </>
       )}
 
-      {(player || team || pA || pB || tA || tB) && (
+      {mode === 'last10' && (
+        <>
+          <PlayerSearch selected={solo} onSelect={setSolo} />
+          {solo && <Last10View player={solo} />}
+        </>
+      )}
+
+      {(player || team || pA || pB || tA || tB || solo) && (
         <button className="reset" onClick={reset}>
           Start over
         </button>
