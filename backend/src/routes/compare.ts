@@ -1,6 +1,18 @@
 import { Router } from 'express';
-import { getPlayerGameLog, getTeamGameLog, NbaUpstreamBlockedError } from '../nba/client.js';
+import {
+  currentSeason,
+  getPlayerGameLog,
+  getTeamGameLog,
+  NbaUpstreamBlockedError,
+  type PlayerGame,
+  type TeamGame,
+} from '../nba/client.js';
 import { teamById } from '../nba/teams.js';
+import {
+  getPlayerGameLogFromDb,
+  getTeamGameLogFromDb,
+  isDbConfigured,
+} from '../db.js';
 import {
   calculatePlayerVsTeam,
   calculatePlayerVsPlayer,
@@ -12,6 +24,26 @@ export const compareRouter: Router = Router();
 
 const ALLOWED_RANGES = new Set(['last5', 'last10', 'last20', 'season']);
 type Range = 'last5' | 'last10' | 'last20' | 'season';
+
+// Prefer DB cache when configured, fall back to live NBA API otherwise.
+async function fetchPlayerGameLog(playerId: number): Promise<PlayerGame[]> {
+  const season = currentSeason();
+  if (isDbConfigured()) {
+    const cached = await getPlayerGameLogFromDb(playerId, season);
+    if (cached) return cached;
+    // DB configured but this player isn't synced yet — fall through to live.
+  }
+  return getPlayerGameLog(playerId, season);
+}
+
+async function fetchTeamGameLog(teamId: number): Promise<TeamGame[]> {
+  const season = currentSeason();
+  if (isDbConfigured()) {
+    const cached = await getTeamGameLogFromDb(teamId, season);
+    if (cached) return cached;
+  }
+  return getTeamGameLog(teamId, season);
+}
 
 compareRouter.get('/player-vs-team', async (req, res) => {
   const playerId = Number(req.query.playerId);
@@ -34,7 +66,7 @@ compareRouter.get('/player-vs-team', async (req, res) => {
   }
 
   try {
-    const seasonGames = await getPlayerGameLog(playerId);
+    const seasonGames = await fetchPlayerGameLog(playerId);
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
     res.json({ team, report });
   } catch (err) {
@@ -62,7 +94,7 @@ compareRouter.get('/player-vs-player', async (req, res) => {
   }
 
   try {
-    const [aGames, bGames] = await Promise.all([getPlayerGameLog(aId), getPlayerGameLog(bId)]);
+    const [aGames, bGames] = await Promise.all([fetchPlayerGameLog(aId), fetchPlayerGameLog(bId)]);
     const report = calculatePlayerVsPlayer(aGames, bGames, range);
     res.json({ aId, bId, report });
   } catch (err) {
@@ -97,7 +129,7 @@ compareRouter.get('/team-vs-team', async (req, res) => {
   }
 
   try {
-    const [aGames, bGames] = await Promise.all([getTeamGameLog(aId), getTeamGameLog(bId)]);
+    const [aGames, bGames] = await Promise.all([fetchTeamGameLog(aId), fetchTeamGameLog(bId)]);
     const report = calculateTeamVsTeam(aGames, bGames, range);
     res.json({ a: aTeam, b: bTeam, report });
   } catch (err) {

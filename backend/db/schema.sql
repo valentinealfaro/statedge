@@ -93,3 +93,22 @@ CREATE TABLE IF NOT EXISTS saved_comparisons (
 );
 
 CREATE INDEX IF NOT EXISTS saved_comparisons_user_idx ON saved_comparisons (user_id, created_at DESC);
+
+-- Cached responses for stats.nba.com game-log endpoints. The deployed
+-- backend reads from these tables; a local sync job populates them
+-- because stats.nba.com blocks datacenter IPs.
+CREATE TABLE IF NOT EXISTS player_game_logs (
+  player_id   INTEGER NOT NULL,
+  season      TEXT NOT NULL,
+  games       JSONB NOT NULL,
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (player_id, season)
+);
+
+CREATE TABLE IF NOT EXISTS team_game_logs (
+  team_id     INTEGER NOT NULL,
+  season      TEXT NOT NULL,
+  games       JSONB NOT NULL,
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (team_id, season)
+);

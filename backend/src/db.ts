@@ -1,5 +1,5 @@
 import pg from 'pg';
-import type { NbaPlayer } from './nba/client.js';
+import type { NbaPlayer, PlayerGame, TeamGame } from './nba/client.js';
 
 let pool: pg.Pool | null = null;
 
@@ -62,4 +62,61 @@ export async function searchPlayersFromDb(query: string, limit = 20): Promise<Nb
     teamAbbreviation: teamAbbr(r.team_id),
     isActive: r.is_active,
   }));
+}
+
+export async function getPlayerGameLogFromDb(
+  playerId: number,
+  season: string,
+): Promise<PlayerGame[] | null> {
+  const { rows } = await getPool().query<{ games: PlayerGame[] }>(
+    'SELECT games FROM player_game_logs WHERE player_id = $1 AND season = $2',
+    [playerId, season],
+  );
+  return rows[0]?.games ?? null;
+}
+
+export async function cachePlayerGameLog(
+  playerId: number,
+  season: string,
+  games: PlayerGame[],
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO player_game_logs (player_id, season, games, fetched_at)
+     VALUES ($1, $2, $3::jsonb, NOW())
+     ON CONFLICT (player_id, season) DO UPDATE
+       SET games = EXCLUDED.games, fetched_at = EXCLUDED.fetched_at`,
+    [playerId, season, JSON.stringify(games)],
+  );
+}
+
+export async function getTeamGameLogFromDb(
+  teamId: number,
+  season: string,
+): Promise<TeamGame[] | null> {
+  const { rows } = await getPool().query<{ games: TeamGame[] }>(
+    'SELECT games FROM team_game_logs WHERE team_id = $1 AND season = $2',
+    [teamId, season],
+  );
+  return rows[0]?.games ?? null;
+}
+
+export async function cacheTeamGameLog(
+  teamId: number,
+  season: string,
+  games: TeamGame[],
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO team_game_logs (team_id, season, games, fetched_at)
+     VALUES ($1, $2, $3::jsonb, NOW())
+     ON CONFLICT (team_id, season) DO UPDATE
+       SET games = EXCLUDED.games, fetched_at = EXCLUDED.fetched_at`,
+    [teamId, season, JSON.stringify(games)],
+  );
+}
+
+export async function listActivePlayerIdsFromDb(): Promise<number[]> {
+  const { rows } = await getPool().query<{ id: number }>(
+    'SELECT id FROM players WHERE is_active = TRUE ORDER BY id',
+  );
+  return rows.map((r) => r.id);
 }
