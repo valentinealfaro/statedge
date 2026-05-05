@@ -8,8 +8,16 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { comparePlayerVsTeam, type CompareResponse, type Player, type StatKey, type Team } from './api';
+import {
+  comparePlayerVsTeam,
+  type CompareResponse,
+  type Player,
+  type SeasonRange,
+  type StatKey,
+  type Team,
+} from './api';
 import { AiSummary } from './AiSummary';
+import { SeasonTabs } from './SeasonTabs';
 
 type Props = {
   player: Player;
@@ -29,6 +37,7 @@ const STAT_LABELS: Record<StatKey, string> = {
 
 export function ComparisonView({ player, team }: Props) {
   const [range, setRange] = useState<Range>('last5');
+  const [seasons, setSeasons] = useState<SeasonRange>('current');
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +45,11 @@ export function ComparisonView({ player, team }: Props) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    comparePlayerVsTeam(player.id, team.id, range)
+    comparePlayerVsTeam(player.id, team.id, range, seasons)
       .then(setData)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [player.id, team.id, range]);
+  }, [player.id, team.id, range, seasons]);
 
   return (
     <div className="comparison">
@@ -56,6 +65,8 @@ export function ComparisonView({ player, team }: Props) {
         </div>
       </div>
 
+      <SeasonTabs value={seasons} onChange={setSeasons} />
+
       <div className="range-tabs">
         {(['last5', 'last10', 'last20', 'season'] as Range[]).map((r) => (
           <button
@@ -63,18 +74,27 @@ export function ComparisonView({ player, team }: Props) {
             className={r === range ? 'tab active' : 'tab'}
             onClick={() => setRange(r)}
           >
-            {r === 'season' ? 'Season' : `Last ${r.replace('last', '')}`}
+            {r === 'season' ? 'All' : `Last ${r.replace('last', '')}`}
           </button>
         ))}
       </div>
+
+      {data && (
+        <p className="muted sample">
+          Showing {data.report.gamesAgainstTeam.length} game
+          {data.report.gamesAgainstTeam.length === 1 ? '' : 's'} vs {team.abbreviation}
+          {' '}across {data.seasons.length} season{data.seasons.length === 1 ? '' : 's'} (
+          {data.seasons.join(', ')}). Player has {data.report.seasonSampleSize} total games in
+          this period.
+        </p>
+      )}
 
       {loading && <p className="muted">Loading comparison…</p>}
       {error && <p className="error">{error}</p>}
 
       {data && data.report.gamesAgainstTeam.length === 0 && (
         <p className="muted">
-          No games against {team.fullName} this season yet ({data.report.seasonSampleSize}{' '}
-          season games found).
+          No games against {team.fullName} in this period. Try expanding to last 3 or 5 seasons.
         </p>
       )}
 

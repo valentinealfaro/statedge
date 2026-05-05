@@ -4,13 +4,16 @@ import {
   getPlayerGameLog,
   getTeamGameLog,
   NbaUpstreamBlockedError,
+  recentSeasons,
   type PlayerGame,
   type TeamGame,
 } from '../nba/client.js';
 import { teamById } from '../nba/teams.js';
 import {
   getPlayerGameLogFromDb,
+  getPlayerGameLogsMultiFromDb,
   getTeamGameLogFromDb,
+  getTeamGameLogsMultiFromDb,
   isDbConfigured,
 } from '../db.js';
 import {
@@ -25,24 +28,58 @@ export const compareRouter: Router = Router();
 const ALLOWED_RANGES = new Set(['last5', 'last10', 'last20', 'season']);
 type Range = 'last5' | 'last10' | 'last20' | 'season';
 
-// Prefer DB cache when configured, fall back to live NBA API otherwise.
-async function fetchPlayerGameLog(playerId: number): Promise<PlayerGame[]> {
-  const season = currentSeason();
-  if (isDbConfigured()) {
-    const cached = await getPlayerGameLogFromDb(playerId, season);
-    if (cached) return cached;
-    // DB configured but this player isn't synced yet — fall through to live.
+// Number of seasons to load. seasons=current → 1, seasons=last3 → 3, etc.
+type SeasonRange = 'current' | 'last2' | 'last3' | 'last5';
+
+function seasonsFor(range: SeasonRange): string[] {
+  switch (range) {
+    case 'current': return [currentSeason()];
+    case 'last2':   return recentSeasons(2);
+    case 'last3':   return recentSeasons(3);
+    case 'last5':   return recentSeasons(5);
   }
-  return getPlayerGameLog(playerId, season);
 }
 
-async function fetchTeamGameLog(teamId: number): Promise<TeamGame[]> {
-  const season = currentSeason();
+async function fetchPlayerGameLog(
+  playerId: number,
+  range: SeasonRange,
+): Promise<PlayerGame[]> {
+  const seasons = seasonsFor(range);
   if (isDbConfigured()) {
-    const cached = await getTeamGameLogFromDb(teamId, season);
-    if (cached) return cached;
+    if (seasons.length === 1) {
+      const cached = await getPlayerGameLogFromDb(playerId, seasons[0]!);
+      if (cached) return cached;
+    } else {
+      const cached = await getPlayerGameLogsMultiFromDb(playerId, seasons);
+      if (cached) return cached;
+    }
+    // DB configured but nothing cached for this player — fall through.
   }
-  return getTeamGameLog(teamId, season);
+  // Live fallback: only the first season (multi-season live would blow the timeout).
+  return getPlayerGameLog(playerId, seasons[0]!);
+}
+
+async function fetchTeamGameLog(
+  teamId: number,
+  range: SeasonRange,
+): Promise<TeamGame[]> {
+  const seasons = seasonsFor(range);
+  if (isDbConfigured()) {
+    if (seasons.length === 1) {
+      const cached = await getTeamGameLogFromDb(teamId, seasons[0]!);
+      if (cached) return cached;
+    } else {
+      const cached = await getTeamGameLogsMultiFromDb(teamId, seasons);
+      if (cached) return cached;
+    }
+  }
+  return getTeamGameLog(teamId, seasons[0]!);
+}
+
+const ALLOWED_SEASON_RANGES = new Set<SeasonRange>(['current', 'last2', 'last3', 'last5']);
+function parseSeasonRange(raw: unknown): SeasonRange {
+  const v = String(raw ?? 'current') as SeasonRange;
+  return ALLOWED_SEASON_RANGES.has(v) ? v : 'current';
 }
 
 compareRouter.get('/player-vs-team', async (req, res) => {
@@ -65,10 +102,12 @@ compareRouter.get('/player-vs-team', async (req, res) => {
     return;
   }
 
+  const seasonRange = parseSeasonRange(req.query.seasons);
+
   try {
-    const seasonGames = await fetchPlayerGameLog(playerId);
+    const seasonGames = await fetchPlayerGameLog(playerId, seasonRange);
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
-    res.json({ team, report });
+    res.json({ team, seasons: seasonsFor(seasonRange), seasonRange, report });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
       res.status(504).json({ error: err.message, code: 'upstream_blocked' });
@@ -93,10 +132,15 @@ compareRouter.get('/player-vs-player', async (req, res) => {
     return;
   }
 
+  const seasonRange = parseSeasonRange(req.query.seasons);
+
   try {
-    const [aGames, bGames] = await Promise.all([fetchPlayerGameLog(aId), fetchPlayerGameLog(bId)]);
+    const [aGames, bGames] = await Promise.all([
+      fetchPlayerGameLog(aId, seasonRange),
+      fetchPlayerGameLog(bId, seasonRange),
+    ]);
     const report = calculatePlayerVsPlayer(aGames, bGames, range);
-    res.json({ aId, bId, report });
+    res.json({ aId, bId, seasons: seasonsFor(seasonRange), seasonRange, report });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
       res.status(504).json({ error: err.message, code: 'upstream_blocked' });
@@ -128,10 +172,15 @@ compareRouter.get('/team-vs-team', async (req, res) => {
     return;
   }
 
+  const seasonRange = parseSeasonRange(req.query.seasons);
+
   try {
-    const [aGames, bGames] = await Promise.all([fetchTeamGameLog(aId), fetchTeamGameLog(bId)]);
+    const [aGames, bGames] = await Promise.all([
+      fetchTeamGameLog(aId, seasonRange),
+      fetchTeamGameLog(bId, seasonRange),
+    ]);
     const report = calculateTeamVsTeam(aGames, bGames, range);
-    res.json({ a: aTeam, b: bTeam, report });
+    res.json({ a: aTeam, b: bTeam, seasons: seasonsFor(seasonRange), seasonRange, report });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
       res.status(504).json({ error: err.message, code: 'upstream_blocked' });

@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
-import { compareTeamVsTeam, type Team, type TeamStatKey, type TvtResponse } from './api';
+import {
+  compareTeamVsTeam,
+  type SeasonRange,
+  type Team,
+  type TeamStatKey,
+  type TvtResponse,
+} from './api';
 import { AiSummary } from './AiSummary';
+import { SeasonTabs } from './SeasonTabs';
 
 type Props = { a: Team; b: Team };
 type Range = 'last5' | 'last10' | 'last20' | 'season';
@@ -23,6 +30,7 @@ function fmt(k: TeamStatKey, v: number): string {
 
 export function TeamVsTeamView({ a, b }: Props) {
   const [range, setRange] = useState<Range>('last10');
+  const [seasons, setSeasons] = useState<SeasonRange>('current');
   const [data, setData] = useState<TvtResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,11 +38,11 @@ export function TeamVsTeamView({ a, b }: Props) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    compareTeamVsTeam(a.id, b.id, range)
+    compareTeamVsTeam(a.id, b.id, range, seasons)
       .then(setData)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [a.id, b.id, range]);
+  }, [a.id, b.id, range, seasons]);
 
   return (
     <div className="comparison">
@@ -50,13 +58,23 @@ export function TeamVsTeamView({ a, b }: Props) {
         </div>
       </div>
 
+      <SeasonTabs value={seasons} onChange={setSeasons} />
+
       <div className="range-tabs">
         {(['last5', 'last10', 'last20', 'season'] as Range[]).map((r) => (
           <button key={r} className={r === range ? 'tab active' : 'tab'} onClick={() => setRange(r)}>
-            {r === 'season' ? 'Season' : `Last ${r.replace('last', '')}`}
+            {r === 'season' ? 'All' : `Last ${r.replace('last', '')}`}
           </button>
         ))}
       </div>
+
+      {data && (
+        <p className="muted sample">
+          Sample size: {a.abbreviation} {data.report.a.sampleSize} / {b.abbreviation}{' '}
+          {data.report.b.sampleSize} games across {data.seasons.length} season
+          {data.seasons.length === 1 ? '' : 's'} ({data.seasons.join(', ')}).
+        </p>
+      )}
 
       {loading && <p className="muted">Loading comparison…</p>}
       {error && <p className="error">{error}</p>}

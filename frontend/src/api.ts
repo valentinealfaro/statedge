@@ -48,8 +48,12 @@ export type PlayerGame = {
   ftPct: number;
 };
 
+export type SeasonRange = 'current' | 'last2' | 'last3' | 'last5';
+
 export type CompareResponse = {
   team: Team;
+  seasons: string[];          // e.g. ["2025-26","2024-25"]
+  seasonRange: SeasonRange;
   report: {
     playerId: number;
     teamId: number;
@@ -80,9 +84,10 @@ export async function comparePlayerVsTeam(
   playerId: number,
   teamId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
+  seasons: SeasonRange = 'current',
 ): Promise<CompareResponse> {
   const res = await fetch(
-    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}`,
+    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}&seasons=${seasons}`,
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -99,6 +104,8 @@ export type Side<TKey extends string> = {
 export type PvpResponse = {
   aId: number;
   bId: number;
+  seasons: string[];
+  seasonRange: SeasonRange;
   report: {
     range: 'last5' | 'last10' | 'last20' | 'season';
     a: Side<StatKey>;
@@ -112,6 +119,8 @@ export type TeamStatKey = 'points' | 'rebounds' | 'assists' | 'fgPct' | 'fg3Pct'
 export type TvtResponse = {
   a: Team;
   b: Team;
+  seasons: string[];
+  seasonRange: SeasonRange;
   report: {
     range: 'last5' | 'last10' | 'last20' | 'season';
     a: Side<TeamStatKey>;
@@ -124,8 +133,11 @@ export async function comparePlayerVsPlayer(
   aId: number,
   bId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
+  seasons: SeasonRange = 'current',
 ): Promise<PvpResponse> {
-  const res = await fetch(`${API_BASE}/api/compare/player-vs-player?aId=${aId}&bId=${bId}&range=${range}`);
+  const res = await fetch(
+    `${API_BASE}/api/compare/player-vs-player?aId=${aId}&bId=${bId}&range=${range}&seasons=${seasons}`,
+  );
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as PvpResponse;
 }
@@ -134,8 +146,11 @@ export async function compareTeamVsTeam(
   aId: number,
   bId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
+  seasons: SeasonRange = 'current',
 ): Promise<TvtResponse> {
-  const res = await fetch(`${API_BASE}/api/compare/team-vs-team?aId=${aId}&bId=${bId}&range=${range}`);
+  const res = await fetch(
+    `${API_BASE}/api/compare/team-vs-team?aId=${aId}&bId=${bId}&range=${range}&seasons=${seasons}`,
+  );
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as TvtResponse;
 }

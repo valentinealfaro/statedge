@@ -15,7 +15,9 @@ async function main() {
     process.exit(1);
   }
 
-  const season = currentSeason();
+  // Allow backfilling past seasons via SEASON env var ("2024-25", "2023-24", etc).
+  // Defaults to the current season so the GitHub Actions cron stays unchanged.
+  const season = process.env.SEASON?.trim() || currentSeason();
   console.log(`Syncing game logs for season ${season}...`);
 
   // Teams: 30 calls. Quick.

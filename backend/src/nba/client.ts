@@ -116,6 +116,19 @@ export async function searchPlayers(query: string, limit = 20): Promise<NbaPlaye
   return matches.slice(0, limit);
 }
 
+// Returns season strings like ["2025-26", "2024-25", "2023-24"], newest first.
+export function recentSeasons(count: number): string[] {
+  const cur = currentSeason();
+  const startYear = parseInt(cur.split('-')[0]!, 10);
+  const out: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const sy = startYear - i;
+    const next = (sy + 1).toString().slice(-2);
+    out.push(`${sy}-${next}`);
+  }
+  return out;
+}
+
 export function currentSeason(): string {
   // NBA season label like "2024-25". Season starts in October.
   const now = new Date();

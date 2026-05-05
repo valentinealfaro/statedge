@@ -75,6 +75,25 @@ export async function getPlayerGameLogFromDb(
   return rows[0]?.games ?? null;
 }
 
+// Returns all cached games for a player across the given seasons, newest first.
+// Returns null if NO seasons are cached. Returns merged games if at least one is cached.
+export async function getPlayerGameLogsMultiFromDb(
+  playerId: number,
+  seasons: string[],
+): Promise<PlayerGame[] | null> {
+  const { rows } = await getPool().query<{ games: PlayerGame[]; season: string }>(
+    `SELECT games, season FROM player_game_logs
+      WHERE player_id = $1 AND season = ANY($2::text[])`,
+    [playerId, seasons],
+  );
+  if (rows.length === 0) return null;
+  const merged = rows.flatMap((r) => r.games);
+  // playergamelog rows are already newest-first per season; merging across
+  // seasons can interleave. Re-sort by date desc so "last N" is meaningful.
+  merged.sort((a, b) => b.date.localeCompare(a.date));
+  return merged;
+}
+
 export async function cachePlayerGameLog(
   playerId: number,
   season: string,
@@ -98,6 +117,21 @@ export async function getTeamGameLogFromDb(
     [teamId, season],
   );
   return rows[0]?.games ?? null;
+}
+
+export async function getTeamGameLogsMultiFromDb(
+  teamId: number,
+  seasons: string[],
+): Promise<TeamGame[] | null> {
+  const { rows } = await getPool().query<{ games: TeamGame[]; season: string }>(
+    `SELECT games, season FROM team_game_logs
+      WHERE team_id = $1 AND season = ANY($2::text[])`,
+    [teamId, seasons],
+  );
+  if (rows.length === 0) return null;
+  const merged = rows.flatMap((r) => r.games);
+  merged.sort((a, b) => b.date.localeCompare(a.date));
+  return merged;
 }
 
 export async function cacheTeamGameLog(
