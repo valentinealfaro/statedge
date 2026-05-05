@@ -1,0 +1,75 @@
+name: Sync NBA data to Neon
+
+# Runs sync-players + sync-games against stats.nba.com from GitHub's runners.
+# Why: Vercel's AWS IPs are blocked by stats.nba.com, but GitHub Actions runners
+# use Azure-backed IPs that aren't blocked. This keeps the Postgres cache
+# (players, games, player_game_stats, team_game_stats) fresh without any manual
+# work — the deployed Vercel backend just reads from Neon.
+
+on:
+  # Twice a day, in UTC. NBA games are mostly East Coast evenings:
+  #  - 09:00 UTC  ≈ 04:00 ET  → all of yesterday's games are final
+  #  - 21:00 UTC  ≈ 16:00 ET  → before tip-off, picks up any afternoon games
+  schedule:
+    - cron: "0 9,21 * * *"
+
+  # Lets you click "Run workflow" in the Actions tab whenever you want an
+  # immediate refresh.
+  workflow_dispatch:
+    inputs:
+      skip_players:
+        description: "Skip player roster sync (only sync games)"
+        type: boolean
+        default: false
+
+# Only one sync at a time — if a scheduled run is already in progress when a
+# manual run is triggered, queue the new one rather than racing it.
+concurrency:
+  group: nba-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync players + games
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # Same name your backend code reads. Stored as a repo secret.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        # Root install covers backend via the workspaces config in /package.json
+        run: npm ci
+
+      - name: Sanity-check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set on this repo."
+            echo "Add it at Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          # Print only the host so we can confirm we're talking to Neon, never the password.
+          echo "Connecting to host: $(echo "$DATABASE_URL" | sed -E 's|.*@([^/?]+).*|\1|')"
+
+      - name: Sync NBA players
+        if: ${{ inputs.skip_players != true }}
+        working-directory: backend
+        run: npm run db:sync-players
+
+      - name: Sync NBA games + per-game stats
+        working-directory: backend
+        run: npm run db:sync-games
+
+      - name: Done
+        run: echo "Sync complete. Production /api/compare/* will serve fresh data on the next request."
