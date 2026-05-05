@@ -1,3 +1,7 @@
+// In dev, we proxy via Vite (API_BASE = ''). In prod, set VITE_API_BASE_URL
+// to the backend's URL (e.g. https://statedge-backend.vercel.app).
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
+
 export type Player = {
   id: number;
   fullName: string;
@@ -59,14 +63,14 @@ export type CompareResponse = {
 };
 
 export async function searchPlayers(query: string, signal?: AbortSignal): Promise<Player[]> {
-  const res = await fetch(`/api/search/players?query=${encodeURIComponent(query)}`, { signal });
+  const res = await fetch(`${API_BASE}/api/search/players?query=${encodeURIComponent(query)}`, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = (await res.json()) as { results: Player[] };
   return data.results;
 }
 
 export async function getTeams(): Promise<Team[]> {
-  const res = await fetch('/api/teams');
+  const res = await fetch(`${API_BASE}/api/teams`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = (await res.json()) as { teams: Team[] };
   return data.teams;
@@ -78,7 +82,7 @@ export async function comparePlayerVsTeam(
   range: 'last5' | 'last10' | 'last20' | 'season',
 ): Promise<CompareResponse> {
   const res = await fetch(
-    `/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}`,
+    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}`,
   );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -121,7 +125,7 @@ export async function comparePlayerVsPlayer(
   bId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
 ): Promise<PvpResponse> {
-  const res = await fetch(`/api/compare/player-vs-player?aId=${aId}&bId=${bId}&range=${range}`);
+  const res = await fetch(`${API_BASE}/api/compare/player-vs-player?aId=${aId}&bId=${bId}&range=${range}`);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as PvpResponse;
 }
@@ -131,13 +135,13 @@ export async function compareTeamVsTeam(
   bId: number,
   range: 'last5' | 'last10' | 'last20' | 'season',
 ): Promise<TvtResponse> {
-  const res = await fetch(`/api/compare/team-vs-team?aId=${aId}&bId=${bId}&range=${range}`);
+  const res = await fetch(`${API_BASE}/api/compare/team-vs-team?aId=${aId}&bId=${bId}&range=${range}`);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as TvtResponse;
 }
 
 export async function getAiSummary(payload: unknown): Promise<{ summary: string }> {
-  const res = await fetch('/api/ai/summary', {
+  const res = await fetch(`${API_BASE}/api/ai/summary`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

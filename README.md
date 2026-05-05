@@ -58,6 +58,39 @@ App runs without a DB by hitting NBA stats live. To enable caching:
 
 Set `OPENAI_API_KEY` in `backend/.env`. The "Generate AI summary" button on each comparison page will then call `gpt-4o-mini` with the comparison data.
 
+## Deploy to Vercel
+
+This is a monorepo with a frontend (Vite SPA) and backend (Express → Vercel serverless). You'll create **two Vercel projects** from the same GitHub repo.
+
+### 1) Deploy the backend
+
+1. Go to https://vercel.com → **Add New Project** → import `valentinealfaro/statedge`.
+2. **Root Directory:** `backend`
+3. **Framework Preset:** Other
+4. Leave Build/Output blank (Vercel auto-detects `api/index.ts`).
+5. **Environment Variables** (add only the ones you have):
+   - `OPENAI_API_KEY` — enables AI summaries
+   - `DATABASE_URL` — Neon connection string (optional)
+6. **Deploy.** Note the URL it gives you (e.g. `https://statedge-backend.vercel.app`).
+7. Sanity-check: open `<that-url>/health` — should return `{"status":"ok"}`.
+
+> **Heads up:** stats.nba.com sometimes blocks datacenter IPs. If `/api/teams` works but `/api/search/players?query=lebron` returns a 502, that's the cause — fix is to add the Postgres cache (Neon) and run `npm run db:sync-players` so we serve from the DB.
+
+### 2) Deploy the frontend
+
+1. **Add New Project** again → same repo.
+2. **Root Directory:** `frontend`
+3. **Framework Preset:** Vite (auto-detected).
+4. **Environment Variables:**
+   - `VITE_API_BASE_URL` = the backend URL from step 1 (no trailing slash).
+5. **Deploy.**
+
+Open the frontend URL — landing page → Start comparing → search a player → pick a team. Done.
+
+### Re-deploys
+
+Pushing to `main` redeploys both projects automatically.
+
 ## Status
 
 Week 1–4 partially shipped:
