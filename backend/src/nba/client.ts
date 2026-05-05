@@ -94,11 +94,85 @@ export async function searchPlayers(query: string, limit = 20): Promise<NbaPlaye
   return matches.slice(0, limit);
 }
 
-function currentSeason(): string {
+export function currentSeason(): string {
   // NBA season label like "2024-25". Season starts in October.
   const now = new Date();
   const y = now.getUTCFullYear();
   const startYear = now.getUTCMonth() >= 9 ? y : y - 1;
   const next = (startYear + 1).toString().slice(-2);
   return `${startYear}-${next}`;
+}
+
+export type PlayerGame = {
+  gameId: string;
+  date: string;            // ISO date
+  matchup: string;         // e.g. "LAL vs. DEN" or "LAL @ DEN"
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fgPct: number;
+  fg3Pct: number;
+  ftPct: number;
+};
+
+const gameLogCache = new Map<string, { at: number; games: PlayerGame[] }>();
+const GAMELOG_TTL = 60 * 60 * 1000; // 1 hour
+
+export async function getPlayerGameLog(
+  playerId: number,
+  season: string = currentSeason(),
+): Promise<PlayerGame[]> {
+  const key = `${playerId}:${season}`;
+  const hit = gameLogCache.get(key);
+  if (hit && Date.now() - hit.at < GAMELOG_TTL) return hit.games;
+
+  const data = await fetchStats('playergamelog', {
+    PlayerID: String(playerId),
+    Season: season,
+    SeasonType: 'Regular Season',
+  });
+  const set = data.resultSets.find((r) => r.name === 'PlayerGameLog');
+  if (!set) throw new Error('PlayerGameLog result set missing');
+
+  const rows = rowsToObjects(set);
+  const games: PlayerGame[] = rows.map((r) => {
+    const matchup = String(r.MATCHUP ?? '');
+    const isHome = matchup.includes(' vs. ');
+    const opponentAbbr = matchup.split(/ vs\. | @ /)[1] ?? '';
+    return {
+      gameId: String(r.Game_ID),
+      date: parseGameDate(String(r.GAME_DATE)),
+      matchup,
+      opponentAbbr,
+      isHome,
+      result: (r.WL as 'W' | 'L') || null,
+      minutes: Number(r.MIN ?? 0),
+      points: Number(r.PTS ?? 0),
+      rebounds: Number(r.REB ?? 0),
+      assists: Number(r.AST ?? 0),
+      steals: Number(r.STL ?? 0),
+      blocks: Number(r.BLK ?? 0),
+      turnovers: Number(r.TOV ?? 0),
+      fgPct: Number(r.FG_PCT ?? 0),
+      fg3Pct: Number(r.FG3_PCT ?? 0),
+      ftPct: Number(r.FT_PCT ?? 0),
+    };
+  });
+
+  gameLogCache.set(key, { at: Date.now(), games });
+  return games;
+}
+
+function parseGameDate(s: string): string {
+  // stats.nba.com returns dates like "MAR 15, 2025"
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toISOString().slice(0, 10);
 }
