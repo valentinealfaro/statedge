@@ -80,6 +80,14 @@ export function ComparisonView({ player, team }: Props) {
     points: null, rebounds: null, assists: null,
   });
 
+  // Line + hit-probability for the *selected* stat in the combo panel — same
+  // mechanism, but tracks whichever single/combo stat the user picked. Reset
+  // whenever the user switches stats (different scales — a 30.5 PRA line is
+  // nothing like a 30.5 STOCKS line).
+  const [comboLine, setComboLine] = useState('');
+  const [comboHit, setComboHit] = useState<HitProbability | null>(null);
+  useEffect(() => { setComboLine(''); setComboHit(null); }, [selectedStat]);
+
   useEffect(() => {
     if (!canRunComparison) return;
     setLoading(true);
@@ -127,6 +135,27 @@ export function ComparisonView({ player, team }: Props) {
     }, 400);
     return () => clearTimeout(id);
   }, [lines, player.id, team.id, range, seasons, selectedStat]);
+
+  // Same debounced fetch for the combo-panel line.
+  useEffect(() => {
+    const v = parseFloat(comboLine);
+    if (!Number.isFinite(v)) {
+      setComboHit(null);
+      return;
+    }
+    const id = setTimeout(async () => {
+      try {
+        const r = await comparePlayerVsTeam(
+          player.id, team.id, range, seasons, selectedStat,
+          { line: v, statKey: selectedStat },
+        );
+        setComboHit(r.hitProbability ?? null);
+      } catch {
+        setComboHit(null);
+      }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [comboLine, player.id, team.id, range, seasons, selectedStat]);
 
   return (
     <div className="comparison">
@@ -201,6 +230,19 @@ export function ComparisonView({ player, team }: Props) {
               <div className="combo-meta">
                 Average across {data.gamesAnalyzed} game{data.gamesAnalyzed === 1 ? '' : 's'}
               </div>
+            </div>
+            <div className="combo-line">
+              <label className="line-label">Line</label>
+              <input
+                className="line-input"
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                placeholder={selectedStat === 'STOCKS' ? 'e.g. 1.5' : 'e.g. 30.5'}
+                value={comboLine}
+                onChange={(e) => setComboLine(e.target.value)}
+              />
+              {comboHit && <HitBadge hit={comboHit} gamesAnalyzed={10} />}
             </div>
           </div>
 
