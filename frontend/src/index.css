@@ -897,6 +897,12 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .trending-stats strong { color: #5b8def; font-size: 14px; }
 
+.home-recents {
+  max-width: 1100px;
+  margin: 0 auto 32px;
+  padding: 0 24px;
+}
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { RecentsRail } from './RecentsRail';
 import { TrendingPlayers } from './TrendingPlayers';
 import { TrendingTeams } from './TrendingTeams';
 
@@ -18,6 +19,10 @@ export function Home() {
           We provide statistics and analysis only. No betting advice.
         </p>
       </header>
+
+      <section className="home-recents">
+        <RecentsRail heading="Pick up where you left off" />
+      </section>
 
       <TrendingPlayers />
       <TrendingTeams />
