@@ -427,6 +427,8 @@ export type StandingRow = {
   losses: number;
   winPct: number;
   ppg: number;
+  l10Wins: number;
+  l10Losses: number;
 };
 
 export type TopPerformer = {

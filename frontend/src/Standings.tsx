@@ -52,29 +52,36 @@ function ConferenceColumn({ title, rows }: { title: string; rows: StandingRow[] 
             <th>W</th>
             <th>L</th>
             <th>PCT</th>
+            <th>L10</th>
             <th>PPG</th>
           </tr>
         </thead>
         <tbody>
           {rows
-            ? rows.map((r, i) => (
-                <tr key={r.teamId}>
-                  <td className="standings-rank">{i + 1}</td>
-                  <td>
-                    <Link
-                      className="standings-team"
-                      to={`/compare?m=tvt&ta=${r.teamId}`}
-                    >
-                      <TeamLogo abbr={r.abbreviation} name={r.fullName} size="md" />
-                      <span>{r.fullName}</span>
-                    </Link>
-                  </td>
-                  <td>{r.wins}</td>
-                  <td>{r.losses}</td>
-                  <td>{r.winPct.toFixed(3).replace(/^0/, '')}</td>
-                  <td>{r.ppg.toFixed(1)}</td>
-                </tr>
-              ))
+            ? rows.map((r, i) => {
+                const l10 = `${r.l10Wins}-${r.l10Losses}`;
+                const hot = r.l10Wins >= 7;
+                const cold = r.l10Losses >= 7;
+                return (
+                  <tr key={r.teamId}>
+                    <td className="standings-rank">{i + 1}</td>
+                    <td>
+                      <Link
+                        className="standings-team"
+                        to={`/compare?m=tvt&ta=${r.teamId}`}
+                      >
+                        <TeamLogo abbr={r.abbreviation} name={r.fullName} size="md" />
+                        <span>{r.fullName}</span>
+                      </Link>
+                    </td>
+                    <td>{r.wins}</td>
+                    <td>{r.losses}</td>
+                    <td>{r.winPct.toFixed(3).replace(/^0/, '')}</td>
+                    <td className={hot ? 'pos' : cold ? 'neg' : ''}>{l10}</td>
+                    <td>{r.ppg.toFixed(1)}</td>
+                  </tr>
+                );
+              })
             : Array.from({ length: 15 }).map((_, i) => (
                 <tr key={i}>
                   <td><Skeleton width={16} height={11} /></td>
@@ -82,6 +89,7 @@ function ConferenceColumn({ title, rows }: { title: string; rows: StandingRow[] 
                   <td><Skeleton width={20} height={11} /></td>
                   <td><Skeleton width={20} height={11} /></td>
                   <td><Skeleton width={32} height={11} /></td>
+                  <td><Skeleton width={28} height={11} /></td>
                   <td><Skeleton width={32} height={11} /></td>
                 </tr>
               ))}

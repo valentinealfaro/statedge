@@ -477,6 +477,8 @@ export type StandingRow = {
   ppg: number;
   oppPpg: number;
   pointDiff: number;
+  l10Wins: number;
+  l10Losses: number;
 };
 
 // Computes regular-season-style W-L records and PPG per team from the
@@ -492,19 +494,32 @@ export async function getStandingsFromDb(season: string): Promise<{
     losses: number;
     games: number;
     ppg: number;
-    pts_for_total: number;
+    l10_wins: number;
+    l10_losses: number;
   }>(
-    `SELECT
-        tgl.team_id,
-        COUNT(*) FILTER (WHERE g->>'result' = 'W')::int            AS wins,
-        COUNT(*) FILTER (WHERE g->>'result' = 'L')::int            AS losses,
-        COUNT(*)::int                                              AS games,
-        AVG((g->>'points')::numeric)                               AS ppg,
-        SUM((g->>'points')::numeric)                               AS pts_for_total
+    `WITH ranked AS (
+       SELECT
+         tgl.team_id,
+         g->>'result'                                              AS result,
+         (g->>'points')::numeric                                   AS pts,
+         ROW_NUMBER() OVER (
+           PARTITION BY tgl.team_id
+           ORDER BY (g->>'date')::date DESC, g->>'gameId' DESC
+         )                                                         AS rn
        FROM team_game_logs tgl
        , jsonb_array_elements(tgl.games) g
-      WHERE tgl.season = $1
-      GROUP BY tgl.team_id`,
+       WHERE tgl.season = $1
+     )
+     SELECT
+       team_id,
+       COUNT(*) FILTER (WHERE result = 'W')::int                    AS wins,
+       COUNT(*) FILTER (WHERE result = 'L')::int                    AS losses,
+       COUNT(*)::int                                                AS games,
+       AVG(pts)                                                     AS ppg,
+       COUNT(*) FILTER (WHERE result = 'W' AND rn <= 10)::int       AS l10_wins,
+       COUNT(*) FILTER (WHERE result = 'L' AND rn <= 10)::int       AS l10_losses
+     FROM ranked
+     GROUP BY team_id`,
     [season],
   );
 
@@ -530,6 +545,8 @@ export async function getStandingsFromDb(season: string): Promise<{
       ppg: round1(Number(r.ppg)),
       oppPpg: 0,
       pointDiff: 0,
+      l10Wins: Number(r.l10_wins),
+      l10Losses: Number(r.l10_losses),
     }];
   });
 
