@@ -1930,6 +1930,217 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border: 1px solid #5a2e36;
 }
 
+/* Game-grouped prop board — replaces the old flat slate-grid. Each
+   game is its own section; each player is a single card with all
+   their props as rows. */
+.game-board {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 16px;
+}
+.game-section {
+  background: #0f1218;
+  border: 1px solid #1f2330;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.game-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, #1a1f2b 0%, #14171f 100%);
+  border-bottom: 1px solid #1f2330;
+}
+.game-section-teams {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.game-section-teams h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #e5e9f0;
+}
+.game-section-vs {
+  color: #5b8def;
+  font-weight: 800;
+  font-size: 13px;
+  margin: 0 2px;
+}
+.game-section-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8a93a6;
+}
+.game-section-stats strong { color: #c8cfdc; font-weight: 700; }
+.game-section-stats .dot { color: #4a5263; }
+.game-section-stats .hot strong { color: #6dd07a; }
+
+.player-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.player-card {
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.player-card:hover {
+  border-color: #2a3344;
+}
+.player-card.is-out {
+  opacity: 0.55;
+}
+.player-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #1f2330;
+  background: #0b0d12;
+}
+.player-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+.player-card-identity:hover .player-card-name {
+  color: #5b8def;
+}
+.player-card-name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.player-card-name {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #e5e9f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+
+.prop-row-list {
+  display: flex;
+  flex-direction: column;
+}
+.prop-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid #1a1d27;
+  transition: background 0.12s;
+}
+.prop-row:last-child { border-bottom: none; }
+.prop-row:hover { background: #1a1f2b; }
+.prop-row.in-parlay {
+  background: linear-gradient(90deg, #16202b 0%, #14171f 100%);
+  border-left: 3px solid #5b8def;
+  padding-left: 11px;
+}
+.prop-row.hot { background: rgba(109, 208, 122, 0.04); }
+.prop-row.hot:hover { background: rgba(109, 208, 122, 0.08); }
+.prop-row.cool { opacity: 0.7; }
+.prop-row.cool:hover { opacity: 0.95; }
+
+.prop-row-pin {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #2a2f3a;
+  background: #0b0d12;
+  color: #8a93a6;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s;
+}
+.prop-row-pin:hover {
+  color: #fff;
+  border-color: #5b8def;
+  background: #1a2030;
+}
+.prop-row-pin.pinned {
+  background: #5b8def;
+  border-color: #5b8def;
+  color: #fff;
+}
+.prop-row-stat {
+  color: #c8cfdc;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prop-row-line {
+  color: #e5e9f0;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+.prop-row-pct {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.prop-row-pct.over { background: #1f3a23; color: #6dd07a; }
+.prop-row-pct.under { background: #3a1f23; color: #ef6a6a; }
+.prop-row-pct.flat { background: #2a2f3a; color: #8a93a6; }
+.prop-row-edge {
+  font-size: 10px;
+  color: #5a6378;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.prop-row.hot .prop-row-edge { color: #6dd07a; }
+
+@media (max-width: 720px) {
+  .player-card-grid {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+  .prop-row {
+    grid-template-columns: 24px 1fr auto auto;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .prop-row-edge { display: none; }
+}
+
 /* Today's-games rail in informational mode — no hover/click state. */
 .today-rail.informational .today-side.static {
   cursor: default;

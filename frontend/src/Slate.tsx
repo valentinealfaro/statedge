@@ -380,21 +380,12 @@ export function Slate() {
       )}
 
       {sorted.length > 0 && (
-        <div className="slate-grid">
-          {sorted.map((l) => {
-            const k = cardKey(l);
-            return (
-              <LineCard
-                key={k}
-                line={l}
-                inParlay={parlay.includes(k)}
-                onToggleParlay={() => toggleParlay(l)}
-                showEdge={sort === 'edge'}
-                canInsight={isPro}
-              />
-            );
-          })}
-        </div>
+        <GameGroupedBoard
+          lines={sorted}
+          parlay={parlay}
+          onToggleParlay={toggleParlay}
+          cardKey={cardKey}
+        />
       )}
 
       {!loading && lines.length > 0 && sorted.length === 0 && (
@@ -615,6 +606,271 @@ function LineCard({
       )}
       {insightErr && (
         <div className="slate-insight error">{insightErr}</div>
+      )}
+    </div>
+  );
+}
+
+// Game-grouped board: every line is bucketed by its matchup
+// (team + opponent, normalized so PHI/NYK and NYK/PHI are the same
+// game), and within each game players' props are merged into a
+// single card so a player with 16 lines becomes 1 card with 16
+// rows instead of 16 separate cards across the grid. Strongest game
+// floats to the top by best in-game edge.
+function GameGroupedBoard({
+  lines,
+  parlay,
+  onToggleParlay,
+  cardKey,
+}: {
+  lines: SlateResolvedLine[];
+  parlay: string[];
+  onToggleParlay: (l: SlateResolvedLine) => void;
+  cardKey: (l: SlateResolvedLine) => string;
+}) {
+  // Group: gameKey → { teams, players: Map<playerId, lines[]> }
+  type Group = {
+    teams: [string, string];
+    players: Map<number, SlateResolvedLine[]>;
+  };
+  const groups = new Map<string, Group>();
+  const ungrouped: SlateResolvedLine[] = [];
+
+  for (const line of lines) {
+    const team = line.team;
+    const opp = line.vsOpponent?.opponentAbbr;
+    if (!team || !opp) {
+      ungrouped.push(line);
+      continue;
+    }
+    const sortedPair = [team, opp].sort();
+    const key = sortedPair.join('-');
+    let g = groups.get(key);
+    if (!g) {
+      g = { teams: sortedPair as [string, string], players: new Map() };
+      groups.set(key, g);
+    }
+    const arr = g.players.get(line.playerId) ?? [];
+    arr.push(line);
+    g.players.set(line.playerId, arr);
+  }
+
+  // Sort games by the best edge inside the game (so the matchup with
+  // the most action surfaces first), then by alphabetical key as a
+  // tiebreaker.
+  const gameList = [...groups.entries()]
+    .map(([key, g]) => {
+      const allLines = [...g.players.values()].flat();
+      const bestEdge = allLines.reduce(
+        (m, l) => Math.max(m, l.projection?.edge.score ?? 0),
+        0,
+      );
+      return { key, group: g, bestEdge };
+    })
+    .sort((a, b) => b.bestEdge - a.bestEdge || a.key.localeCompare(b.key));
+
+  return (
+    <div className="game-board">
+      {gameList.map(({ key, group }) => (
+        <GameSection
+          key={key}
+          teams={group.teams}
+          players={group.players}
+          parlay={parlay}
+          onToggleParlay={onToggleParlay}
+          cardKey={cardKey}
+        />
+      ))}
+      {ungrouped.length > 0 && (
+        <div className="game-section">
+          <div className="game-section-head">
+            <h3>Other</h3>
+            <span className="muted small">{ungrouped.length} lines without a matchup</span>
+          </div>
+          <div className="player-card-grid">
+            {/* Render each ungrouped player as its own card. */}
+            {[...new Map(ungrouped.map((l) => [l.playerId, ungrouped.filter((x) => x.playerId === l.playerId)])).entries()].map(
+              ([pid, plines]) => (
+                <PlayerCard
+                  key={pid}
+                  lines={plines}
+                  parlay={parlay}
+                  onToggleParlay={onToggleParlay}
+                  cardKey={cardKey}
+                />
+              ),
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameSection({
+  teams,
+  players,
+  parlay,
+  onToggleParlay,
+  cardKey,
+}: {
+  teams: [string, string];
+  players: Map<number, SlateResolvedLine[]>;
+  parlay: string[];
+  onToggleParlay: (l: SlateResolvedLine) => void;
+  cardKey: (l: SlateResolvedLine) => string;
+}) {
+  // Sort players by best edge across their props so the most-actionable
+  // names sit at the top of each game.
+  const playerList = [...players.values()]
+    .map((plines) => ({
+      lines: plines,
+      bestEdge: plines.reduce((m, l) => Math.max(m, l.projection?.edge.score ?? 0), 0),
+    }))
+    .sort((a, b) => b.bestEdge - a.bestEdge);
+
+  // Aggregate game-level metrics for the header.
+  const allLines = [...players.values()].flat();
+  const totalProps = allLines.length;
+  const strongPlays = allLines.filter(
+    (l) => (l.projection?.edge.score ?? 0) >= 60,
+  ).length;
+
+  return (
+    <section className="game-section">
+      <div className="game-section-head">
+        <div className="game-section-teams">
+          <TeamLogo abbr={teams[0]} name={teams[0]} size="lg" />
+          <span className="game-section-vs">vs</span>
+          <TeamLogo abbr={teams[1]} name={teams[1]} size="lg" />
+          <h3>{teams[0]} @ {teams[1]}</h3>
+        </div>
+        <div className="game-section-stats">
+          <span><strong>{playerList.length}</strong> players</span>
+          <span className="dot">·</span>
+          <span><strong>{totalProps}</strong> props</span>
+          {strongPlays > 0 && (
+            <>
+              <span className="dot">·</span>
+              <span className="hot"><strong>{strongPlays}</strong> strong edges</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="player-card-grid">
+        {playerList.map(({ lines: plines }) => (
+          <PlayerCard
+            key={plines[0].playerId}
+            lines={plines}
+            parlay={parlay}
+            onToggleParlay={onToggleParlay}
+            cardKey={cardKey}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PlayerCard({
+  lines,
+  parlay,
+  onToggleParlay,
+  cardKey,
+}: {
+  lines: SlateResolvedLine[];
+  parlay: string[];
+  onToggleParlay: (l: SlateResolvedLine) => void;
+  cardKey: (l: SlateResolvedLine) => string;
+}) {
+  const head = lines[0];
+  // Within each player's card, sort props by edge desc so the strongest
+  // play sits at the top — and the user can scan a player and see
+  // immediately if anything's worth tapping.
+  const sorted = [...lines].sort(
+    (a, b) => (b.projection?.edge.score ?? 0) - (a.projection?.edge.score ?? 0),
+  );
+  const inj = head.injury;
+  const isOut = inj?.status === 'Out';
+
+  return (
+    <div className={`player-card ${isOut ? 'is-out' : ''}`}>
+      <div className="player-card-head">
+        <Link
+          to={`/compare?m=last10&pid=${head.playerId}`}
+          className="player-card-identity"
+          title="Player last-10"
+        >
+          <PlayerAvatar playerId={head.playerId} name={head.playerName} size="lg" />
+          <div className="player-card-name-block">
+            <div className="player-card-name">{head.playerName}</div>
+            <div className="muted small">
+              {head.team ?? '—'}
+              {head.position && ` · ${head.position}`}
+            </div>
+          </div>
+        </Link>
+        {inj && <InjuryChip injury={inj} />}
+      </div>
+      <div className="prop-row-list">
+        {sorted.map((l) => (
+          <PropRow
+            key={cardKey(l)}
+            line={l}
+            inParlay={parlay.includes(cardKey(l))}
+            onToggleParlay={() => onToggleParlay(l)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PropRow({
+  line,
+  inParlay,
+  onToggleParlay,
+}: {
+  line: SlateResolvedLine;
+  inParlay: boolean;
+  onToggleParlay: () => void;
+}) {
+  const p = line.projection;
+  const isDD = line.statKey === 'double_double';
+  const lean = p?.edge.lean ?? '';
+  // For DD lines we don't have a projection — fall back to ddRate.
+  const pct = isDD
+    ? Math.round((line.ddRate ?? 0) * 100)
+    : lean.includes('Over')
+    ? p?.probability.over ?? 50
+    : lean.includes('Under')
+    ? p?.probability.under ?? 50
+    : 50;
+  const dir = lean.includes('Over') ? 'over' : lean.includes('Under') ? 'under' : 'flat';
+  const tone = (p?.edge.score ?? 0) >= 60
+    ? 'hot'
+    : (p?.edge.score ?? 0) >= 40
+    ? 'mid'
+    : 'cool';
+  return (
+    <div className={`prop-row ${inParlay ? 'in-parlay' : ''} ${tone}`}>
+      <button
+        className={`prop-row-pin ${inParlay ? 'pinned' : ''}`}
+        onClick={onToggleParlay}
+        title={inParlay ? 'Remove from parlay' : 'Add to parlay'}
+        aria-label={inParlay ? 'Remove from parlay' : 'Add to parlay'}
+      >
+        {inParlay ? '✓' : '+'}
+      </button>
+      <span className="prop-row-stat">{line.statLabel}</span>
+      <span className="prop-row-line">{line.line}</span>
+      <span className={`prop-row-pct ${dir}`}>
+        {dir === 'over' ? '↑' : dir === 'under' ? '↓' : '→'} {pct}%
+      </span>
+      {p && !p.noProjection && (
+        <span className="prop-row-edge" title={p.edge.label}>
+          edge {p.edge.score}
+        </span>
       )}
     </div>
   );
