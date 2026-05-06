@@ -15,8 +15,10 @@ import {
   type Last10StatId,
   type Player,
 } from './api';
+import { PlayerAvatar } from './Avatar';
 import { SaveButton } from './SaveButton';
 import { usePlan } from './plan';
+import { recordRecent } from './recents';
 
 type Props = { player: Player };
 
@@ -75,8 +77,8 @@ export function Last10View({ player }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (plan === 'pro') return;
-    recordComparison();
+    if (plan === 'free') recordComparison();
+    recordRecent({ type: 'last10', player });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.id]);
 
@@ -93,6 +95,7 @@ export function Last10View({ player }: Props) {
     <div className="comparison">
       <div className="matchup">
         <div className="side">
+          <PlayerAvatar playerId={player.id} name={player.fullName} size="lg" />
           <div className="big">{player.fullName}</div>
           <div className="small">{player.teamAbbreviation ?? '—'}</div>
         </div>

@@ -7,9 +7,11 @@ import {
   type StatKey,
 } from './api';
 import { AiSummary } from './AiSummary';
+import { PlayerAvatar } from './Avatar';
 import { SaveButton } from './SaveButton';
 import { SeasonTabs } from './SeasonTabs';
 import { usePlan } from './plan';
+import { recordRecent } from './recents';
 
 type Props = { a: Player; b: Player };
 type Range = 'last5' | 'last10' | 'last20' | 'season';
@@ -39,8 +41,8 @@ export function PlayerVsPlayerView({ a, b }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (plan === 'pro') return;
-    recordComparison();
+    if (plan === 'free') recordComparison();
+    recordRecent({ type: 'pvp', a, b });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.id, b.id]);
 
@@ -57,11 +59,13 @@ export function PlayerVsPlayerView({ a, b }: Props) {
     <div className="comparison">
       <div className="matchup">
         <div className="side">
+          <PlayerAvatar playerId={a.id} name={a.fullName} size="lg" />
           <div className="big">{a.fullName}</div>
           <div className="small">{a.teamAbbreviation ?? '—'}</div>
         </div>
         <div className="vs">vs</div>
         <div className="side">
+          <PlayerAvatar playerId={b.id} name={b.fullName} size="lg" />
           <div className="big">{b.fullName}</div>
           <div className="small">{b.teamAbbreviation ?? '—'}</div>
         </div>

@@ -108,10 +108,41 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   border: 1px solid #2a2f3a;
   margin-bottom: 20px;
 }
-.matchup .side { flex: 1; text-align: center; }
+.matchup .side {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
 .matchup .big { font-size: 18px; font-weight: 700; }
 .matchup .small { font-size: 13px; color: #8a93a6; margin-top: 2px; }
 .matchup .vs { font-size: 14px; color: #5b8def; font-weight: 700; padding: 0 16px; }
+
+/* Avatars: NBA headshots / team logos. Square frames so logos and faces
+ * sit on a consistent baseline; objectFit lets logos breathe and crops
+ * headshots tightly. */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #0b0d12;
+  border: 1px solid #2a2f3a;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.avatar.md { width: 40px; height: 40px; }
+.avatar.lg { width: 64px; height: 64px; }
+.avatar.team { object-fit: contain; padding: 6px; background: #fff; }
+.avatar-fallback {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #c8cfdc;
+}
+.avatar-fallback.lg { font-size: 16px; }
 
 .season-tabs {
   display: flex;
@@ -712,4 +743,48 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   color: #8a93a6;
 }
 .saved-remove:hover { color: #f48fb1; }
+
+/* --- Recently viewed rail --- */
+.recents-rail {
+  margin: 12px 0 18px;
+}
+.recents-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.recents-title {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 600;
+}
+.recents-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.recent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 999px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: #c8cfdc;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 280px;
+}
+.recent-chip:hover { border-color: #5b8def; background: #1a1f2b; }
+.recent-icon { font-size: 13px; }
+.recent-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 

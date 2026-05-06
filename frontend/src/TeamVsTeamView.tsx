@@ -7,9 +7,11 @@ import {
   type TvtResponse,
 } from './api';
 import { AiSummary } from './AiSummary';
+import { TeamLogo } from './Avatar';
 import { SaveButton } from './SaveButton';
 import { SeasonTabs } from './SeasonTabs';
 import { usePlan } from './plan';
+import { recordRecent } from './recents';
 
 type Props = { a: Team; b: Team };
 type Range = 'last5' | 'last10' | 'last20' | 'season';
@@ -39,8 +41,8 @@ export function TeamVsTeamView({ a, b }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (plan === 'pro') return;
-    recordComparison();
+    if (plan === 'free') recordComparison();
+    recordRecent({ type: 'tvt', a, b });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.id, b.id]);
 
@@ -57,11 +59,13 @@ export function TeamVsTeamView({ a, b }: Props) {
     <div className="comparison">
       <div className="matchup">
         <div className="side">
+          <TeamLogo abbr={a.abbreviation} name={a.fullName} size="lg" />
           <div className="big">{a.fullName}</div>
           <div className="small">{a.abbreviation}</div>
         </div>
         <div className="vs">vs</div>
         <div className="side">
+          <TeamLogo abbr={b.abbreviation} name={b.fullName} size="lg" />
           <div className="big">{b.fullName}</div>
           <div className="small">{b.abbreviation}</div>
         </div>

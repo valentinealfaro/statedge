@@ -8,6 +8,7 @@ import { TeamVsTeamView } from './TeamVsTeamView';
 import { Last10View } from './Last10View';
 import { FreshnessBanner } from './FreshnessBanner';
 import { PlanGate } from './PlanGate';
+import { RecentsRail } from './RecentsRail';
 import { SavedList } from './SavedList';
 import { usePlan } from './plan';
 import type { SavedItem } from './saved';
@@ -74,6 +75,11 @@ export function Compare() {
     }
   }
 
+  // Show the recents rail above the search prompts only when nothing has
+  // been picked yet — once a comparison is up, the rail is just noise.
+  const nothingPicked =
+    !player && !team && !pA && !pB && !tA && !tB && !solo;
+
   // Free users don't get the Saved tab — saving is a Pro feature.
   const visibleModes = (Object.keys(MODE_LABELS) as Mode[]).filter(
     (m) => m !== 'saved' || plan === 'pro',
@@ -97,6 +103,8 @@ export function Compare() {
           </button>
         ))}
       </div>
+
+      {nothingPicked && mode !== 'saved' && <RecentsRail onOpen={openSaved} />}
 
       {mode === 'pvt' && (
         <>

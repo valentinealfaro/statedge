@@ -20,11 +20,13 @@ import {
 } from './api';
 import { AdvancedCards } from './AdvancedCards';
 import { AiSummary } from './AiSummary';
+import { PlayerAvatar, TeamLogo } from './Avatar';
 import { HitBadge } from './HitBadge';
 import { SaveButton } from './SaveButton';
 import { SeasonTabs } from './SeasonTabs';
 import { STAT_LABELS, StatPicker } from './StatPicker';
 import { usePlan } from './plan';
+import { recordRecent } from './recents';
 
 // Stat tiles for which we offer a "Line" input + hit-probability badge.
 // (Minutes / FG% / 3PT% don't map cleanly to traditional prop lines.)
@@ -101,8 +103,8 @@ export function ComparisonView({ player, team }: Props) {
   // Count one comparison-toward-the-daily-cap per (player, team) pair.
   // Subsequent range/season tweaks against the same matchup don't re-bill.
   useEffect(() => {
-    if (plan === 'pro') return;
-    recordComparison();
+    if (plan === 'free') recordComparison();
+    recordRecent({ type: 'pvt', player, team });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.id, team.id]);
 
@@ -161,11 +163,13 @@ export function ComparisonView({ player, team }: Props) {
     <div className="comparison">
       <div className="matchup">
         <div className="side">
+          <PlayerAvatar playerId={player.id} name={player.fullName} size="lg" />
           <div className="big">{player.fullName}</div>
           <div className="small">{player.teamAbbreviation ?? '—'}</div>
         </div>
         <div className="vs">vs</div>
         <div className="side">
+          <TeamLogo abbr={team.abbreviation} name={team.fullName} size="lg" />
           <div className="big">{team.fullName}</div>
           <div className="small">{team.abbreviation}</div>
         </div>
