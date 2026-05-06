@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { RecentGames } from './RecentGames';
 import { RecentsRail } from './RecentsRail';
+import { SlateTeaser } from './SlateTeaser';
 import { TodayGames } from './TodayGames';
 import { TopPerformers } from './TopPerformers';
 import { TrendingPlayers } from './TrendingPlayers';
@@ -28,6 +29,7 @@ export function Home() {
       </section>
 
       <TodayGames />
+      <SlateTeaser />
       <RecentGames />
       <TopPerformers />
       <TrendingPlayers />
