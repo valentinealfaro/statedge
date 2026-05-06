@@ -1050,6 +1050,25 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 tr.by-opp-row.clickable { cursor: pointer; }
 tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 
+/* Empty state when slate filters narrow to zero matches */
+.slate-empty {
+  margin: 32px 0;
+  padding: 32px 24px;
+  text-align: center;
+  background: #14171f;
+  border: 1px dashed #2a2f3a;
+  border-radius: 10px;
+}
+.slate-empty h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #c8cfdc;
+}
+.slate-empty .cta {
+  margin-top: 16px;
+  display: inline-block;
+}
+
 /* --- Embedded "Last 10 games" panel (player or team) --- */
 .last10-panel {
   margin-top: 28px;

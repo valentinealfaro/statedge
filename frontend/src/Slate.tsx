@@ -331,6 +331,31 @@ export function Slate() {
         </div>
       )}
 
+      {!loading && lines.length > 0 && sorted.length === 0 && (
+        <div className="slate-empty">
+          <h3>No props match your filters</h3>
+          <p className="muted small">
+            {hideOut && outCount > 0 && (
+              <>
+                {outCount} player{outCount === 1 ? ' is' : 's are'} OUT and hidden.{' '}
+              </>
+            )}
+            Loosen the filters or pick a different team / stat above.
+          </p>
+          <button
+            className="cta"
+            onClick={() => {
+              setFilter('all');
+              setTeamFilter('');
+              setStatFilter('');
+              setHideOut(false);
+            }}
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+
       {data && data.unresolved.length > 0 && (
         <UnresolvedSection unresolved={data.unresolved} />
       )}
