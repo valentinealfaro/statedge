@@ -22,15 +22,16 @@ import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { SlateManualEntry } from './SlateManualEntry';
+import { SlatePaywall } from './SlatePaywall';
 import { computeHitProbability } from './slateMath';
 import { useTitle } from './useTitle';
 
 export function Slate() {
   useTitle(['Slate']);
 
-  const { plan } = usePlan();
+  const { plan, isAdmin } = usePlan();
   const favorites = useFavorites();
-  const isPro = plan === 'pro';
+  const isPro = plan === 'pro' || isAdmin;
   const { items: savedParlays, save: saveParlay, remove: removeParlay } = useSavedParlays();
   const [data, setData] = useState<SlateResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -210,6 +211,18 @@ export function Slate() {
   });
 
   const isStale = (freshness?.daysStale ?? 0) > 3;
+
+  // Free / signed-out users see a marketing preview + upgrade CTA in
+  // place of the actual slate. Admins and Pro subscribers fall through
+  // to the full prop-board experience below.
+  if (!isPro) {
+    return (
+      <div className="app">
+        <NavBar />
+        <SlatePaywall />
+      </div>
+    );
+  }
 
   return (
     <div className="app">
