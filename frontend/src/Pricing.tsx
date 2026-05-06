@@ -67,7 +67,7 @@ export function Pricing() {
           <div className="pricing-tier-badge">RECOMMENDED</div>
           <div className="pricing-tier-name">Pro</div>
           <div className="pricing-tier-price">
-            <span className="pricing-amt">$9.99</span>
+            <span className="pricing-amt">$19.99</span>
             <span className="pricing-per">/ month</span>
           </div>
           <ul className="pricing-features">
