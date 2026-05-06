@@ -4,6 +4,7 @@ import {
   type Last10Response,
   type PlayerGame,
 } from './api';
+import { MatchupCell } from './MatchupCell';
 import { Skeleton } from './Skeleton';
 
 type Props = {
@@ -88,7 +89,7 @@ export function Last10Panel({ playerId, heading = 'Last 10 games · all opponent
             {games.map((g) => (
               <tr key={g.gameId}>
                 <td>{g.date}</td>
-                <td>{g.matchup}</td>
+                <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.minutes}</td>
                 <td><strong>{g.points}</strong></td>

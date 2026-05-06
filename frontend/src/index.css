@@ -951,6 +951,26 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   .recent-games-grid { grid-template-columns: 1fr; }
 }
 
+/* --- Matchup cell (in game-log tables) --- */
+.matchup-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.matchup-cell .avatar.md { width: 22px; height: 22px; padding: 2px; }
+.matchup-marker {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: lowercase;
+  width: 16px;
+  text-align: right;
+}
+.matchup-abbr {
+  font-weight: 600;
+  font-size: 13px;
+}
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }

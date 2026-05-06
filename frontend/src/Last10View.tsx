@@ -16,6 +16,7 @@ import {
   type Player,
 } from './api';
 import { PlayerAvatar } from './Avatar';
+import { MatchupCell } from './MatchupCell';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { usePlan } from './plan';
@@ -204,7 +205,7 @@ function NumericStatView({ data }: { data: Extract<Last10Response, { average: nu
             {data.gameLog.map((g, i) => (
               <tr key={g.gameId}>
                 <td>{g.date}</td>
-                <td>{g.matchup}</td>
+                <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.minutes}</td>
                 <td><strong>{data.values[i]}</strong></td>
@@ -251,7 +252,7 @@ function DoubleDoubleView({ data }: { data: Extract<Last10Response, { selectedSt
             {data.gameLog.map((g, i) => (
               <tr key={g.gameId}>
                 <td>{g.date}</td>
-                <td>{g.matchup}</td>
+                <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.points}</td>
                 <td>{g.rebounds}</td>

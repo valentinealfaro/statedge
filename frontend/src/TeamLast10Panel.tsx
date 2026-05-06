@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getTeamLast10, type TeamGame, type TeamLast10Response } from './api';
 import { Last10Skeleton } from './Last10Panel';
+import { MatchupCell } from './MatchupCell';
 
 type Props = {
   teamId: number;
@@ -74,7 +75,7 @@ export function TeamLast10Panel({ teamId, heading = 'Last 10 games · all oppone
             {games.map((g) => (
               <tr key={g.gameId}>
                 <td>{g.date}</td>
-                <td>{g.matchup}</td>
+                <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td><strong>{g.points}</strong></td>
                 <td>{g.rebounds}</td>

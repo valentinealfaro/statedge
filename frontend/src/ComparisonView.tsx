@@ -24,6 +24,7 @@ import { AiSummary } from './AiSummary';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { HitBadge } from './HitBadge';
 import { Last10Panel } from './Last10Panel';
+import { MatchupCell } from './MatchupCell';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
@@ -404,7 +405,7 @@ export function ComparisonView({ player, team }: Props) {
                 {data.report.gamesAgainstTeam.map((g) => (
                   <tr key={g.gameId}>
                     <td>{g.date}</td>
-                    <td>{g.matchup}</td>
+                    <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                     <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                     <td>{g.minutes}</td>
                     <td>{g.points}</td>
