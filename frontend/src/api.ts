@@ -331,6 +331,25 @@ export async function getTrendingPlayers(limit = 8): Promise<TrendingPlayer[]> {
   return data.players;
 }
 
+export type TrendingTeam = {
+  id: number;
+  abbreviation: string;
+  city: string;
+  name: string;
+  fullName: string;
+  ppg: number;
+  wins: number;
+  losses: number;
+  gamesPlayed: number;
+};
+
+export async function getTrendingTeams(limit = 8): Promise<TrendingTeam[]> {
+  const res = await fetch(`${API_BASE}/api/trending/teams?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { teams: TrendingTeam[] };
+  return data.teams;
+}
+
 export async function getTeamLast10(teamId: number): Promise<TeamLast10Response> {
   const res = await fetch(`${API_BASE}/api/teams/${teamId}/last-10`);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);

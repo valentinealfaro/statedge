@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { TrendingPlayers } from './TrendingPlayers';
+import { TrendingTeams } from './TrendingTeams';
 
 export function Home() {
   return (
@@ -19,6 +20,7 @@ export function Home() {
       </header>
 
       <TrendingPlayers />
+      <TrendingTeams />
 
       <section className="features">
         <h2>Built for fans who want the real story</h2>

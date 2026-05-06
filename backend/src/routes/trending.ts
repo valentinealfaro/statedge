@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { currentSeason } from '../nba/client.js';
-import { getTrendingPlayersFromDb, isDbConfigured } from '../db.js';
+import {
+  getTrendingPlayersFromDb,
+  getTrendingTeamsFromDb,
+  isDbConfigured,
+} from '../db.js';
 
 export const trendingRouter: Router = Router();
 
@@ -21,5 +25,22 @@ trendingRouter.get('/players', async (req, res) => {
   } catch (err) {
     console.error('trending players failed', err);
     res.status(500).json({ error: 'failed to compute trending players' });
+  }
+});
+
+trendingRouter.get('/teams', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ teams: [], season: null, source: 'no-db' });
+    return;
+  }
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 8), 1), 30);
+  const season = String(req.query.season ?? currentSeason());
+
+  try {
+    const teams = await getTrendingTeamsFromDb(season, limit);
+    res.json({ teams, season, source: 'db' });
+  } catch (err) {
+    console.error('trending teams failed', err);
+    res.status(500).json({ error: 'failed to compute trending teams' });
   }
 });

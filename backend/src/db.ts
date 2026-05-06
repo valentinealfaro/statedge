@@ -139,6 +139,69 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+export type TrendingTeam = {
+  id: number;
+  abbreviation: string;
+  city: string;
+  name: string;
+  fullName: string;
+  ppg: number;
+  oppPpg: number;     // not stored; we approximate via win-margin if needed
+  wins: number;
+  losses: number;
+  gamesPlayed: number;
+};
+
+// Top teams by PPG for the season. Mirrors getTrendingPlayersFromDb but for
+// the team_game_logs cache. Returns the top N — the small minGames gate
+// avoids early-season anomalies.
+export async function getTrendingTeamsFromDb(
+  season: string,
+  limit = 8,
+  minGames = 10,
+): Promise<TrendingTeam[]> {
+  const { rows } = await getPool().query<{
+    team_id: number;
+    ppg: number;
+    wins: number;
+    losses: number;
+    games: number;
+  }>(
+    `SELECT
+        tgl.team_id,
+        AVG((g->>'points')::numeric)                                    AS ppg,
+        COUNT(*) FILTER (WHERE g->>'result' = 'W')::int                 AS wins,
+        COUNT(*) FILTER (WHERE g->>'result' = 'L')::int                 AS losses,
+        COUNT(*)::int                                                   AS games
+       FROM team_game_logs tgl
+       , jsonb_array_elements(tgl.games) g
+      WHERE tgl.season = $1
+      GROUP BY tgl.team_id
+     HAVING COUNT(*) >= $2
+   ORDER BY AVG((g->>'points')::numeric) DESC
+      LIMIT $3`,
+    [season, minGames, limit],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  return rows.flatMap((r) => {
+    const team = NBA_TEAMS.find((t) => t.id === r.team_id);
+    if (!team) return [];
+    return [{
+      id: team.id,
+      abbreviation: team.abbreviation,
+      city: team.city,
+      name: team.name,
+      fullName: team.fullName,
+      ppg: round1(Number(r.ppg)),
+      oppPpg: 0,
+      wins: r.wins,
+      losses: r.losses,
+      gamesPlayed: r.games,
+    }];
+  });
+}
+
 export async function getPlayerByIdFromDb(playerId: number): Promise<NbaPlayer | null> {
   const { rows } = await getPool().query<{
     id: number;
