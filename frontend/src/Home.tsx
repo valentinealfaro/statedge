@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { TrendingPlayers } from './TrendingPlayers';
 
 export function Home() {
   return (
@@ -16,6 +17,8 @@ export function Home() {
           We provide statistics and analysis only. No betting advice.
         </p>
       </header>
+
+      <TrendingPlayers />
 
       <section className="features">
         <h2>Built for fans who want the real story</h2>

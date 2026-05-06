@@ -1,0 +1,25 @@
+import { Router } from 'express';
+import { currentSeason } from '../nba/client.js';
+import { getTrendingPlayersFromDb, isDbConfigured } from '../db.js';
+
+export const trendingRouter: Router = Router();
+
+// Top N season scorers (active, min-games gated). The Home page uses this
+// to populate a "trending players" rail without needing per-user usage
+// tracking — popularity here is "who's putting up the biggest numbers".
+trendingRouter.get('/players', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ players: [], season: null, source: 'no-db' });
+    return;
+  }
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 8), 1), 20);
+  const season = String(req.query.season ?? currentSeason());
+
+  try {
+    const players = await getTrendingPlayersFromDb(season, limit);
+    res.json({ players, season, source: 'db' });
+  } catch (err) {
+    console.error('trending players failed', err);
+    res.status(500).json({ error: 'failed to compute trending players' });
+  }
+});

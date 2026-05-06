@@ -64,6 +64,81 @@ export async function searchPlayersFromDb(query: string, limit = 20): Promise<Nb
   }));
 }
 
+export type TrendingPlayer = NbaPlayer & {
+  ppg: number;
+  rpg: number;
+  apg: number;
+  gamesPlayed: number;
+};
+
+// Computes season averages per active player from the cached JSONB game logs
+// and returns the top N by points-per-game. We unnest the JSONB into rows in
+// SQL so the average math runs in Postgres rather than shipping every game
+// to Node — much cheaper on large player tables. Minimum-games filter avoids
+// giving a one-game cup-of-coffee a #1 leaderboard slot.
+export async function getTrendingPlayersFromDb(
+  season: string,
+  limit = 8,
+  minGames = 10,
+): Promise<TrendingPlayer[]> {
+  const { rows } = await getPool().query<{
+    id: number;
+    full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    team_id: number | null;
+    is_active: boolean;
+    ppg: number;
+    rpg: number;
+    apg: number;
+    games: number;
+  }>(
+    `SELECT
+        p.id,
+        p.full_name,
+        p.first_name,
+        p.last_name,
+        p.team_id,
+        p.is_active,
+        AVG((g->>'points')::numeric)   AS ppg,
+        AVG((g->>'rebounds')::numeric) AS rpg,
+        AVG((g->>'assists')::numeric)  AS apg,
+        COUNT(*)::int                  AS games
+       FROM player_game_logs pgl
+       JOIN players p ON p.id = pgl.player_id
+       , jsonb_array_elements(pgl.games) g
+      WHERE pgl.season = $1
+        AND p.is_active = TRUE
+      GROUP BY p.id, p.full_name, p.first_name, p.last_name, p.team_id, p.is_active
+     HAVING COUNT(*) >= $2
+   ORDER BY AVG((g->>'points')::numeric) DESC
+      LIMIT $3`,
+    [season, minGames, limit],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const abbrFor = (id: number | null): string | null =>
+    id ? NBA_TEAMS.find((t) => t.id === id)?.abbreviation ?? null : null;
+
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.full_name,
+    firstName: r.first_name ?? '',
+    lastName: r.last_name ?? '',
+    teamId: r.team_id,
+    teamAbbreviation: abbrFor(r.team_id),
+    isActive: r.is_active,
+    ppg: round1(Number(r.ppg)),
+    rpg: round1(Number(r.rpg)),
+    apg: round1(Number(r.apg)),
+    gamesPlayed: r.games,
+  }));
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
 export async function getPlayerByIdFromDb(playerId: number): Promise<NbaPlayer | null> {
   const { rows } = await getPool().query<{
     id: number;

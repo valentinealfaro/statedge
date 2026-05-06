@@ -317,6 +317,20 @@ export async function getPlayerLast10(
   return (await res.json()) as Last10Response;
 }
 
+export type TrendingPlayer = Player & {
+  ppg: number;
+  rpg: number;
+  apg: number;
+  gamesPlayed: number;
+};
+
+export async function getTrendingPlayers(limit = 8): Promise<TrendingPlayer[]> {
+  const res = await fetch(`${API_BASE}/api/trending/players?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { players: TrendingPlayer[] };
+  return data.players;
+}
+
 export async function getTeamLast10(teamId: number): Promise<TeamLast10Response> {
   const res = await fetch(`${API_BASE}/api/teams/${teamId}/last-10`);
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);

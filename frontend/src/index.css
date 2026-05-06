@@ -842,3 +842,52 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   margin-top: 2px;
 }
 
+/* --- Home page: top scorers --- */
+.trending {
+  max-width: 1100px;
+  margin: 0 auto 56px;
+  padding: 0 24px;
+}
+.trending h2 {
+  font-size: 24px;
+  margin: 0 0 20px;
+  text-align: center;
+}
+.trending-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+.trending-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 120ms;
+}
+.trending-card:hover { border-color: #5b8def; background: #1a1f2b; }
+.trending-name {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 6px;
+}
+.trending-team {
+  font-size: 12px;
+  color: #8a93a6;
+}
+.trending-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: #c8cfdc;
+  margin-top: 6px;
+}
+.trending-stats strong { color: #5b8def; font-size: 14px; }
+
