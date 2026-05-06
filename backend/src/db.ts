@@ -559,6 +559,77 @@ export async function getStandingsFromDb(season: string): Promise<{
   };
 }
 
+export type RosterPlayer = NbaPlayer & {
+  ppg: number;
+  rpg: number;
+  apg: number;
+  minutes: number;
+  gamesPlayed: number;
+};
+
+// Returns every active player on a team, joined with their season
+// minutes so we can sort the rotation up top. Players who haven't
+// played this season show last with zeros.
+export async function getTeamRosterFromDb(
+  season: string,
+  teamId: number,
+): Promise<RosterPlayer[]> {
+  const { rows } = await getPool().query<{
+    id: number;
+    full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    team_id: number | null;
+    is_active: boolean;
+    minutes: number | null;
+    games: number | null;
+    ppg: number | null;
+    rpg: number | null;
+    apg: number | null;
+  }>(
+    `WITH player_stats AS (
+       SELECT
+         pgl.player_id,
+         SUM((g->>'minutes')::numeric)   AS minutes,
+         COUNT(*)::int                   AS games,
+         AVG((g->>'points')::numeric)    AS ppg,
+         AVG((g->>'rebounds')::numeric)  AS rpg,
+         AVG((g->>'assists')::numeric)   AS apg
+       FROM player_game_logs pgl
+       , jsonb_array_elements(pgl.games) g
+       WHERE pgl.season = $1
+       GROUP BY pgl.player_id
+     )
+     SELECT
+       p.id, p.full_name, p.first_name, p.last_name,
+       p.team_id, p.is_active,
+       ps.minutes, ps.games, ps.ppg, ps.rpg, ps.apg
+     FROM players p
+     LEFT JOIN player_stats ps ON ps.player_id = p.id
+     WHERE p.is_active = TRUE AND p.team_id = $2
+     ORDER BY ps.minutes DESC NULLS LAST, p.full_name`,
+    [season, teamId],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const team = NBA_TEAMS.find((t) => t.id === teamId);
+
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.full_name,
+    firstName: r.first_name ?? '',
+    lastName: r.last_name ?? '',
+    teamId: r.team_id,
+    teamAbbreviation: team?.abbreviation ?? null,
+    isActive: r.is_active,
+    minutes: r.minutes ? Math.round(Number(r.minutes)) : 0,
+    gamesPlayed: r.games ?? 0,
+    ppg: r.ppg ? round1(Number(r.ppg)) : 0,
+    rpg: r.rpg ? round1(Number(r.rpg)) : 0,
+    apg: r.apg ? round1(Number(r.apg)) : 0,
+  }));
+}
+
 export type TrendingTeam = {
   id: number;
   abbreviation: string;

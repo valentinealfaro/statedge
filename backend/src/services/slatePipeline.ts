@@ -6,7 +6,7 @@ import {
   getPlayerGameLogsBulkFromDb,
   listAllPlayerCandidatesFromDb,
 } from '../db.js';
-import { currentSeason } from '../nba/client.js';
+import { currentSeason, type PlayerGame } from '../nba/client.js';
 import { computeHitProbability, type HitProbability } from './comparisonEngine.js';
 import { isDoubleDoubleGame, STAT_MAP, type Last10StatId } from './last10.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
@@ -257,9 +257,31 @@ export async function resolveSlate(
     }
 
     const get = STAT_MAP[p.statKey];
-    const values = last10.map(get);
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    const hit = computeHitProbability(values, p.raw.line);
+
+    // Hit-probability sample blends 'recent form' (last-10 regardless
+    // of opponent) with 'matchup history' (every season game vs the
+    // specific opponent we're playing tonight). Dedup by gameId so a
+    // game that's both in L10 AND vs-opp counts once. When no opponent
+    // is set, this collapses to plain last-10 like before.
+    const last10Values = last10.map(get);
+    const last10Avg = last10Values.reduce((a, b) => a + b, 0) / last10Values.length;
+
+    let combinedSample: PlayerGame[] = last10;
+    if (oppAbbr) {
+      const vsOppGames = games.filter((g) => g.opponentAbbr === oppAbbr);
+      if (vsOppGames.length > 0) {
+        const seen = new Set<string>();
+        const merged: PlayerGame[] = [];
+        for (const g of [...last10, ...vsOppGames]) {
+          if (seen.has(g.gameId)) continue;
+          seen.add(g.gameId);
+          merged.push(g);
+        }
+        combinedSample = merged;
+      }
+    }
+    const sampleValues = combinedSample.map(get);
+    const hit = computeHitProbability(sampleValues, p.raw.line);
 
     resolved.push({
       ppId: p.raw.ppId,
@@ -274,9 +296,11 @@ export async function resolveSlate(
       line: p.raw.line,
       startTime: p.raw.startTime ?? null,
       description: p.raw.description ?? null,
-      gamesAnalyzed: last10.length,
-      last10Avg: round2(avg),
-      last10Values: values,
+      // gamesAnalyzed reflects the COMBINED sample so receipts read
+      // 'hit X/Y' over the actual blended set (L10 + extra vs-opp games).
+      gamesAnalyzed: combinedSample.length,
+      last10Avg: round2(last10Avg),
+      last10Values: last10Values,
       hitProbability: hit,
       injury: injuryFor(p.canonicalName),
       vsOpponent,

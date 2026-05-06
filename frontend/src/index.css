@@ -1589,15 +1589,62 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   gap: 10px;
   margin: 16px 0;
 }
-.manual-slot {
-  display: grid;
-  grid-template-columns: 24px 2fr 1fr 80px 1fr auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+.manual-slot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
   background: #14171f;
   border: 1px solid #1f2330;
-  border-radius: 8px;
+  border-radius: 10px;
+}
+.manual-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.manual-slot-count {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.manual-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.manual-stat-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #0b0d12;
+  border: 1px solid #1f2330;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.manual-stat-label {
+  color: #c8cfdc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.manual-stat-input {
+  width: 70px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+}
+.manual-stat-input:focus { outline: none; border-color: #5b8def; }
+.manual-stat-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .manual-slot-num {
   width: 24px;
@@ -1695,22 +1742,11 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-top: 12px;
 }
 
-@media (max-width: 880px) {
-  .manual-slot {
-    grid-template-columns: 24px 1fr 80px;
-    grid-template-areas:
-      "num player player"
-      "num stat opp"
-      "num line remove";
-    gap: 8px;
+@media (max-width: 720px) {
+  .manual-slot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .manual-slot-num { grid-area: num; }
-  .manual-slot-player { grid-area: player; }
-  .manual-slot-select:nth-of-type(1) { grid-area: stat; }
-  .manual-slot-line { grid-area: line; }
-  .manual-slot-select:nth-of-type(2) { grid-area: opp; }
-  .manual-slot-remove { grid-area: remove; }
-  .manual-slot .avatar.team { display: none; }
+  .manual-stat-input { width: 60px; }
 }
 .slate-drop {
   flex: 1;

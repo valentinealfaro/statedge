@@ -145,6 +145,23 @@ export async function getPlayerById(playerId: number): Promise<Player> {
   return data.player;
 }
 
+export type RosterPlayer = Player & {
+  ppg: number;
+  rpg: number;
+  apg: number;
+  minutes: number;
+  gamesPlayed: number;
+};
+
+export async function getTeamRoster(teamId: number): Promise<{
+  team: Team;
+  players: RosterPlayer[];
+}> {
+  const res = await fetch(`${API_BASE}/api/teams/${teamId}/roster`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { team: Team; players: RosterPlayer[] };
+}
+
 export async function getTeams(): Promise<Team[]> {
   const res = await fetch(`${API_BASE}/api/teams`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

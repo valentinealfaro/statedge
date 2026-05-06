@@ -6,12 +6,45 @@ import {
   type TeamGame,
 } from '../nba/client.js';
 import { NBA_TEAMS, teamById } from './../nba/teams.js';
-import { getTeamGameLogFromDb, isDbConfigured } from '../db.js';
+import {
+  getTeamGameLogFromDb,
+  getTeamRosterFromDb,
+  isDbConfigured,
+} from '../db.js';
 
 export const teamsRouter: Router = Router();
 
 teamsRouter.get('/', (_req, res) => {
   res.json({ teams: NBA_TEAMS });
+});
+
+// Active roster for a team, sorted by minutes played this season so
+// rotation guys come first. Used by the Slate's Build-mode team-pick
+// modal so users can pick a player without typing — and the Compare
+// view's quick-pick lists could use it later too.
+teamsRouter.get('/:teamId/roster', async (req, res) => {
+  const teamId = Number(req.params.teamId);
+  if (!teamId) {
+    res.status(400).json({ error: 'teamId must be numeric' });
+    return;
+  }
+  const team = teamById(teamId);
+  if (!team) {
+    res.status(404).json({ error: 'Unknown teamId' });
+    return;
+  }
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'Roster lookup requires DB' });
+    return;
+  }
+
+  try {
+    const players = await getTeamRosterFromDb(currentSeason(), teamId);
+    res.json({ team, players });
+  } catch (err) {
+    console.error('roster failed', err);
+    res.status(500).json({ error: 'roster lookup failed' });
+  }
 });
 
 // Last 10 games for a team across ALL opponents — used to embed a recent-form
