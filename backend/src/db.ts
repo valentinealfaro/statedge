@@ -386,6 +386,86 @@ export async function getRecentGamesFromDb(
   });
 }
 
+export type TopPerformer = {
+  playerId: number;
+  fullName: string;
+  teamAbbreviation: string | null;
+  date: string;
+  matchup: string;
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+};
+
+// Best scorers from the most recent game day in cache. We don't trust
+// 'today' literally — the sync runs once a day, so 'most recent date
+// in cache' is the right anchor. Dynamic min-points filter prevents
+// short-roster mop-up minutes from cluttering the leaderboard.
+export async function getTopPerformersFromDb(
+  season: string,
+  limit = 6,
+): Promise<TopPerformer[]> {
+  const dateRes = await getPool().query<{ d: string | null }>(
+    `SELECT MAX((g->>'date')::date)::text AS d
+       FROM player_game_logs, jsonb_array_elements(games) g
+      WHERE season = $1`,
+    [season],
+  );
+  const date = dateRes.rows[0]?.d;
+  if (!date) return [];
+
+  const { rows } = await getPool().query<{
+    player_id: number;
+    full_name: string;
+    g: {
+      gameId: string; matchup: string; opponentAbbr: string; isHome: boolean;
+      result: 'W' | 'L' | null; minutes: number; points: number; rebounds: number;
+      assists: number; steals: number; blocks: number;
+    };
+  }>(
+    `SELECT pgl.player_id, p.full_name, g
+       FROM player_game_logs pgl
+       JOIN players p ON p.id = pgl.player_id
+       , jsonb_array_elements(pgl.games) g
+      WHERE pgl.season = $1
+        AND (g->>'date')::date = $2::date
+   ORDER BY (g->>'points')::int DESC
+      LIMIT $3`,
+    [season, date, limit],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  return rows.map((r) => {
+    // First 3 chars of matchup are this player's team for the game.
+    const playerTeamAbbr = (r.g.matchup ?? '').slice(0, 3).toUpperCase() || null;
+    return {
+      playerId: r.player_id,
+      fullName: r.full_name,
+      teamAbbreviation: playerTeamAbbr,
+      date,
+      matchup: r.g.matchup,
+      opponentAbbr: r.g.opponentAbbr,
+      isHome: !!r.g.isHome,
+      result: r.g.result,
+      minutes:  Number(r.g.minutes  ?? 0),
+      points:   Number(r.g.points   ?? 0),
+      rebounds: Number(r.g.rebounds ?? 0),
+      assists:  Number(r.g.assists  ?? 0),
+      steals:   Number(r.g.steals   ?? 0),
+      blocks:   Number(r.g.blocks   ?? 0),
+    };
+  }).filter((p) => {
+    // Sanity-check: NBA_TEAMS has the abbreviation as a known key.
+    return !p.teamAbbreviation || NBA_TEAMS.some((t) => t.abbreviation === p.teamAbbreviation);
+  });
+}
+
 export type StandingRow = {
   teamId: number;
   abbreviation: string;

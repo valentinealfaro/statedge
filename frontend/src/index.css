@@ -1069,6 +1069,57 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .footer-link:hover { text-decoration: underline; }
 
+/* --- Top performers card --- */
+.performers-date {
+  font-weight: 400;
+  font-size: 14px;
+  color: #8a93a6;
+}
+.performers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.performer-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.performer-card:hover { border-color: #5b8def; background: #1a1f2b; }
+.performer-body { flex: 1; min-width: 0; }
+.performer-name {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.performer-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #8a93a6;
+}
+.performer-meta .avatar { width: 18px; height: 18px; padding: 1px; }
+.performer-meta strong { color: #c8cfdc; }
+.performer-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #c8cfdc;
+}
+.performer-stats strong { color: #5b8def; font-size: 14px; }
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }

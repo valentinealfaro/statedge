@@ -420,6 +420,30 @@ export type StandingRow = {
   ppg: number;
 };
 
+export type TopPerformer = {
+  playerId: number;
+  fullName: string;
+  teamAbbreviation: string | null;
+  date: string;
+  matchup: string;
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+};
+
+export async function getTopPerformers(limit = 6): Promise<TopPerformer[]> {
+  const res = await fetch(`${API_BASE}/api/performers/top?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { performers: TopPerformer[] };
+  return data.performers;
+}
+
 export async function getStandings(): Promise<{ east: StandingRow[]; west: StandingRow[] }> {
   const res = await fetch(`${API_BASE}/api/standings`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { RecentGames } from './RecentGames';
 import { RecentsRail } from './RecentsRail';
+import { TopPerformers } from './TopPerformers';
 import { TrendingPlayers } from './TrendingPlayers';
 import { TrendingTeams } from './TrendingTeams';
 
@@ -26,6 +27,7 @@ export function Home() {
       </section>
 
       <RecentGames />
+      <TopPerformers />
       <TrendingPlayers />
       <TrendingTeams />
 
