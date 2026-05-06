@@ -310,7 +310,54 @@ function LineCard({
         ) : (
           <div className="slate-receipts">No probability available.</div>
         )}
+        {line.vsOpponent && (
+          <VsOppRow
+            opp={line.vsOpponent}
+            line={line.line}
+            isDD={line.statKey === 'double_double'}
+          />
+        )}
       </Link>
+    </div>
+  );
+}
+
+function VsOppRow({
+  opp,
+  line,
+  isDD,
+}: {
+  opp: { opponentAbbr: string; gamesPlayed: number; avg: number };
+  line: number;
+  isDD: boolean;
+}) {
+  // Color-code the matchup signal: green if historically the player
+  // was ABOVE the prop line vs this opponent, red if below, gray if
+  // sample is too small to lean on.
+  const lean = opp.avg > line ? 'over' : opp.avg < line ? 'under' : 'even';
+  const cls =
+    opp.gamesPlayed < 2
+      ? 'slate-vs-opp small'
+      : lean === 'over'
+      ? 'slate-vs-opp pos'
+      : lean === 'under'
+      ? 'slate-vs-opp neg'
+      : 'slate-vs-opp';
+
+  if (isDD) {
+    return (
+      <div className={cls}>
+        vs <strong>{opp.opponentAbbr}</strong>:{' '}
+        {Math.round(opp.avg * 100)}% DD rate · {opp.gamesPlayed} game{opp.gamesPlayed === 1 ? '' : 's'}
+      </div>
+    );
+  }
+  return (
+    <div className={cls}>
+      vs <strong>{opp.opponentAbbr}</strong>:{' '}
+      <strong>{opp.avg.toFixed(1)}</strong>
+      {' avg · '}
+      {opp.gamesPlayed} game{opp.gamesPlayed === 1 ? '' : 's'}
     </div>
   );
 }

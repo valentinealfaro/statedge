@@ -1430,6 +1430,22 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .slate-injury.q   { background: #f0c14b; color: #0b0d12; }
 .slate-card.is-out { opacity: 0.6; }
 .slate-card.is-out:hover { opacity: 0.9; }
+
+/* Vs-opponent row — small inline stat under the receipts */
+.slate-vs-opp {
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #c8cfdc;
+  text-align: center;
+  background: #0b0d12;
+  border-radius: 6px;
+  border: 1px solid #1f2330;
+}
+.slate-vs-opp.pos { border-color: #6ee7a4; color: #6ee7a4; }
+.slate-vs-opp.neg { border-color: #ef6a6a; color: #ef6a6a; }
+.slate-vs-opp.small { color: #8a93a6; }
+.slate-vs-opp strong { color: inherit; }
 .slate-card-name {
   font-size: 14px;
   font-weight: 600;

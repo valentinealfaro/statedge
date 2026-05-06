@@ -24,7 +24,7 @@ Output valid JSON only — no commentary, no code fences.
 Schema:
 {
   "lines": [
-    { "playerName": "First Last", "statLabel": "Points|Rebounds|Pts+Rebs+Asts|3-PT Made|Steals|Blocked Shots|Turnovers|Pts+Asts|Pts+Rebs|Rebs+Asts|FG Made|Free Throws Made|Personal Fouls|Blks+Stls|Double-Double", "line": 24.5, "team": "LAL" }
+    { "playerName": "First Last", "statLabel": "Points|Rebounds|Pts+Rebs+Asts|3-PT Made|Steals|Blocked Shots|Turnovers|Pts+Asts|Pts+Rebs|Rebs+Asts|FG Made|Free Throws Made|Personal Fouls|Blks+Stls|Double-Double", "line": 24.5, "team": "LAL", "opponent": "DEN" }
   ]
 }
 
@@ -35,6 +35,8 @@ Rules:
   "Threes" -> "3-PT Made", etc).
 - "line": numeric line value (e.g., 24.5, not "24.5+").
 - "team": 2-3 letter team abbreviation if visible (LAL, BOS, GSW), else omit.
+- "opponent": 2-3 letter abbreviation of tonight's opposing team if visible
+  (often shown as "vs DEN", "@ DEN", or "LAL/DEN"). Omit if not visible.
 - Only include single-player props. Skip combos like "Brunson + Embiid".
 - Skip "Live" / "Pre-game" / promotional banners.
 - If you can't read a line clearly, skip it — don't guess.`;
@@ -95,6 +97,10 @@ export async function ocrPropBoard(
       statLabel: o.statLabel,
       line,
       team: typeof o.team === 'string' ? o.team : undefined,
+      opponentAbbr:
+        typeof o.opponent === 'string' && o.opponent.length > 0
+          ? o.opponent.toUpperCase()
+          : null,
     });
   }
 

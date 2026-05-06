@@ -16,6 +16,20 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
 });
 
+// Pull the opponent abbreviation out of a PP `description` string
+// like "PHI/NYK" given the player's team ("PHI"). Some entries use
+// other separators or are blank — we fall back to null on any miss
+// and the slate just skips the vs-opp block for that line.
+function parseOpponent(description: string | null, team: string | null | undefined): string | null {
+  if (!description || !team) return null;
+  const parts = description.split(/[\/@]+|\s+vs\.?\s+/i).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  if (parts.length !== 2) return null;
+  const t = team.toUpperCase();
+  if (parts[0] === t) return parts[1]!;
+  if (parts[1] === t) return parts[0]!;
+  return null;
+}
+
 // Auto-fetch path: pull current PrizePicks NBA prop board, normalize
 // stat labels, resolve player names, compute hit probability, return
 // the same SlateResponse shape the (planned) image-upload path uses.
@@ -35,18 +49,24 @@ slateRouter.get('/auto', async (_req, res) => {
       res.json({ lines: [], unresolved: [], source: 'prizepicks_auto', fetchedAt: new Date().toISOString() });
       return;
     }
-    // Convert PP-shape into the pipeline's RawLine shape.
-    const raw: RawLine[] = ppLines.map((p) => ({
-      playerName: p.playerName,
-      team: p.team,
-      position: p.position,
-      imageUrl: p.imageUrl,
-      statLabel: p.statType,
-      line: p.line,
-      ppId: p.ppId,
-      startTime: p.startTime,
-      description: p.description,
-    }));
+    // Convert PP-shape into the pipeline's RawLine shape. PP's
+    // `description` is "AWAY/HOME" (e.g. "PHI/NYK"); the player is on
+    // exactly one of those teams, so the OTHER one is the opponent.
+    const raw: RawLine[] = ppLines.map((p) => {
+      const opponent = parseOpponent(p.description, p.team);
+      return {
+        playerName: p.playerName,
+        team: p.team,
+        position: p.position,
+        imageUrl: p.imageUrl,
+        statLabel: p.statType,
+        line: p.line,
+        ppId: p.ppId,
+        startTime: p.startTime,
+        description: p.description,
+        opponentAbbr: opponent,
+      };
+    });
     const out = await resolveSlate(raw, 'prizepicks_auto');
     // Browsers shouldn't cache an actively-changing prop board.
     res.setHeader('Cache-Control', 'no-store');

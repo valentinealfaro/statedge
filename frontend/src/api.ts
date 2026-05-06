@@ -475,6 +475,11 @@ export type SlateResolvedLine = {
   hitProbability?: SlateHitProbability;
   ddRate?: number;
   injury?: SlateInjury;
+  vsOpponent?: {
+    opponentAbbr: string;
+    gamesPlayed: number;
+    avg: number;
+  };
 };
 
 export type SlateUnresolvedLine = {

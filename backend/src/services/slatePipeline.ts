@@ -27,6 +27,7 @@ export type RawLine = {
   ppId?: string;
   startTime?: string | null;
   description?: string | null;
+  opponentAbbr?: string | null;   // resolved from `description` if present
 };
 
 export type ResolvedLine = {
@@ -55,6 +56,15 @@ export type ResolvedLine = {
   // ESPN-sourced injury status for tonight's slate, if applicable.
   // Common values: 'Out', 'Day-To-Day', 'Questionable', 'Probable'.
   injury?: InjuryEntry;
+
+  // Player's historical performance against tonight's specific opponent
+  // (current season only, all games we have cached). Sample size is
+  // typically 1-4 games — small but informative for picking sharp lines.
+  vsOpponent?: {
+    opponentAbbr: string;
+    gamesPlayed: number;
+    avg: number;       // for double_double stat, this is the rate (0-1)
+  };
 };
 
 export type UnresolvedLine = {
@@ -160,6 +170,35 @@ export async function resolveSlate(
     }
     const last10 = games.slice(0, 10);
 
+    // Build vs-opponent block — uses the player's full season log,
+    // not just last 10, since a player may have only 1-4 prior games
+    // against a given team in a season. Skip if we don't know who the
+    // opponent is.
+    const oppAbbr = p.raw.opponentAbbr ?? null;
+    let vsOpponent: ResolvedLine['vsOpponent'] | undefined;
+    if (oppAbbr) {
+      const vsGames = games.filter((g) => g.opponentAbbr === oppAbbr);
+      if (vsGames.length > 0) {
+        if (p.statKey === 'double_double') {
+          const dd = vsGames.filter(isDoubleDoubleGame).length;
+          vsOpponent = {
+            opponentAbbr: oppAbbr,
+            gamesPlayed: vsGames.length,
+            avg: round2(dd / vsGames.length),
+          };
+        } else {
+          const get = STAT_MAP[p.statKey];
+          const vsValues = vsGames.map(get);
+          const vsAvg = vsValues.reduce((a, b) => a + b, 0) / vsValues.length;
+          vsOpponent = {
+            opponentAbbr: oppAbbr,
+            gamesPlayed: vsGames.length,
+            avg: round2(vsAvg),
+          };
+        }
+      }
+    }
+
     if (p.statKey === 'double_double') {
       const dd = last10.filter(isDoubleDoubleGame).length;
       resolved.push({
@@ -180,6 +219,7 @@ export async function resolveSlate(
         last10Values: last10.map((g) => (isDoubleDoubleGame(g) ? 1 : 0)),
         ddRate: dd / last10.length,
         injury: injuryFor(p.canonicalName),
+        vsOpponent,
       });
       continue;
     }
@@ -207,6 +247,7 @@ export async function resolveSlate(
       last10Values: values,
       hitProbability: hit,
       injury: injuryFor(p.canonicalName),
+      vsOpponent,
     });
   }
 
