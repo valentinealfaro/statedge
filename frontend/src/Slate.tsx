@@ -34,6 +34,10 @@ export function Slate() {
   const [errorSource, setErrorSource] = useState<'auto' | 'upload' | null>(null);
   const [autoTried, setAutoTried] = useState(false);
   const [backendVer, setBackendVer] = useState<BackendVersion | null>(null);
+  // Distinct from `backendVer === null` (which can mean 'still loading'):
+  // true when /api/version 404s, signalling the backend deploy is on
+  // pre-version-endpoint code. Drives the stale-backend banner.
+  const [backendStale, setBackendStale] = useState(false);
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
   const [hideOut, setHideOut] = useState(true);
@@ -90,7 +94,13 @@ export function Slate() {
   // explicitly clicks the button under the 'auto' mode.
   useEffect(() => {
     getDataFreshness().then(setFreshness).catch(() => {});
-    getBackendVersion().then(setBackendVer).catch(() => {});
+    getBackendVersion()
+      .then((v) => {
+        setBackendVer(v);
+        // Null = endpoint missing (404 or network) — backend is stale.
+        setBackendStale(v === null);
+      })
+      .catch(() => setBackendStale(true));
   }, []);
 
   // Background refresh: only meaningful for the PrizePicks auto-pull
@@ -191,6 +201,17 @@ export function Slate() {
         <div className="freshness stale" style={{ marginBottom: 16 }}>
           Heads up: NBA data is {freshness?.daysStale} days old — these
           percentages may not reflect tonight's form.
+        </div>
+      )}
+
+      {backendStale && (
+        <div className="slate-error" style={{ marginBottom: 16 }}>
+          <strong>Backend deploy is out of date.</strong> Several recent
+          features (the team-roster modal, the slate version endpoint) live
+          on the backend's <code>main</code> branch but Vercel is still
+          serving an older bundle. Open the <strong>backend</strong> project
+          in Vercel → Deployments → click the most recent commit → "Redeploy".
+          The roster modal will fall back to a search input until then.
         </div>
       )}
 

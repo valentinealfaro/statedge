@@ -15,42 +15,14 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { TeamRosterModal } from './TeamRosterModal';
+import {
+  blendedSample,
+  computeHitProbability,
+  isDDGame,
+  SLATE_STAT_OPTIONS,
+  STAT_TO_VALUE,
+} from './slateMath';
 
-// Frontend mirror of the backend STAT_MAP — keyed by the same 16 canonical
-// labels we offer in the grid. Used to compute per-stat L10 averages so we
-// can hint the user toward a sensible line value.
-const STAT_TO_VALUE: Record<string, (g: PlayerGame) => number> = {
-  'Points': (g) => g.points,
-  'Rebounds': (g) => g.rebounds,
-  'Assists': (g) => g.assists,
-  'Pts+Rebs+Asts': (g) => g.points + g.rebounds + g.assists,
-  'Pts+Rebs': (g) => g.points + g.rebounds,
-  'Pts+Asts': (g) => g.points + g.assists,
-  'Rebs+Asts': (g) => g.rebounds + g.assists,
-  '3-PT Made': (g) => g.fg3m ?? 0,
-  'Steals': (g) => g.steals,
-  'Blocked Shots': (g) => g.blocks,
-  'Turnovers': (g) => g.turnovers,
-  'Blks+Stls': (g) => g.blocks + g.steals,
-  'FG Made': (g) => g.fgm ?? 0,
-  'Free Throws Made': (g) => g.ftm ?? 0,
-  'Personal Fouls': (g) => g.pf ?? 0,
-  // Double-double is a rate, not an avg — handled specially in the hint UI.
-  'Double-Double': (g) => {
-    let c = 0;
-    if (g.points >= 10) c++;
-    if (g.rebounds >= 10) c++;
-    if (g.assists >= 10) c++;
-    if (g.steals >= 10) c++;
-    if (g.blocks >= 10) c++;
-    return c >= 2 ? 1 : 0;
-  },
-};
-
-// Each slot is one player + one opponent. The user can enter a line for
-// any subset of the 16 canonical stats; we expand each non-empty entry
-// into its own ManualSlateLine on submit, so a single slot can produce
-// up to 16 cards in the result grid.
 type Slot = {
   id: string;
   player: Player | null;
@@ -58,30 +30,9 @@ type Slot = {
   lines: Record<string, string>;     // statLabel → line (string while editing)
 };
 
-const STAT_OPTIONS: string[] = [
-  'Points',
-  'Rebounds',
-  'Assists',
-  'Pts+Rebs+Asts',
-  'Pts+Rebs',
-  'Pts+Asts',
-  'Rebs+Asts',
-  '3-PT Made',
-  'Steals',
-  'Blocked Shots',
-  'Turnovers',
-  'Blks+Stls',
-  'FG Made',
-  'Free Throws Made',
-  'Personal Fouls',
-  'Double-Double',
-];
-
 // ESPN sometimes uses shorter franchise abbreviations than NBA stats.com
-// (e.g. "NY" instead of "NYK"). When matching a rail abbreviation back to
-// our Team list — which is keyed off the NBA stats.com canonical form —
-// fall back through this alias table. Without it, clicking PHI/MIN
-// silently no-ops because their opponents (NY, SA) don't resolve.
+// (e.g. "NY" instead of "NYK"). Without an alias, the rail-click handler
+// silently bails when the opponent doesn't resolve.
 const ESPN_TO_NBA_ABBR: Record<string, string> = {
   NY: 'NYK',
   SA: 'SAS',
@@ -103,12 +54,12 @@ type Props = {
   onResult: (response: SlateResponse) => void;
 };
 
-// Computed L10 stats for one player — keyed by stat label so the slot row
-// can read off averages without re-mapping.
+// L10 cache entry. We keep the raw gameLog around so we can compute both
+// per-stat averages AND live hit probabilities on the fly (including
+// dedup'd L10 + vs-opp blends when an opponent is set).
 type PlayerL10 = {
   loading: boolean;
-  averages: Record<string, number>; // statLabel → avg (or rate for Double-Double)
-  gamesAnalyzed: number;
+  gameLog: PlayerGame[];
 };
 
 export function SlateManualEntry({ onResult }: Props) {
@@ -117,11 +68,9 @@ export function SlateManualEntry({ onResult }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [todayGames, setTodayGames] = useState<EspnScoreboardGame[]>([]);
-  // When set, opens the roster picker modal for the chosen team. The
-  // matched opponent is what we pre-fill the new slot with.
-  const [rosterPick, setRosterPick] = useState<{ team: Team; opponent: Team } | null>(null);
-  // L10 stats cache — keyed by playerId. Lookups stay fast across slot
-  // re-renders, and switching opponent doesn't re-trigger a fetch.
+  // When set, opens the dual-team game-picker modal. We always pass BOTH
+  // sides of the matchup so the user can pick from either roster.
+  const [rosterPick, setRosterPick] = useState<{ home: Team; away: Team } | null>(null);
   const [l10Cache, setL10Cache] = useState<Record<number, PlayerL10>>({});
 
   useEffect(() => {
@@ -131,9 +80,10 @@ export function SlateManualEntry({ onResult }: Props) {
       .catch(() => setTodayGames([]));
   }, []);
 
-  // When any slot has a picked player whose L10 we haven't fetched yet,
-  // kick off a fetch. We mark loading=true synchronously to avoid double
-  // requests on rapid re-renders.
+  // Lazily fetch L10 game logs for any picked player we don't have yet.
+  // Mark loading=true synchronously to prevent double-fetches on rapid
+  // re-renders. Cached forever (per session) since L10 only changes
+  // overnight.
   useEffect(() => {
     const ids = Array.from(
       new Set(slots.map((s) => s.player?.id).filter((x): x is number => typeof x === 'number')),
@@ -143,30 +93,22 @@ export function SlateManualEntry({ onResult }: Props) {
     setL10Cache((prev) => {
       const next = { ...prev };
       for (const id of missing) {
-        if (!next[id]) next[id] = { loading: true, averages: {}, gamesAnalyzed: 0 };
+        if (!next[id]) next[id] = { loading: true, gameLog: [] };
       }
       return next;
     });
     for (const id of missing) {
-      // Stat choice doesn't matter — we only need gameLog. Pick 'points'.
       getPlayerLast10(id, 'points')
         .then((r) => {
-          const games = r.gameLog ?? [];
-          const averages: Record<string, number> = {};
-          for (const [label, getter] of Object.entries(STAT_TO_VALUE)) {
-            if (games.length === 0) continue;
-            const sum = games.reduce((a, g) => a + getter(g), 0);
-            averages[label] = sum / games.length;
-          }
           setL10Cache((prev) => ({
             ...prev,
-            [id]: { loading: false, averages, gamesAnalyzed: games.length },
+            [id]: { loading: false, gameLog: r.gameLog ?? [] },
           }));
         })
         .catch(() => {
           setL10Cache((prev) => ({
             ...prev,
-            [id]: { loading: false, averages: {}, gamesAnalyzed: 0 },
+            [id]: { loading: false, gameLog: [] },
           }));
         });
     }
@@ -177,18 +119,30 @@ export function SlateManualEntry({ onResult }: Props) {
     return teams.find((t) => t.abbreviation === canonical) ?? null;
   }
 
-  // Click a team in the today's-games rail → open the roster picker
-  // for that team. Pre-stash the matched opponent so when the user picks
-  // a player from the modal we can drop them into a fully-filled slot.
-  function openRosterFor(playerTeamAbbr: string, opponentAbbr: string) {
-    const team = teamByAbbr(playerTeamAbbr);
-    const opp = teamByAbbr(opponentAbbr);
-    if (team && opp) setRosterPick({ team, opponent: opp });
+  // Click a team in the today's-games rail. We open the dual-team
+  // picker AND immediately stamp the opponent on the first empty slot —
+  // even if the user closes the modal without picking, they keep the
+  // matchup context.
+  function openGameFor(homeAbbr: string, awayAbbr: string, clickedSide: 'home' | 'away') {
+    const home = teamByAbbr(homeAbbr);
+    const away = teamByAbbr(awayAbbr);
+    if (!home || !away) return;
+    setRosterPick({ home, away });
+    // Pre-stamp opponent on the first empty slot. If the user clicked the
+    // home team, their player is presumed home → opponent is away. Vice
+    // versa. (The modal lets them pick from either side anyway and will
+    // overwrite this when they do.)
+    const presumedOpp = clickedSide === 'home' ? away : home;
+    setSlots((prev) => {
+      const empty = prev.findIndex((s) => !s.player && Object.keys(s.lines).length === 0);
+      if (empty === -1) return prev;
+      return prev.map((s, i) => (i === empty ? { ...s, opponent: presumedOpp } : s));
+    });
   }
 
-  // Called when the user picks a player from the roster modal. Reuses
-  // an empty slot if there is one, otherwise appends a new slot.
-  function addSlotForPlayer(player: RosterPlayer, opponent: Team) {
+  // Modal callback — assigns picked player to the first empty slot (or
+  // appends), and overwrites opponent based on which side they picked.
+  function addSlotForPlayer(player: Player | RosterPlayer, opponent: Team) {
     setSlots((prev) => {
       const empty = prev.findIndex((s) => !s.player && Object.keys(s.lines).length === 0);
       if (empty !== -1) {
@@ -265,8 +219,9 @@ export function SlateManualEntry({ onResult }: Props) {
   return (
     <div className="manual-entry">
       <p className="muted">
-        Add up to {MAX_SLOTS} players. For each player, enter a line for any
-        stats you want graded — every non-empty line becomes its own card.
+        Add up to {MAX_SLOTS} players. Enter a line for any stats you want
+        graded — every non-empty line becomes its own card. Probabilities
+        update live as you type.
       </p>
 
       {todayGames.length > 0 && (
@@ -274,7 +229,7 @@ export function SlateManualEntry({ onResult }: Props) {
           <div className="today-rail-head">
             <span className="recents-title">Tonight's games</span>
             <span className="muted small">
-              Click a team to pick a player — opponent gets filled in for you.
+              Click a team to pick a player from either roster — opponent fills in automatically.
             </span>
           </div>
           <div className="today-rail-list">
@@ -284,8 +239,8 @@ export function SlateManualEntry({ onResult }: Props) {
                 <button
                   className="today-side"
                   type="button"
-                  onClick={() => openRosterFor(g.away.abbreviation, g.home.abbreviation)}
-                  title={`Pick a ${g.away.displayName} player (opponent: ${g.home.abbreviation})`}
+                  onClick={() => openGameFor(g.home.abbreviation, g.away.abbreviation, 'away')}
+                  title={`${g.away.displayName} @ ${g.home.displayName}`}
                 >
                   <TeamLogo abbr={g.away.abbreviation} name={g.away.displayName} size="md" />
                   <span className="today-side-abbr">{g.away.abbreviation}</span>
@@ -295,8 +250,8 @@ export function SlateManualEntry({ onResult }: Props) {
                 <button
                   className="today-side"
                   type="button"
-                  onClick={() => openRosterFor(g.home.abbreviation, g.away.abbreviation)}
-                  title={`Pick a ${g.home.displayName} player (opponent: ${g.away.abbreviation})`}
+                  onClick={() => openGameFor(g.home.abbreviation, g.away.abbreviation, 'home')}
+                  title={`${g.away.displayName} @ ${g.home.displayName}`}
                 >
                   <TeamLogo abbr={g.home.abbreviation} name={g.home.displayName} size="md" />
                   <span className="today-side-abbr">{g.home.abbreviation}</span>
@@ -347,9 +302,9 @@ export function SlateManualEntry({ onResult }: Props) {
 
       {rosterPick && (
         <TeamRosterModal
-          team={rosterPick.team}
-          opponent={rosterPick.opponent}
-          onPick={(player) => addSlotForPlayer(player, rosterPick.opponent)}
+          home={rosterPick.home}
+          away={rosterPick.away}
+          onPick={(player, opponent) => addSlotForPlayer(player, opponent)}
           onClose={() => setRosterPick(null)}
         />
       )}
@@ -357,8 +312,6 @@ export function SlateManualEntry({ onResult }: Props) {
   );
 }
 
-// One row in the manual-entry list. Self-contained: handles its own
-// player-search dropdown, opponent picker, and the per-stat line grid.
 function ManualSlotRow({
   index,
   slot,
@@ -416,6 +369,13 @@ function ManualSlotRow({
     setShowResults(false);
   }
 
+  // Pre-compute the blended sample once per render — every stat reads
+  // off it for both the hint avg and the live hit-prob. Keeps things
+  // cheap even with 16 stats × 10 slots = 160 reads.
+  const sample = l10 && l10.gameLog.length > 0
+    ? blendedSample(l10.gameLog, slot.opponent?.abbreviation ?? null)
+    : [];
+
   const filledLineCount = Object.values(slot.lines).filter((v) => parseFloat(v) > 0).length;
 
   return (
@@ -423,7 +383,6 @@ function ManualSlotRow({
       <div className="manual-slot-head">
         <div className="manual-slot-num">{index + 1}</div>
 
-        {/* Player picker */}
         <div className="manual-slot-player" ref={wrapRef}>
           {slot.player ? (
             <div className="manual-slot-picked">
@@ -459,7 +418,6 @@ function ManualSlotRow({
           )}
         </div>
 
-        {/* Opponent (optional but unlocks vs-opp blend) */}
         <select
           className="manual-slot-select"
           value={slot.opponent?.id ?? ''}
@@ -497,21 +455,43 @@ function ManualSlotRow({
         )}
       </div>
 
-      {/* Per-stat line grid — leave any cell blank to skip that stat. The
-          hint shows the player's L10 average; clicking it pre-fills the
-          input with floor(avg)+0.5, the typical PrizePicks-style line. */}
       <div className="manual-slot-grid">
-        {STAT_OPTIONS.map((stat) => {
-          const avg = l10?.averages[stat];
+        {SLATE_STAT_OPTIONS.map((stat) => {
           const isDD = stat === 'Double-Double';
-          const hintText = (() => {
-            if (!slot.player) return '';
-            if (l10?.loading) return '…';
-            if (avg === undefined) return '';
-            if (isDD) return `${Math.round(avg * 100)}%`;
-            return `L10 ${avg.toFixed(1)}`;
-          })();
+          const get = STAT_TO_VALUE[stat];
+          const values = sample.map(get);
+          const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : undefined;
+
+          // Hint chip text (L10/blended avg or DD rate)
+          let hintText = '';
+          if (slot.player) {
+            if (l10?.loading) hintText = '…';
+            else if (avg !== undefined) {
+              hintText = isDD ? `${Math.round(avg * 100)}%` : `avg ${avg.toFixed(1)}`;
+            }
+          }
           const suggested = avg === undefined || isDD ? null : Math.floor(avg) + 0.5;
+
+          // Live hit-prob — only for numeric stats with a parseable line
+          const rawLine = slot.lines[stat] ?? '';
+          const lineNum = parseFloat(rawLine);
+          let live: { pct: number; lean: 'OVER' | 'UNDER'; tone: 'hot' | 'mid' | 'cold' } | null = null;
+          if (!isDD && Number.isFinite(lineNum) && lineNum > 0 && values.length > 0) {
+            const hp = computeHitProbability(values, lineNum);
+            const tone = hp.mightHitPct >= 70 ? 'hot' : hp.mightHitPct >= 55 ? 'mid' : 'cold';
+            live = { pct: hp.mightHitPct, lean: hp.lean, tone };
+          } else if (isDD && values.length > 0) {
+            // DD has no line; surface the rate inline so the user
+            // can decide if it's worth a card.
+            const ddRate = values.filter((v) => v > 0).length / values.length;
+            const pct = Math.round(ddRate * 100);
+            const tone = pct >= 50 ? 'hot' : pct >= 30 ? 'mid' : 'cold';
+            // Show only when the user has 'opted in' by entering anything in the cell.
+            if (rawLine.trim() !== '' || slot.lines[stat] !== undefined) {
+              live = { pct, lean: 'OVER', tone };
+            }
+          }
+
           return (
             <label key={stat} className="manual-stat-cell">
               <div className="manual-stat-info">
@@ -524,24 +504,49 @@ function ManualSlotRow({
                     disabled={suggested === null}
                     title={suggested !== null ? `Use ${suggested}` : 'Reference only'}
                   >
-                    {hintText}
+                    {slot.opponent && sample.length > 10 ? `${hintText} ▲` : hintText}
                   </button>
                 )}
               </div>
-              <input
-                className="manual-stat-input"
-                type="number"
-                inputMode="decimal"
-                step="0.5"
-                placeholder="—"
-                value={slot.lines[stat] ?? ''}
-                onChange={(e) => onLineChange(stat, e.target.value)}
-                disabled={!slot.player}
-              />
+              <div className="manual-stat-input-wrap">
+                <input
+                  className="manual-stat-input"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.5"
+                  placeholder="—"
+                  value={slot.lines[stat] ?? ''}
+                  onChange={(e) => onLineChange(stat, e.target.value)}
+                  disabled={!slot.player}
+                />
+                {live && (
+                  <span className={`manual-stat-live ${live.tone}`}>
+                    {live.lean === 'OVER' ? '↑' : '↓'} {live.pct}%
+                  </span>
+                )}
+              </div>
             </label>
           );
         })}
       </div>
+
+      {/* Per-player meta strip — only shown once a player is set. */}
+      {slot.player && l10 && !l10.loading && (
+        <div className="manual-slot-meta muted small">
+          <span>L10 {l10.gameLog.slice(0, 10).length} games</span>
+          {slot.opponent && (
+            <span>
+              · vs {slot.opponent.abbreviation}{' '}
+              {l10.gameLog.filter((g) => g.opponentAbbr === slot.opponent!.abbreviation).length}{' '}
+              this season (blended into the live %)
+            </span>
+          )}
+          <span>· DD rate {Math.round(
+            l10.gameLog.slice(0, 10).filter(isDDGame).length /
+              Math.max(1, l10.gameLog.slice(0, 10).length) * 100,
+          )}%</span>
+        </div>
+      )}
     </div>
   );
 }

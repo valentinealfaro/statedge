@@ -1673,6 +1673,116 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+.manual-stat-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.manual-stat-live {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.manual-stat-live.hot  { background: #1f3a23; color: #6dd07a; }
+.manual-stat-live.mid  { background: #2a2f3a; color: #c8cfdc; }
+.manual-stat-live.cold { background: #3a1f23; color: #ef6a6a; }
+.manual-slot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 4px 0;
+  border-top: 1px dashed #1f2330;
+}
+
+/* Dual-team game-picker modal — opens from the today's-games rail. */
+.game-modal {
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  border-radius: 14px;
+  width: min(880px, 96vw);
+  max-height: 88vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px #00000099;
+}
+.game-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #1f2330;
+}
+.game-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.game-modal-vs {
+  color: #8a93a6;
+  font-weight: 700;
+}
+.game-modal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.game-modal-matchup {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e5e9f0;
+}
+.game-rosters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: #1f2330;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+.game-roster-col {
+  background: #14171f;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.game-roster-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1f2330;
+  background: #0f1218;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.game-roster-col-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: #c8cfdc;
+}
+.game-roster-col .roster-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px;
+}
+.game-fallback {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 720px) {
+  .game-rosters {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
 .manual-slot-num {
   width: 24px;
   height: 24px;
