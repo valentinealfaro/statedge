@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getSlateAuto, type SlateResolvedLine } from './api';
 import { PlayerAvatar } from './Avatar';
+import { edgeScore } from './edgeScore';
 import { Skeleton } from './Skeleton';
 
-// Top 6 strongest picks from tonight's PrizePicks slate, surfaced on
+// Top 6 best-edge picks from tonight's PrizePicks slate, surfaced on
 // Home so first-time visitors can find the killer feature without
 // hunting for it. Hidden when auto-pull fails so we don't show a
 // dead section on Cloudflare-blocked days — /slate itself has the
@@ -17,14 +18,17 @@ export function SlateTeaser() {
   useEffect(() => {
     getSlateAuto()
       .then((d) => {
-        // Only show STRONG picks (>=75% might-hit), ignore OUT players,
-        // top 6.
-        const strong = d.lines
-          .filter((l) => (l.hitProbability?.mightHitPct ?? 0) >= 75)
+        // Sort by composite edge score (confidence + line-gap +
+        // vs-opp + trend - injury penalty), drop OUT players, top 6.
+        const ranked = d.lines
           .filter((l) => l.injury?.status !== 'Out')
-          .slice(0, 6);
-        if (strong.length === 0) setHidden(true);
-        else setLines(strong);
+          .map((l) => ({ line: l, edge: edgeScore(l) }))
+          .filter((r) => r.edge >= 65)
+          .sort((a, b) => b.edge - a.edge)
+          .slice(0, 6)
+          .map((r) => r.line);
+        if (ranked.length === 0) setHidden(true);
+        else setLines(ranked);
       })
       .catch(() => setHidden(true))
       .finally(() => setLoading(false));
@@ -35,7 +39,7 @@ export function SlateTeaser() {
   return (
     <section className="trending">
       <h2>
-        Tonight's strongest picks
+        Tonight's best edges
         <Link to="/slate" className="footer-link" style={{ marginLeft: 12, fontSize: 14 }}>
           Full slate →
         </Link>
@@ -52,15 +56,15 @@ export function SlateTeaser() {
             ))
           : lines.map((l) => {
               const hit = l.hitProbability;
-              const pct = hit?.mightHitPct ?? 0;
               const lean = hit?.lean ?? 'OVER';
               const cls = lean === 'OVER' ? 'teaser-badge over' : 'teaser-badge under';
+              const edge = edgeScore(l);
               return (
                 <Link
                   key={`${l.playerId}-${l.statKey}-${l.line}`}
                   className="trending-card"
                   to={`/slate?legs=${l.playerId}-${l.statKey}-${l.line}`}
-                  title="See the full slate"
+                  title="Add this to a parlay on the slate page"
                 >
                   <PlayerAvatar playerId={l.playerId} name={l.playerName} size="lg" />
                   <div className="trending-name">{l.playerName}</div>
@@ -68,7 +72,7 @@ export function SlateTeaser() {
                     {l.team ?? '—'} · {l.statLabel} {l.line}
                   </div>
                   <div className={cls}>
-                    {pct}% {lean}
+                    ⚡ {edge} · {lean}
                   </div>
                 </Link>
               );
