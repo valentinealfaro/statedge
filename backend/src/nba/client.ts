@@ -171,18 +171,21 @@ export type PlayerGame = {
 const gameLogCache = new Map<string, { at: number; games: PlayerGame[] }>();
 const GAMELOG_TTL = 60 * 60 * 1000; // 1 hour
 
+export type SeasonType = 'Regular Season' | 'Playoffs';
+
 export async function getPlayerGameLog(
   playerId: number,
   season: string = currentSeason(),
+  seasonType: SeasonType = 'Regular Season',
 ): Promise<PlayerGame[]> {
-  const key = `${playerId}:${season}`;
+  const key = `${playerId}:${season}:${seasonType}`;
   const hit = gameLogCache.get(key);
   if (hit && Date.now() - hit.at < GAMELOG_TTL) return hit.games;
 
   const data = await fetchStats('playergamelog', {
     PlayerID: String(playerId),
     Season: season,
-    SeasonType: 'Regular Season',
+    SeasonType: seasonType,
   });
   const set = data.resultSets.find((r) => r.name === 'PlayerGameLog');
   if (!set) throw new Error('PlayerGameLog result set missing');
@@ -262,15 +265,16 @@ const teamLogCache = new Map<string, { at: number; games: TeamGame[] }>();
 export async function getTeamGameLog(
   teamId: number,
   season: string = currentSeason(),
+  seasonType: SeasonType = 'Regular Season',
 ): Promise<TeamGame[]> {
-  const key = `${teamId}:${season}`;
+  const key = `${teamId}:${season}:${seasonType}`;
   const hit = teamLogCache.get(key);
   if (hit && Date.now() - hit.at < GAMELOG_TTL) return hit.games;
 
   const data = await fetchStats('teamgamelog', {
     TeamID: String(teamId),
     Season: season,
-    SeasonType: 'Regular Season',
+    SeasonType: seasonType,
   });
   const set = data.resultSets.find((r) => r.name === 'TeamGameLog');
   if (!set) throw new Error('TeamGameLog result set missing');
