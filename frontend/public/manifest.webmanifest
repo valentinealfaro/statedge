@@ -1,0 +1,19 @@
+{
+  "name": "StatEdge — NBA stats comparison",
+  "short_name": "StatEdge",
+  "description": "Compare NBA players and teams. Trends, consistency, last-10 game logs, and prop-line hit probability.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
