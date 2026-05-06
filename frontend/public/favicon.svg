@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Brand mark: blue rounded square + stylised "SE" wordmark.
+       Colors mirror the app palette (#0b0d12 bg, #5b8def primary,
+       #6ee7a4 secondary). -->
+  <rect width="64" height="64" rx="14" fill="#0b0d12"/>
+  <rect x="6" y="6" width="52" height="52" rx="11" fill="none" stroke="#1f2330" stroke-width="2"/>
+  <!-- "S" -->
+  <path d="M22 19 Q14 19 14 26 Q14 32 22 32 L26 32 Q32 32 32 38 Q32 45 24 45 L14 45"
+        fill="none" stroke="#5b8def" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- accent dot -->
+  <circle cx="50" cy="46" r="4" fill="#6ee7a4"/>
+</svg>
