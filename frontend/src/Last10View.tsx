@@ -138,7 +138,63 @@ export function Last10View({ player }: Props) {
       {data && data.selectedStat !== 'double_double' && (
         <NumericStatView data={data} />
       )}
+
+      {data && data.byOpponent && data.byOpponent.length > 0 && (
+        <ByOpponentView
+          rows={data.byOpponent}
+          label={data.label}
+          isDD={data.selectedStat === 'double_double'}
+        />
+      )}
     </div>
+  );
+}
+
+function ByOpponentView({
+  rows,
+  label,
+  isDD,
+}: {
+  rows: NonNullable<Last10Response['byOpponent']>;
+  label: string;
+  isDD: boolean;
+}) {
+  return (
+    <>
+      <h3>{label} by opponent (this season)</h3>
+      <p className="muted small">
+        Sorted high to low. Small samples (1–4 games each) but useful for
+        spotting matchups they feast on or get held by.
+      </p>
+      <div className="games-scroll">
+        <table className="games">
+          <thead>
+            <tr>
+              <th>Opp</th>
+              <th>Games</th>
+              <th>{isDD ? 'DD rate' : 'Avg'}</th>
+              <th>High</th>
+              <th>Low</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.opponentAbbr}>
+                <td><strong>{r.opponentAbbr}</strong></td>
+                <td>{r.gamesPlayed}</td>
+                <td>
+                  <strong>
+                    {isDD ? `${Math.round(r.avg * 100)}%` : r.avg.toFixed(1)}
+                  </strong>
+                </td>
+                <td>{isDD ? (r.high ? 'Yes' : 'No') : r.high}</td>
+                <td>{isDD ? (r.low ? 'Yes' : 'No') : r.low}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

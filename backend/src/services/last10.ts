@@ -173,3 +173,54 @@ export function buildLast10Report(
 function round1(x: number): number {
   return Math.round(x * 10) / 10;
 }
+
+export type ByOpponentRow = {
+  opponentAbbr: string;
+  gamesPlayed: number;
+  avg: number;          // for double_double, this is rate (0-1)
+  high: number;
+  low: number;
+};
+
+// Aggregates a player's season game log by opponent for the given stat.
+// Used by Last10View to surface who they feast on / get held by.
+// Sorted high-avg-first; opponents with 0 games are not included.
+export function buildByOpponentBreakdown(
+  games: PlayerGame[],
+  selectedStat: Last10StatId,
+): ByOpponentRow[] {
+  if (games.length === 0) return [];
+
+  const buckets = new Map<string, PlayerGame[]>();
+  for (const g of games) {
+    if (!g.opponentAbbr) continue;
+    const arr = buckets.get(g.opponentAbbr) ?? [];
+    arr.push(g);
+    buckets.set(g.opponentAbbr, arr);
+  }
+
+  const isDD = selectedStat === 'double_double';
+  const get = isDD ? null : STAT_MAP[selectedStat];
+
+  const rows: ByOpponentRow[] = [];
+  for (const [opponentAbbr, list] of buckets) {
+    if (list.length === 0) continue;
+    let values: number[];
+    if (isDD) {
+      values = list.map((g) => (isDoubleDoubleGame(g) ? 1 : 0));
+    } else {
+      values = list.map(get!);
+    }
+    const sum = values.reduce((a, b) => a + b, 0);
+    rows.push({
+      opponentAbbr,
+      gamesPlayed: list.length,
+      avg: round1(sum / list.length),
+      high: Math.max(...values),
+      low: Math.min(...values),
+    });
+  }
+
+  rows.sort((a, b) => b.avg - a.avg || b.gamesPlayed - a.gamesPlayed);
+  return rows;
+}

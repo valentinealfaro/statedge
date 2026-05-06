@@ -269,10 +269,19 @@ export type Last10DoubleDoubleReport = {
   gameLog: PlayerGame[];
 };
 
+export type ByOpponentRow = {
+  opponentAbbr: string;
+  gamesPlayed: number;
+  avg: number;
+  high: number;
+  low: number;
+};
+
 export type Last10Response = (Last10NumericReport | Last10DoubleDoubleReport) & {
   playerId: number;
   availableStats: Last10StatId[];
   labels: Record<Last10StatId, string>;
+  byOpponent?: ByOpponentRow[];
 };
 
 export type TeamGame = {

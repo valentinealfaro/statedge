@@ -13,6 +13,7 @@ import {
   isDbConfigured,
 } from '../db.js';
 import {
+  buildByOpponentBreakdown,
   buildLast10Report,
   LAST10_LABELS,
   LAST10_STATS,
@@ -91,12 +92,18 @@ playerRouter.get('/:playerId/last-10', async (req, res) => {
       hitProbability = computeHitProbability(report.values, line);
     }
 
+    // Season-wide breakdown by opponent for the selected stat. Sample
+    // per opponent is small (1-4 games typical), but useful for finding
+    // who the player feasts on / gets held by.
+    const byOpponent = buildByOpponentBreakdown(games, selectedStat);
+
     res.json({
       playerId,
       availableStats: LAST10_STATS,
       labels: LAST10_LABELS,
       ...report,
       ...(hitProbability != null ? { hitProbability, line } : {}),
+      byOpponent,
     });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
