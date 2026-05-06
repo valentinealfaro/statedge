@@ -11,6 +11,7 @@ import { TeamLogo } from './Avatar';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
+import { TeamLast10Panel } from './TeamLast10Panel';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
 
@@ -132,6 +133,15 @@ export function TeamVsTeamView({ a, b }: Props) {
               </tr>
             </tbody>
           </table>
+
+          <TeamLast10Panel
+            teamId={a.id}
+            heading={`${a.fullName} · last 10 games (all opponents)`}
+          />
+          <TeamLast10Panel
+            teamId={b.id}
+            heading={`${b.fullName} · last 10 games (all opponents)`}
+          />
 
           <AiSummary
             payload={{

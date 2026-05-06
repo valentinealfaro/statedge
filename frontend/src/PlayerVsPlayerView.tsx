@@ -8,6 +8,7 @@ import {
 } from './api';
 import { AiSummary } from './AiSummary';
 import { PlayerAvatar } from './Avatar';
+import { Last10Panel } from './Last10Panel';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
@@ -128,6 +129,15 @@ export function PlayerVsPlayerView({ a, b }: Props) {
               </tr>
             </tbody>
           </table>
+
+          <Last10Panel
+            playerId={a.id}
+            heading={`${a.fullName} · last 10 games (all opponents)`}
+          />
+          <Last10Panel
+            playerId={b.id}
+            heading={`${b.fullName} · last 10 games (all opponents)`}
+          />
 
           <AiSummary
             payload={{

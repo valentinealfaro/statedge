@@ -275,6 +275,37 @@ export type Last10Response = (Last10NumericReport | Last10DoubleDoubleReport) & 
   labels: Record<Last10StatId, string>;
 };
 
+export type TeamGame = {
+  gameId: string;
+  date: string;
+  matchup: string;
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
+  fgPct: number;
+  fg3Pct: number;
+  ftPct: number;
+  pf: number;
+};
+
+export type TeamLast10Response = {
+  team: Team;
+  gamesAnalyzed: number;
+  gameLog: TeamGame[];
+};
+
 export async function getPlayerLast10(
   playerId: number,
   selectedStat: Last10StatId,
@@ -284,6 +315,12 @@ export async function getPlayerLast10(
   );
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as Last10Response;
+}
+
+export async function getTeamLast10(teamId: number): Promise<TeamLast10Response> {
+  const res = await fetch(`${API_BASE}/api/teams/${teamId}/last-10`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
+  return (await res.json()) as TeamLast10Response;
 }
 
 export async function getDataFreshness(): Promise<DataFreshness> {

@@ -22,6 +22,7 @@ import { AdvancedCards } from './AdvancedCards';
 import { AiSummary } from './AiSummary';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { HitBadge } from './HitBadge';
+import { Last10Panel } from './Last10Panel';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
@@ -375,6 +376,11 @@ export function ComparisonView({ player, team }: Props) {
               </tbody>
             </table>
           </div>
+
+          <Last10Panel
+            playerId={player.id}
+            heading={`${player.fullName} · last 10 games (all opponents)`}
+          />
 
           <AiSummary
             payload={{

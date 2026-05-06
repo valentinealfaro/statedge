@@ -803,3 +803,42 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   text-overflow: ellipsis;
 }
 
+/* --- Embedded "Last 10 games" panel (player or team) --- */
+.last10-panel {
+  margin-top: 28px;
+  padding: 18px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 12px;
+}
+.last10-panel h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  color: #c8cfdc;
+}
+.last10-avgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.last10-avg {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #0b0d12;
+  border: 1px solid #1f2330;
+  text-align: center;
+}
+.last10-avg.hi { border-color: #5b8def; }
+.last10-avg-k {
+  font-size: 10px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.last10-avg-v {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
