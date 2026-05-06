@@ -17,6 +17,7 @@ import {
   LAST10_STATS,
   type Last10StatId,
 } from '../services/last10.js';
+import { computeHitProbability } from '../services/comparisonEngine.js';
 
 export const playerRouter: Router = Router();
 
@@ -51,14 +52,30 @@ playerRouter.get('/:playerId/last-10', async (req, res) => {
   }
   const selectedStat = rawStat as Last10StatId;
 
+  // Optional ?line=14.5 — returns hit-probability when the selected stat is
+  // numeric (double_double has no line — booleans don't compare against a line).
+  const lineRaw = req.query.line;
+  const line = lineRaw == null ? null : Number(lineRaw);
+  if (line != null && !Number.isFinite(line)) {
+    res.status(400).json({ error: 'line must be a number' });
+    return;
+  }
+
   try {
     const games = await fetchRecentGames(playerId);
     const report = buildLast10Report(games, selectedStat);
+
+    let hitProbability = null;
+    if (line != null && report.selectedStat !== 'double_double') {
+      hitProbability = computeHitProbability(report.values, line);
+    }
+
     res.json({
       playerId,
       availableStats: LAST10_STATS,
       labels: LAST10_LABELS,
       ...report,
+      ...(hitProbability != null ? { hitProbability, line } : {}),
     });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {

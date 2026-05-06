@@ -5,6 +5,7 @@ import {
   calculatePlayerVsTeam,
   calculatePlayerVsPlayer,
   calculateTeamVsTeam,
+  computeHitProbability,
 } from './comparisonEngine.js';
 import type { PlayerGame, TeamGame } from '../nba/client.js';
 
@@ -137,5 +138,31 @@ describe('calculateTeamVsTeam', () => {
     expect(r.a.summaries.points.avg).toBe(115);
     expect(r.b.summaries.points.avg).toBe(95);
     expect(r.delta.points).toBe(20);
+  });
+});
+
+describe('computeHitProbability', () => {
+  test('blend matches reference example (spec acceptance criterion)', () => {
+    const r = computeHitProbability([20, 21, 28, 19, 17, 13, 17, 18, 26, 20], 14.5);
+    expect(r.lean).toBe('OVER');
+    expect(r.mightHitPct).toBe(90);
+    expect(r.hitOver).toBeCloseTo(0.9, 3);
+  });
+
+  test('extreme line above all values leans UNDER 100%', () => {
+    const r = computeHitProbability([10, 12, 11, 9, 13], 100);
+    expect(r.lean).toBe('UNDER');
+    expect(r.mightHitPct).toBeGreaterThanOrEqual(95);
+  });
+
+  test('identical values do not divide by zero', () => {
+    const r = computeHitProbability([20, 20, 20, 20, 20], 14.5);
+    expect(r.lean).toBe('OVER');
+    expect(Number.isFinite(r.pOver)).toBe(true);
+  });
+
+  test('empty input returns coin-flip', () => {
+    const r = computeHitProbability([], 10);
+    expect(r.mightHitPct).toBe(50);
   });
 });

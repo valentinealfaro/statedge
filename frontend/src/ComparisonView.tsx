@@ -11,6 +11,7 @@ import {
 import {
   comparePlayerVsTeam,
   type CompareResponse,
+  type HitProbability,
   type Player,
   type SeasonRange,
   type SelectedStat,
@@ -19,8 +20,14 @@ import {
 } from './api';
 import { AdvancedCards } from './AdvancedCards';
 import { AiSummary } from './AiSummary';
+import { HitBadge } from './HitBadge';
 import { SeasonTabs } from './SeasonTabs';
 import { STAT_LABELS, StatPicker } from './StatPicker';
+
+// Stat tiles for which we offer a "Line" input + hit-probability badge.
+// (Minutes / FG% / 3PT% don't map cleanly to traditional prop lines.)
+const HIT_STATS = ['points', 'rebounds', 'assists'] as const;
+type HitStat = typeof HIT_STATS[number];
 
 type Props = {
   player: Player;
@@ -59,6 +66,15 @@ export function ComparisonView({ player, team }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Per-tile prop line inputs and the resulting hit-probability per stat.
+  // We fire one debounced refetch per stat with a numeric line set.
+  const [lines, setLines] = useState<Record<HitStat, string>>({
+    points: '', rebounds: '', assists: '',
+  });
+  const [hits, setHits] = useState<Record<HitStat, HitProbability | null>>({
+    points: null, rebounds: null, assists: null,
+  });
+
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -67,6 +83,30 @@ export function ComparisonView({ player, team }: Props) {
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, [player.id, team.id, range, seasons, selectedStat]);
+
+  // Whenever a line input changes, refetch hit probability for stats that
+  // have a valid number entered. Debounced so each keystroke doesn't fire.
+  useEffect(() => {
+    const id = setTimeout(async () => {
+      for (const k of HIT_STATS) {
+        const v = parseFloat(lines[k]);
+        if (!Number.isFinite(v)) {
+          setHits((h) => ({ ...h, [k]: null }));
+          continue;
+        }
+        try {
+          const r = await comparePlayerVsTeam(
+            player.id, team.id, range, seasons, selectedStat,
+            { line: v, statKey: k },
+          );
+          setHits((h) => ({ ...h, [k]: r.hitProbability ?? null }));
+        } catch {
+          setHits((h) => ({ ...h, [k]: null }));
+        }
+      }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [lines, player.id, team.id, range, seasons, selectedStat]);
 
   return (
     <div className="comparison">
@@ -139,6 +179,8 @@ export function ComparisonView({ player, team }: Props) {
                 const seasonAvg = data.report.seasonAverage[k];
                 const delta = data.report.delta[k];
                 const isPct = k === 'fgPct' || k === 'fg3Pct';
+                const isHitStat = (HIT_STATS as readonly string[]).includes(k);
+                const hk = k as HitStat;
                 return (
                   <div key={k} className="card">
                     <div className="k">{PER_STAT_LABELS[k]}</div>
@@ -152,6 +194,23 @@ export function ComparisonView({ player, team }: Props) {
                         {isPct ? `${(delta * 100).toFixed(1)}%` : delta}
                       </span>
                     </div>
+                    {isHitStat && (
+                      <div className="line-input-row">
+                        <label className="line-label">Line</label>
+                        <input
+                          className="line-input"
+                          type="number"
+                          inputMode="decimal"
+                          step="0.5"
+                          placeholder="e.g. 24.5"
+                          value={lines[hk]}
+                          onChange={(e) => setLines((l) => ({ ...l, [hk]: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                    {isHitStat && hits[hk] && (
+                      <HitBadge hit={hits[hk]!} gamesAnalyzed={10} />
+                    )}
                     <div className="row">
                       <span>Consistency</span>
                       <span>{s.consistency.toFixed(0)}/100</span>

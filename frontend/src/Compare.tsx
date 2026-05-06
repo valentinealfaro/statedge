@@ -6,6 +6,7 @@ import { ComparisonView } from './ComparisonView';
 import { PlayerVsPlayerView } from './PlayerVsPlayerView';
 import { TeamVsTeamView } from './TeamVsTeamView';
 import { Last10View } from './Last10View';
+import { FreshnessBanner } from './FreshnessBanner';
 import type { Player, Team } from './api';
 
 type Mode = 'pvt' | 'pvp' | 'tvt' | 'last10';
@@ -46,6 +47,7 @@ export function Compare() {
     <div className="app">
       <Link to="/" className="brand">StatEdge</Link>
       <p className="tag">NBA stats comparison</p>
+      <FreshnessBanner />
 
       <div className="mode-tabs">
         {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (

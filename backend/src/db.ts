@@ -154,3 +154,23 @@ export async function listActivePlayerIdsFromDb(): Promise<number[]> {
   );
   return rows.map((r) => r.id);
 }
+
+// Most recent NBA game date in our cache. Computed by scanning team game-log
+// JSONB rows (each team has up to 82 games × 3 seasons; a few thousand rows
+// total — fine for an unindexed scan, runs in <100ms on Neon).
+export async function getDataFreshness(): Promise<{
+  lastGameDate: string | null;
+  daysStale: number | null;
+}> {
+  const { rows } = await getPool().query<{ last_game_date: string | null }>(
+    `SELECT MAX((g->>'date')::date)::text AS last_game_date
+       FROM team_game_logs, jsonb_array_elements(games) g`,
+  );
+  const last = rows[0]?.last_game_date ?? null;
+  if (!last) return { lastGameDate: null, daysStale: null };
+
+  const lastMs = new Date(last + 'T00:00:00Z').getTime();
+  const todayUtc = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
+  const daysStale = Math.max(0, Math.round((todayUtc - lastMs) / (1000 * 60 * 60 * 24)));
+  return { lastGameDate: last, daysStale };
+}

@@ -20,11 +20,13 @@ import {
   calculatePlayerVsTeam,
   calculatePlayerVsPlayer,
   calculateTeamVsTeam,
+  computeHitProbability,
   type PlayerVsTeamReport,
 } from '../services/comparisonEngine.js';
 import { calculateComboStats } from '../services/statCombos.js';
 import {
   calculateAdvancedStats,
+  getStatValue,
   SELECTED_STATS,
   type SelectedStat,
 } from '../services/advancedStats.js';
@@ -115,11 +117,36 @@ compareRouter.get('/player-vs-team', async (req, res) => {
     ? (rawStat as SelectedStat)
     : 'PRA';
 
+  // Optional hit-probability inputs. `statKey` defaults to whatever the user
+  // already picked for the advanced section if present — otherwise points.
+  // `line` is the prop line they want a "might hit" reading for. Both must
+  // parse for hitProbability to be returned. Computed over the player's last
+  // 10 season games (regardless of opponent), which gives a stable signal —
+  // vs-team subsets are typically too small (3-4 games) to be reliable.
+  const lineRaw = req.query.line;
+  const line = lineRaw == null ? null : Number(lineRaw);
+  if (line != null && !Number.isFinite(line)) {
+    res.status(400).json({ error: 'line must be a number' });
+    return;
+  }
+  const statKeyRaw = req.query.statKey;
+  const hitStatKey: SelectedStat | null =
+    statKeyRaw && (SELECTED_STATS as readonly string[]).includes(String(statKeyRaw))
+      ? (String(statKeyRaw) as SelectedStat)
+      : null;
+
   try {
     const seasonGames = await fetchPlayerGameLog(playerId, seasonRange);
     const report = calculatePlayerVsTeam(seasonGames, team.abbreviation, { range, playerId, teamId });
     const combos = calculateComboStats(report.gamesAgainstTeam);
     const advanced = calculateAdvancedStats(report.gamesAgainstTeam, seasonGames, selectedStat);
+
+    let hitProbability = null;
+    if (line != null && hitStatKey) {
+      const last10Values = seasonGames.slice(0, 10).map(getStatValue(hitStatKey));
+      hitProbability = computeHitProbability(last10Values, line);
+    }
+
     res.json({
       team,
       seasons: seasonsFor(seasonRange),
@@ -128,6 +155,7 @@ compareRouter.get('/player-vs-team', async (req, res) => {
       combos,
       advanced,
       report,
+      ...(hitProbability ? { hitProbability, line, statKey: hitStatKey } : {}),
     });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {

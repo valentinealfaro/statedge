@@ -182,3 +182,78 @@ function round(x: number, places: number): number {
   const f = 10 ** places;
   return Math.round(x * f) / f;
 }
+
+// ---------------------------------------------------------------------------
+// Hit-probability ("might hit %")
+//
+// IMPORTANT: this is a *historical/distributional* estimate, not a prediction.
+// It answers "in the player's recent sample, what fraction of those games
+// would have hit this line?" — blended with a Gaussian-CDF estimate to soften
+// small-sample extremes (e.g. 10/10 hit rate over 10 games).
+//
+// It does NOT account for tonight's matchup, foul trouble, minutes
+// restrictions, rest days, injury news, or pace. Treat it as a screen, not
+// a recommendation. Future-us: do not promote this into a "prediction model"
+// without explicitly modelling the missing context above.
+// ---------------------------------------------------------------------------
+
+export type HitProbability = {
+  hitOver: number;     // fraction of games strictly above the line, 0-1
+  hitUnder: number;    // fraction strictly below
+  pOver: number;       // normal-CDF probability above, 0-1
+  pUnder: number;      // 1 - pOver
+  mightHitPct: number; // 0-100, the larger of the two blended sides
+  lean: 'OVER' | 'UNDER';
+};
+
+export function computeHitProbability(values: number[], line: number): HitProbability {
+  if (values.length === 0) {
+    return { hitOver: 0, hitUnder: 0, pOver: 0.5, pUnder: 0.5, mightHitPct: 50, lean: 'OVER' };
+  }
+
+  const hitOver = values.filter((v) => v > line).length / values.length;
+  const hitUnder = values.filter((v) => v < line).length / values.length;
+
+  const m = mean(values);
+  const sd = popStdDev(values, m);
+  const sdSafe = Math.max(sd, 0.5); // floor avoids divide-by-zero on identical values
+  const z = (line - m) / sdSafe;
+  const pOver = 1 - normalCdf(z);
+  const pUnder = 1 - pOver;
+
+  const overBlend = (hitOver + pOver) / 2;
+  const underBlend = (hitUnder + pUnder) / 2;
+  const lean: 'OVER' | 'UNDER' = overBlend >= underBlend ? 'OVER' : 'UNDER';
+  const mightHitPct = Math.round(100 * Math.max(overBlend, underBlend));
+
+  return {
+    hitOver: round(hitOver, 4),
+    hitUnder: round(hitUnder, 4),
+    pOver: round(pOver, 4),
+    pUnder: round(pUnder, 4),
+    mightHitPct,
+    lean,
+  };
+}
+
+function popStdDev(xs: number[], m: number): number {
+  if (xs.length === 0) return 0;
+  const v = xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length;
+  return Math.sqrt(v);
+}
+
+// Standard normal CDF via Abramowitz & Stegun 7.1.26 erf approximation.
+// Max error ~1.5e-7 — plenty for a UI percentage.
+function normalCdf(x: number): number {
+  const a1 =  0.254829592;
+  const a2 = -0.284496736;
+  const a3 =  1.421413741;
+  const a4 = -1.453152027;
+  const a5 =  1.061405429;
+  const p  =  0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x) / Math.SQRT2;
+  const t = 1.0 / (1.0 + p * ax);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
+  return 0.5 * (1.0 + sign * y);
+}

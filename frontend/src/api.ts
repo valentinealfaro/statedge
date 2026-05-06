@@ -65,6 +65,21 @@ export type SelectedStat =
   | 'points' | 'rebounds' | 'assists'
   | 'PRA' | 'PR' | 'PA' | 'RA' | 'STOCKS';
 
+export type HitProbability = {
+  hitOver: number;
+  hitUnder: number;
+  pOver: number;
+  pUnder: number;
+  mightHitPct: number;
+  lean: 'OVER' | 'UNDER';
+};
+
+export type DataFreshness = {
+  lastGameDate: string | null;
+  daysStale: number | null;
+  source?: string;
+};
+
 export type AdvancedStats = {
   selectedStat: SelectedStat;
   gamesAnalyzed: number;
@@ -101,6 +116,9 @@ export type CompareResponse = {
   gamesAnalyzed: number;
   combos: Record<ComboKey, number>;
   advanced: AdvancedStats;
+  hitProbability?: HitProbability;
+  line?: number;
+  statKey?: SelectedStat;
   report: {
     playerId: number;
     teamId: number;
@@ -133,10 +151,20 @@ export async function comparePlayerVsTeam(
   range: 'last5' | 'last10' | 'last20' | 'season',
   seasons: SeasonRange = 'current',
   selectedStat: SelectedStat = 'PRA',
+  hitLine?: { line: number; statKey: SelectedStat },
 ): Promise<CompareResponse> {
-  const res = await fetch(
-    `${API_BASE}/api/compare/player-vs-team?playerId=${playerId}&teamId=${teamId}&range=${range}&seasons=${seasons}&selectedStat=${selectedStat}`,
-  );
+  const params = new URLSearchParams({
+    playerId: String(playerId),
+    teamId: String(teamId),
+    range,
+    seasons,
+    selectedStat,
+  });
+  if (hitLine) {
+    params.set('line', String(hitLine.line));
+    params.set('statKey', hitLine.statKey);
+  }
+  const res = await fetch(`${API_BASE}/api/compare/player-vs-team?${params.toString()}`);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`HTTP ${res.status} ${body}`);
@@ -249,6 +277,12 @@ export async function getPlayerLast10(
   );
   if (!res.ok) throw new Error(`HTTP ${res.status} ${await res.text().catch(() => '')}`);
   return (await res.json()) as Last10Response;
+}
+
+export async function getDataFreshness(): Promise<DataFreshness> {
+  const res = await fetch(`${API_BASE}/api/data-freshness`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as DataFreshness;
 }
 
 export async function getAiSummary(payload: unknown): Promise<{ summary: string }> {

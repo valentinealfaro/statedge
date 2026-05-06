@@ -6,6 +6,7 @@ import { compareRouter } from './routes/compare.js';
 import { aiRouter } from './routes/ai.js';
 import { liveRouter } from './routes/live.js';
 import { playerRouter } from './routes/player.js';
+import { freshnessRouter } from './routes/freshness.js';
 
 export function createApp(): Express {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp(): Express {
         '/api/ai/summary (POST)',
         '/api/live/scoreboard?date=YYYY-MM-DD',
         '/api/player/:playerId/last-10?selectedStat=points',
+        '/api/data-freshness',
       ],
     });
   });
@@ -40,6 +42,7 @@ export function createApp(): Express {
   app.use('/api/ai', aiRouter);
   app.use('/api/live', liveRouter);
   app.use('/api/player', playerRouter);
+  app.use('/api/data-freshness', freshnessRouter);
 
   // Explicit JSON 404 — avoids Express's default HTML response, which
   // can trip the Vercel serverless adapter on unmatched paths.
