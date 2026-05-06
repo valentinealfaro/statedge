@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
+import OpenAI from 'openai';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
-import { resolveSlate, type RawLine } from '../services/slatePipeline.js';
+import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import { isDbConfigured } from '../db.js';
 
@@ -113,6 +114,100 @@ slateRouter.post('/parse-image', upload.single('image'), async (req, res) => {
       error: 'image parse failed',
       detail: (err as Error).message,
     });
+  }
+});
+
+// AI analysis of a parlay slip. Frontend POSTs the resolved legs (so
+// the LLM sees the per-leg stats it should reason over — no need to
+// re-fetch DB), we ask gpt-4o-mini for a concise paragraph: strongest
+// pick, biggest risk, useful context. Single call regardless of leg
+// count keeps the cost roughly $0.001 per analysis.
+let aiClient: OpenAI | null = null;
+function getOpenAi(): OpenAI | null {
+  if (aiClient) return aiClient;
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  aiClient = new OpenAI({ apiKey: key });
+  return aiClient;
+}
+
+const ANALYZE_SYSTEM = `You are a precise sports data analyst, not a tout.
+
+You receive a list of NBA prop lines a user has built into a parlay.
+Each leg includes: player, team vs opponent, stat type, the line, the
+player's last-10 average, hit count vs the line, the lean direction,
+the might-hit %, vs-opponent average if available, recent-form trend,
+and any current injury status.
+
+Write a SHORT paragraph (3-4 sentences max) that surfaces:
+  1. Which leg is the strongest signal and why
+  2. Which leg is the biggest risk (line vs L10 gap, injury,
+     small vs-opp sample)
+  3. One non-obvious cross-leg observation if present (e.g.,
+     "three of the four legs lean over assists" or "this slip
+     is heavy on guards against the same defense").
+
+NEVER:
+  - tell the user this is a good or bad bet
+  - mention "lock", "guaranteed", "free money", or any betting language
+  - reference odds or implied probability beyond what we provide
+  - speculate beyond what the supplied stats support
+
+Output is the paragraph itself, no headers, no preamble.`;
+
+slateRouter.post('/analyze', async (req, res) => {
+  const c = getOpenAi();
+  if (!c) {
+    res.status(503).json({ error: 'AI analysis unavailable: OPENAI_API_KEY not set' });
+    return;
+  }
+  const legs = req.body?.legs;
+  if (!Array.isArray(legs) || legs.length === 0) {
+    res.status(400).json({ error: 'body.legs required (non-empty array)' });
+    return;
+  }
+  if (legs.length > 8) {
+    res.status(400).json({ error: 'too many legs (max 8)' });
+    return;
+  }
+
+  // Project the resolved-line shape down to the fields the model
+  // actually needs. Keeps the prompt focused and cheap.
+  const trimmed = (legs as ResolvedLine[]).map((l) => ({
+    player: l.playerName,
+    team: l.team,
+    opp: l.vsOpponent?.opponentAbbr ?? null,
+    stat: l.statLabel,
+    line: l.line,
+    L10_avg: l.last10Avg,
+    hit_pct: l.hitProbability?.mightHitPct ?? null,
+    lean: l.hitProbability?.lean ?? null,
+    hit_over_count: l.hitProbability ? Math.round(l.hitProbability.hitOver * l.gamesAnalyzed) : null,
+    games_analyzed: l.gamesAnalyzed,
+    vs_opp_avg: l.vsOpponent?.avg ?? null,
+    vs_opp_games: l.vsOpponent?.gamesPlayed ?? null,
+    L5_avg: l.trend?.last5Avg ?? null,
+    trend_delta: l.trend?.deltaVsL10 ?? null,
+    injury: l.injury?.status ?? null,
+  }));
+
+  try {
+    const completion = await c.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: ANALYZE_SYSTEM },
+        {
+          role: 'user',
+          content: 'Analyze this slip:\n' + JSON.stringify(trimmed, null, 2),
+        },
+      ],
+      temperature: 0.3,
+    });
+    const summary = completion.choices[0]?.message?.content?.trim() ?? '';
+    res.json({ summary });
+  } catch (err) {
+    console.error('slate/analyze failed', err);
+    res.status(502).json({ error: 'analysis request failed' });
   }
 });
 

@@ -1766,6 +1766,20 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .parlay-save-input:focus { outline: none; border-color: #5b8def; }
 
+.parlay-analysis {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+}
+.parlay-analysis p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c8cfdc;
+}
+
 /* --- Saved parlays section on /slate --- */
 .saved-parlays {
   margin: 16px 0 24px;

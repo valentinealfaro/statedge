@@ -513,6 +513,23 @@ export async function getSlateAuto(): Promise<SlateResponse> {
   return (await res.json()) as SlateResponse;
 }
 
+export async function analyzeSlateLegs(legs: SlateResolvedLine[]): Promise<{ summary: string }> {
+  const res = await fetch(`${API_BASE}/api/slate/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ legs }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { detail?: string; error?: string };
+      detail = body.detail ?? body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as { summary: string };
+}
+
 export async function postSlateImage(file: File): Promise<SlateResponse> {
   const fd = new FormData();
   fd.append('image', file);

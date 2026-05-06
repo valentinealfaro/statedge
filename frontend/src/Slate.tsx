@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  analyzeSlateLegs,
   getDataFreshness,
   getSlateAuto,
   postSlateImage,
@@ -265,6 +266,7 @@ export function Slate() {
           onClear={clearParlay}
           onSave={(name) => saveParlay(name, parlay)}
           canSave={isPro}
+          canAnalyze={isPro}
         />
       )}
     </div>
@@ -516,12 +518,14 @@ function ParlayTray({
   onClear,
   onSave,
   canSave,
+  canAnalyze,
 }: {
   legs: SlateResolvedLine[];
   onRemove: (line: SlateResolvedLine) => void;
   onClear: () => void;
   onSave: (name: string) => void;
   canSave: boolean;
+  canAnalyze: boolean;
 }) {
   const probs = legs.map((l) => (l.hitProbability?.mightHitPct ?? 50) / 100);
   const combined = probs.reduce((p, q) => p * q, 1);
@@ -533,6 +537,22 @@ function ParlayTray({
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saved, setSaved] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisErr, setAnalysisErr] = useState<string | null>(null);
+
+  async function runAnalyze() {
+    setAnalyzing(true);
+    setAnalysisErr(null);
+    try {
+      const r = await analyzeSlateLegs(legs);
+      setAnalysis(r.summary);
+    } catch (err) {
+      setAnalysisErr((err as Error).message);
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   function startSave() { setSaving(true); }
   function commitSave() {
@@ -617,8 +637,27 @@ function ParlayTray({
               Save parlay <span className="lock-pill small">PRO</span>
             </button>
           )}
+          {canAnalyze ? (
+            <button
+              className="parlay-copy"
+              onClick={runAnalyze}
+              disabled={analyzing || legs.length === 0}
+            >
+              {analyzing ? 'Analyzing…' : 'Analyze slip'}
+            </button>
+          ) : (
+            <button className="parlay-copy locked" disabled title="AI analysis is a Pro feature">
+              Analyze slip <span className="lock-pill small">PRO</span>
+            </button>
+          )}
           <button className="link" onClick={onClear}>Clear</button>
         </div>
+        {(analysis || analysisErr) && (
+          <div className="parlay-analysis">
+            {analysisErr && <p className="error small">{analysisErr}</p>}
+            {analysis && <p>{analysis}</p>}
+          </div>
+        )}
         <div className="parlay-legs">
           {legs.map((l) => {
             const lean = l.hitProbability?.lean ?? 'OVER';
