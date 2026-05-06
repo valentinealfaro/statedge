@@ -10,6 +10,7 @@ import {
 } from './api';
 import { FreshnessBanner } from './FreshnessBanner';
 import { NavBar } from './NavBar';
+import { teamIdFromAbbr } from './teams';
 import { useTitle } from './useTitle';
 
 // ESPN-driven game detail: status / venue → starters → bench → leaders →
@@ -284,21 +285,9 @@ function InjuryRow({ injury }: { injury: EspnInjury }) {
   );
 }
 
-// ESPN team IDs (1, 2, 3...) don't map directly to NBA stats team IDs
-// (1610612747, ...). Quick lookup table — populated lazily by team
-// abbreviation since both APIs share those.
+// ESPN team IDs (1, 2, 3...) don't map directly to NBA stats team IDs.
+// Both APIs share the 3-letter abbreviation, so we use the shared
+// abbr→nba-id map from teams.ts.
 function nbaTeamIdFromEspn(side: EspnTeamSummary): number {
-  return ABBR_TO_NBA_ID[side.abbreviation] ?? 0;
+  return teamIdFromAbbr(side.abbreviation) ?? 0;
 }
-
-const ABBR_TO_NBA_ID: Record<string, number> = {
-  ATL: 1610612737, BOS: 1610612738, BKN: 1610612751, CHA: 1610612766,
-  CHI: 1610612741, CLE: 1610612739, DAL: 1610612742, DEN: 1610612743,
-  DET: 1610612765, GSW: 1610612744, GS:  1610612744, HOU: 1610612745,
-  IND: 1610612754, LAC: 1610612746, LAL: 1610612747, MEM: 1610612763,
-  MIA: 1610612748, MIL: 1610612749, MIN: 1610612750, NOP: 1610612740,
-  NO:  1610612740, NYK: 1610612752, NY:  1610612752, OKC: 1610612760,
-  ORL: 1610612753, PHI: 1610612755, PHX: 1610612756, POR: 1610612757,
-  SAC: 1610612758, SAS: 1610612759, SA:  1610612759, TOR: 1610612761,
-  UTA: 1610612762, WAS: 1610612764,
-};

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -18,6 +18,7 @@ import {
 } from './api';
 import { PlayerAvatar } from './Avatar';
 import { MatchupCell } from './MatchupCell';
+import { teamIdFromAbbr } from './teams';
 import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { usePlan } from './plan';
@@ -148,6 +149,7 @@ export function Last10View({ player }: Props) {
           rows={data.byOpponent}
           label={data.label}
           isDD={data.selectedStat === 'double_double'}
+          playerId={player.id}
         />
       )}
     </div>
@@ -188,17 +190,21 @@ function ByOpponentView({
   rows,
   label,
   isDD,
+  playerId,
 }: {
   rows: NonNullable<Last10Response['byOpponent']>;
   label: string;
   isDD: boolean;
+  playerId: number;
 }) {
+  const navigate = useNavigate();
   return (
     <>
       <h3>{label} by opponent (this season)</h3>
       <p className="muted small">
         Sorted high to low. Small samples (1–4 games each) but useful for
-        spotting matchups they feast on or get held by.
+        spotting matchups they feast on or get held by. Click a row to open
+        the full Player vs Team comparison for that opponent.
       </p>
       <div className="games-scroll">
         <table className="games">
@@ -212,19 +218,29 @@ function ByOpponentView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.opponentAbbr}>
-                <td><strong>{r.opponentAbbr}</strong></td>
-                <td>{r.gamesPlayed}</td>
-                <td>
-                  <strong>
-                    {isDD ? `${Math.round(r.avg * 100)}%` : r.avg.toFixed(1)}
-                  </strong>
-                </td>
-                <td>{isDD ? (r.high ? 'Yes' : 'No') : r.high}</td>
-                <td>{isDD ? (r.low ? 'Yes' : 'No') : r.low}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const teamId = teamIdFromAbbr(r.opponentAbbr);
+              const onClick = teamId
+                ? () => navigate(`/compare?m=pvt&pid=${playerId}&tid=${teamId}`)
+                : undefined;
+              return (
+                <tr
+                  key={r.opponentAbbr}
+                  className={onClick ? 'by-opp-row clickable' : 'by-opp-row'}
+                  onClick={onClick}
+                >
+                  <td><strong>{r.opponentAbbr}</strong></td>
+                  <td>{r.gamesPlayed}</td>
+                  <td>
+                    <strong>
+                      {isDD ? `${Math.round(r.avg * 100)}%` : r.avg.toFixed(1)}
+                    </strong>
+                  </td>
+                  <td>{isDD ? (r.high ? 'Yes' : 'No') : r.high}</td>
+                  <td>{isDD ? (r.low ? 'Yes' : 'No') : r.low}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
