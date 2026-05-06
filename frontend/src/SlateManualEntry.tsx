@@ -21,6 +21,8 @@ import {
   isDDGame,
   SLATE_STAT_OPTIONS,
   STAT_TO_VALUE,
+  suggestStrongLines,
+  type SuggestedLine,
 } from './slateMath';
 
 type Slot = {
@@ -455,6 +457,18 @@ function ManualSlotRow({
         )}
       </div>
 
+      {slot.player && l10 && !l10.loading && l10.gameLog.length > 0 && (
+        <SuggestStrip
+          gameLog={l10.gameLog}
+          opponentAbbr={slot.opponent?.abbreviation ?? null}
+          opponentName={slot.opponent?.abbreviation ?? null}
+          existingLines={slot.lines}
+          onApply={(picks) => {
+            for (const p of picks) onLineChange(p.stat, String(p.line));
+          }}
+        />
+      )}
+
       <div className="manual-slot-grid">
         {SLATE_STAT_OPTIONS.map((stat) => {
           const isDD = stat === 'Double-Double';
@@ -546,6 +560,79 @@ function ManualSlotRow({
               Math.max(1, l10.gameLog.slice(0, 10).length) * 100,
           )}%</span>
         </div>
+      )}
+    </div>
+  );
+}
+
+// "Suggest strong lines" affordance. Scans every numeric stat for the
+// picked player, pricing each at the typical PrizePicks half-step line,
+// and ranks by the same hit-prob math we run on Build slate. Click
+// 'Auto-fill' to drop the top candidates into the grid; the live chips
+// in the grid then light up green so the user gets immediate receipts.
+function SuggestStrip({
+  gameLog,
+  opponentAbbr,
+  opponentName,
+  existingLines,
+  onApply,
+}: {
+  gameLog: import('./api').PlayerGame[];
+  opponentAbbr: string | null;
+  opponentName: string | null;
+  existingLines: Record<string, string>;
+  onApply: (picks: SuggestedLine[]) => void;
+}) {
+  const [picks, setPicks] = useState<SuggestedLine[] | null>(null);
+  const [empty, setEmpty] = useState(false);
+
+  function run() {
+    const out = suggestStrongLines(gameLog, opponentAbbr, 3);
+    if (out.length === 0) {
+      setPicks(null);
+      setEmpty(true);
+      return;
+    }
+    setEmpty(false);
+    // Skip stats the user already entered — don't clobber their work.
+    const fresh = out.filter((p) => !existingLines[p.stat]);
+    setPicks(out);
+    if (fresh.length > 0) onApply(fresh);
+  }
+
+  return (
+    <div className="suggest-strip">
+      <button
+        type="button"
+        className="suggest-btn"
+        onClick={run}
+        title={opponentAbbr
+          ? `Auto-fill the strongest 3 lines based on L10 + season vs ${opponentAbbr}`
+          : `Auto-fill the strongest 3 lines based on L10 (set an opponent for vs-opp blend)`}
+      >
+        ✨ Suggest strong lines
+      </button>
+
+      {picks && picks.length > 0 && (
+        <div className="suggest-results">
+          {picks.map((p) => (
+            <span
+              key={p.stat}
+              className={`suggest-pill ${p.mightHitPct >= 75 ? 'hot' : 'mid'}`}
+              title={`${p.stat} ${p.line}: hit ${Math.round(p.hitOver * 100)}% over ${p.sampleSize} games${
+                p.vsOppCount > 0 ? ` (${p.vsOppCount} vs ${opponentName})` : ''
+              }`}
+            >
+              {p.stat} {p.line} {p.lean === 'OVER' ? '↑' : '↓'} {p.mightHitPct}%
+            </span>
+          ))}
+        </div>
+      )}
+
+      {empty && (
+        <span className="muted small">
+          No stat hits 60% confidence yet — try setting an opponent or pick a different player.
+        </span>
       )}
     </div>
   );

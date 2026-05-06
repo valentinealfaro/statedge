@@ -124,3 +124,92 @@ export function blendedSample(
   }
   return merged;
 }
+
+export type SuggestedLine = {
+  stat: string;
+  line: number;          // typical half-step PP-style line
+  mightHitPct: number;   // 0-100
+  lean: 'OVER' | 'UNDER';
+  hitOver: number;       // 0-1, hit ratio over the blended sample
+  sampleSize: number;    // games used in the blend
+  avg: number;           // blended-sample avg (for the receipts copy)
+  vsOppCount: number;    // # of vs-opp games in the blend (informational)
+};
+
+// For a given player + opponent context, scan all 15 numeric stats and
+// surface the strongest plays. "Strong" means high mightHitPct over the
+// blended L10+vs-opp sample, with a minimum-relevance gate so we don't
+// suggest 'Personal Fouls 0.5' just because the player rarely fouls.
+//
+// Returns up to `topN` candidates sorted strongest-first.
+export function suggestStrongLines(
+  gameLog: PlayerGame[],
+  opponentAbbr: string | null | undefined,
+  topN = 3,
+): SuggestedLine[] {
+  if (gameLog.length === 0) return [];
+  const sample = blendedSample(gameLog, opponentAbbr);
+  if (sample.length === 0) return [];
+  const vsOppCount = opponentAbbr
+    ? gameLog.filter((g) => g.opponentAbbr === opponentAbbr).length
+    : 0;
+
+  // Per-stat minimum average to even consider — keeps junky 0.5 lines
+  // off the suggestion list. Numbers here are deliberately low so we
+  // don't filter out viable defensive props for low-usage players.
+  const MIN_AVG: Record<string, number> = {
+    'Points': 6,
+    'Rebounds': 3,
+    'Assists': 2,
+    'Pts+Rebs+Asts': 12,
+    'Pts+Rebs': 9,
+    'Pts+Asts': 9,
+    'Rebs+Asts': 5,
+    '3-PT Made': 1,
+    'Steals': 0.7,
+    'Blocked Shots': 0.7,
+    'Turnovers': 1,
+    'Blks+Stls': 1.3,
+    'FG Made': 3,
+    'Free Throws Made': 1,
+    'Personal Fouls': 1.5,
+  };
+
+  const candidates: SuggestedLine[] = [];
+  for (const stat of SLATE_STAT_OPTIONS) {
+    if (stat === 'Double-Double') continue; // no line; surface DD rate elsewhere
+    const get = STAT_TO_VALUE[stat];
+    const values = sample.map(get);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    if (avg < (MIN_AVG[stat] ?? 0)) continue;
+
+    // Half-step line just below the avg — typical PrizePicks pricing.
+    // For very low-avg stats clamp to 0.5 so we never suggest 0.
+    const line = Math.max(0.5, Math.floor(avg) + 0.5);
+
+    const hp = computeHitProbability(values, line);
+    candidates.push({
+      stat,
+      line,
+      mightHitPct: hp.mightHitPct,
+      lean: hp.lean,
+      hitOver: hp.hitOver,
+      sampleSize: sample.length,
+      avg,
+      vsOppCount,
+    });
+  }
+
+  // Sort: strongest first. Tiebreak by lean=OVER (we lean OVER a
+  // half-step-below-avg line by design, so an UNDER recommendation at
+  // the same pct is suspicious — likely high-variance or trending down).
+  candidates.sort((a, b) => {
+    if (b.mightHitPct !== a.mightHitPct) return b.mightHitPct - a.mightHitPct;
+    if (a.lean !== b.lean) return a.lean === 'OVER' ? -1 : 1;
+    return b.avg - a.avg;
+  });
+
+  // Drop anything weaker than 60% — at that threshold we're not really
+  // giving a "stat edge" anymore, just guessing.
+  return candidates.filter((c) => c.mightHitPct >= 60).slice(0, topN);
+}

@@ -1697,6 +1697,51 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-top: 1px dashed #1f2330;
 }
 
+.suggest-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 4px;
+}
+.suggest-btn {
+  background: linear-gradient(135deg, #5b8def 0%, #7c4dff 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.suggest-btn:hover { filter: brightness(1.1); }
+.suggest-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.suggest-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.suggest-pill.hot {
+  background: #1f3a23;
+  color: #6dd07a;
+  border-color: #2e5a36;
+}
+.suggest-pill.mid {
+  background: #1a1f2b;
+  color: #c8cfdc;
+  border-color: #2a2f3a;
+}
+
 /* Dual-team game-picker modal — opens from the today's-games rail. */
 .game-modal {
   background: #14171f;
