@@ -235,23 +235,24 @@ export function Slate() {
         </div>
       )}
 
-      {backendStale && (
-        <div className="slate-error" style={{ marginBottom: 16 }}>
-          <strong>Backend deploy is out of date.</strong> Several recent
-          features (the team-roster modal, the slate version endpoint) live
-          on the backend's <code>main</code> branch but Vercel is still
-          serving an older bundle. Open the <strong>backend</strong> project
-          in Vercel → Deployments → click the most recent commit → "Redeploy".
+      {/* Diagnostic banners — admin-only. Customers should never see
+          deploy/env warnings; those are operations issues for the
+          owner to act on, not user-facing copy. */}
+      {isAdmin && backendStale && (
+        <div className="slate-error admin-only" style={{ marginBottom: 16 }}>
+          <span className="admin-tag">ADMIN</span>{' '}
+          <strong>Backend deploy is out of date.</strong> Run{' '}
+          <code>npx vercel --prod</code> from the repo root to redeploy.
           The roster modal will fall back to a search input until then.
         </div>
       )}
 
-      {backendVer && !backendVer.hasGeminiKey && (
-        <div className="slate-error" style={{ marginBottom: 16 }}>
-          <strong>Backend missing GEMINI_API_KEY.</strong> Image OCR and AI
-          features won't work until you set <code>GEMINI_API_KEY</code> in
-          your Vercel <strong>backend</strong> project's env (Production
-          scope) and redeploy.
+      {isAdmin && backendVer && !backendVer.hasGeminiKey && (
+        <div className="slate-error admin-only" style={{ marginBottom: 16 }}>
+          <span className="admin-tag">ADMIN</span>{' '}
+          <strong>Backend missing GEMINI_API_KEY.</strong> Set{' '}
+          <code>GEMINI_API_KEY</code> in the backend Vercel project's env
+          (Production scope) and redeploy.
           {backendVer.commit !== 'local' && (
             <span className="muted small"> Currently serving commit <code>{backendVer.commit}</code>.</span>
           )}
