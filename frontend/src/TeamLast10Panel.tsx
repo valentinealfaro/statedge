@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getTeamLast10, type TeamGame, type TeamLast10Response } from './api';
+import { Last10Skeleton } from './Last10Panel';
 
 type Props = {
   teamId: number;
@@ -23,7 +24,7 @@ export function TeamLast10Panel({ teamId, heading = 'Last 10 games · all oppone
       .finally(() => setLoading(false));
   }, [teamId]);
 
-  if (loading) return <div className="last10-panel"><h3>{heading}</h3><p className="muted">Loading…</p></div>;
+  if (loading) return <Last10Skeleton heading={heading} avgCols={9} tableCols={12} />;
   if (error)   return <div className="last10-panel"><h3>{heading}</h3><p className="error">{error}</p></div>;
   if (!data || data.gameLog.length === 0) {
     return <div className="last10-panel"><h3>{heading}</h3><p className="muted">No recent games.</p></div>;

@@ -4,6 +4,7 @@ import {
   type Last10Response,
   type PlayerGame,
 } from './api';
+import { Skeleton } from './Skeleton';
 
 type Props = {
   playerId: number;
@@ -36,7 +37,7 @@ export function Last10Panel({ playerId, heading = 'Last 10 games · all opponent
       .finally(() => setLoading(false));
   }, [playerId]);
 
-  if (loading) return <div className="last10-panel"><h3>{heading}</h3><p className="muted">Loading…</p></div>;
+  if (loading) return <Last10Skeleton heading={heading} avgCols={9} tableCols={14} />;
   if (error)   return <div className="last10-panel"><h3>{heading}</h3><p className="error">{error}</p></div>;
   if (!data || data.gameLog.length === 0) {
     return <div className="last10-panel"><h3>{heading}</h3><p className="muted">No recent games.</p></div>;
@@ -114,6 +115,39 @@ function Stat({ label, v, hi }: { label: string; v: string; hi?: boolean }) {
     <div className={hi ? 'last10-avg hi' : 'last10-avg'}>
       <div className="last10-avg-k">{label}</div>
       <div className="last10-avg-v">{v}</div>
+    </div>
+  );
+}
+
+// Reused for both player and team last-10 panels — same shape, configurable
+// column count to match the parent's stat layout.
+export function Last10Skeleton({ heading, avgCols, tableCols }: {
+  heading: string;
+  avgCols: number;
+  tableCols: number;
+}) {
+  return (
+    <div className="last10-panel">
+      <h3>{heading}</h3>
+      <div className="last10-avgs">
+        {Array.from({ length: avgCols }).map((_, i) => (
+          <div key={i} className="last10-avg">
+            <Skeleton width="50%" height={10} />
+            <Skeleton width="80%" height={18} style={{ marginTop: 6 }} />
+          </div>
+        ))}
+      </div>
+      <div className="games-scroll">
+        <table className="games"><tbody>
+          {Array.from({ length: 10 }).map((_, r) => (
+            <tr key={r}>
+              {Array.from({ length: tableCols }).map((_, c) => (
+                <td key={c}><Skeleton height={12} /></td>
+              ))}
+            </tr>
+          ))}
+        </tbody></table>
+      </div>
     </div>
   );
 }
