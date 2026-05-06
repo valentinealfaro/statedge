@@ -64,6 +64,37 @@ export async function searchPlayersFromDb(query: string, limit = 20): Promise<Nb
   }));
 }
 
+export async function getPlayerByIdFromDb(playerId: number): Promise<NbaPlayer | null> {
+  const { rows } = await getPool().query<{
+    id: number;
+    full_name: string;
+    first_name: string | null;
+    last_name: string | null;
+    team_id: number | null;
+    is_active: boolean;
+  }>(
+    `SELECT id, full_name, first_name, last_name, team_id, is_active
+       FROM players
+      WHERE id = $1`,
+    [playerId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const teamAbbr = r.team_id
+    ? NBA_TEAMS.find((t) => t.id === r.team_id)?.abbreviation ?? null
+    : null;
+  return {
+    id: r.id,
+    fullName: r.full_name,
+    firstName: r.first_name ?? '',
+    lastName: r.last_name ?? '',
+    teamId: r.team_id,
+    teamAbbreviation: teamAbbr,
+    isActive: r.is_active,
+  };
+}
+
 export async function getPlayerGameLogFromDb(
   playerId: number,
   season: string,

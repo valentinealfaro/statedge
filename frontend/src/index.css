@@ -693,7 +693,22 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .actions-row {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin: 8px 0 16px;
+}
+.share-btn {
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  color: #c8cfdc;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.share-btn:hover { border-color: #5b8def; }
+.share-btn.copied {
+  border-color: #6ee7a4;
+  color: #6ee7a4;
 }
 .save-btn {
   background: #14171f;

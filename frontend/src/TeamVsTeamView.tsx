@@ -9,6 +9,7 @@ import {
 import { AiSummary } from './AiSummary';
 import { TeamLogo } from './Avatar';
 import { SaveButton } from './SaveButton';
+import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
@@ -72,6 +73,7 @@ export function TeamVsTeamView({ a, b }: Props) {
       </div>
 
       <div className="actions-row">
+        <ShareButton />
         <SaveButton draft={{ type: 'tvt', a, b }} />
       </div>
 

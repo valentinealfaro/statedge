@@ -7,6 +7,7 @@ import {
   type PlayerGame,
 } from '../nba/client.js';
 import {
+  getPlayerByIdFromDb,
   getPlayerGameLogFromDb,
   getPlayerGameLogsMultiFromDb,
   isDbConfigured,
@@ -35,6 +36,26 @@ async function fetchRecentGames(playerId: number): Promise<PlayerGame[]> {
   }
   return getPlayerGameLog(playerId, currentSeason());
 }
+
+// Resolve a single player by id. Used by the frontend when rehydrating a
+// matchup from a shared/saved/recent URL where we only have IDs.
+playerRouter.get('/:playerId', async (req, res) => {
+  const playerId = Number(req.params.playerId);
+  if (!playerId) {
+    res.status(400).json({ error: 'playerId must be numeric' });
+    return;
+  }
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'Player lookup requires DB' });
+    return;
+  }
+  const player = await getPlayerByIdFromDb(playerId);
+  if (!player) {
+    res.status(404).json({ error: 'Unknown playerId' });
+    return;
+  }
+  res.json({ player });
+});
 
 playerRouter.get('/:playerId/last-10', async (req, res) => {
   const playerId = Number(req.params.playerId);

@@ -23,6 +23,7 @@ import { AiSummary } from './AiSummary';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { HitBadge } from './HitBadge';
 import { SaveButton } from './SaveButton';
+import { ShareButton } from './ShareButton';
 import { SeasonTabs } from './SeasonTabs';
 import { STAT_LABELS, StatPicker } from './StatPicker';
 import { usePlan } from './plan';
@@ -176,6 +177,7 @@ export function ComparisonView({ player, team }: Props) {
       </div>
 
       <div className="actions-row">
+        <ShareButton />
         <SaveButton draft={{ type: 'pvt', player, team }} />
       </div>
 

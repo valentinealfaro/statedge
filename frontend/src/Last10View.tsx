@@ -17,6 +17,7 @@ import {
 } from './api';
 import { PlayerAvatar } from './Avatar';
 import { SaveButton } from './SaveButton';
+import { ShareButton } from './ShareButton';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
 
@@ -106,6 +107,7 @@ export function Last10View({ player }: Props) {
       </div>
 
       <div className="actions-row">
+        <ShareButton />
         <SaveButton draft={{ type: 'last10', player }} />
       </div>
 

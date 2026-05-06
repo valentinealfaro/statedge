@@ -138,6 +138,13 @@ export async function searchPlayers(query: string, signal?: AbortSignal): Promis
   return data.results;
 }
 
+export async function getPlayerById(playerId: number): Promise<Player> {
+  const res = await fetch(`${API_BASE}/api/player/${playerId}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { player: Player };
+  return data.player;
+}
+
 export async function getTeams(): Promise<Team[]> {
   const res = await fetch(`${API_BASE}/api/teams`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
