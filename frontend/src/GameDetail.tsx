@@ -8,6 +8,7 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { FreshnessBanner } from './FreshnessBanner';
+import { NavBar } from './NavBar';
 import { useTitle } from './useTitle';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -41,8 +42,7 @@ export function GameDetail() {
 
   return (
     <div className="app">
-      <Link to="/" className="brand">StatEdge</Link>
-      <p className="tag">NBA stats comparison</p>
+      <NavBar />
       <FreshnessBanner />
 
       {error && <p className="error">{error}</p>}

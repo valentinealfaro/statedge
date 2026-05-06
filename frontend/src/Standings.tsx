@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { getStandings, type StandingRow } from './api';
 import { TeamLogo } from './Avatar';
 import { FreshnessBanner } from './FreshnessBanner';
+import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
@@ -20,7 +21,7 @@ export function Standings() {
 
   return (
     <div className="app">
-      <Link to="/" className="brand">StatEdge</Link>
+      <NavBar />
       <p className="tag">Conference standings · season record</p>
       <FreshnessBanner />
 

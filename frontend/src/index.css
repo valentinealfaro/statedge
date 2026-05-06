@@ -516,6 +516,33 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   margin-bottom: 4px;
 }
 
+/* --- Top nav (Compare / Standings / Game pages) --- */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.navbar .brand { margin-bottom: 0; }
+.nav-links {
+  display: flex;
+  gap: 4px;
+}
+.navlink {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8a93a6;
+  text-decoration: none;
+}
+.navlink:hover { color: #c8cfdc; background: #14171f; }
+.navlink.active {
+  color: #5b8def;
+  background: #14171f;
+}
+
 .hero {
   padding: 80px 0 64px;
   text-align: center;

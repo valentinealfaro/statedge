@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { NavBar } from './NavBar';
 import { PlayerSearch } from './PlayerSearch';
 import { TeamPicker } from './TeamPicker';
 import { ComparisonView } from './ComparisonView';
@@ -220,8 +221,7 @@ export function Compare() {
 
   return (
     <div className="app">
-      <Link to="/" className="brand">StatEdge</Link>
-      <p className="tag">NBA stats comparison</p>
+      <NavBar />
       <FreshnessBanner />
       <PlanGate />
 
