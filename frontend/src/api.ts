@@ -595,6 +595,33 @@ export type ManualSlateLine = {
   opponentAbbr?: string | null; // tonight's opponent (drives vs-opp computation)
 };
 
+// Replace today's globally-published slate. Admin-only — requires the
+// SLATE_ADMIN_SECRET passed via x-admin-secret header. The frontend
+// looks up the secret from localStorage where the admin user stashes
+// it once.
+export async function postTodaySlate(
+  lines: ManualSlateLine[],
+  adminSecret: string,
+): Promise<{ ok: boolean; date: string; count: number }> {
+  const res = await fetch(`${API_BASE}/api/slate/today`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-secret': adminSecret,
+    },
+    body: JSON.stringify({ lines }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { error?: string };
+      detail = body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as { ok: boolean; date: string; count: number };
+}
+
 // Fetch today's globally-published slate. Returns null when the admin
 // hasn't set today's lines yet — caller should fall back to localStorage
 // or show a paste box. The response carries fully-resolved cards so

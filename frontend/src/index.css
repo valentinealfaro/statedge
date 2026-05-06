@@ -1860,6 +1860,76 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   text-align: center;
 }
 
+/* Admin-only publish slate panel — visible to admin emails only.
+   Lets the owner paste tonight's lines from the live site instead of
+   running a CLI script. */
+.admin-publish {
+  margin: 12px 0;
+  border: 1px solid #5b8def;
+  border-radius: 10px;
+  background: #0f1530;
+  overflow: hidden;
+}
+.admin-publish-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #c8cfdc;
+  text-align: left;
+  cursor: pointer;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-publish-toggle:hover { color: #fff; }
+.admin-tag {
+  background: #5b8def;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.admin-publish-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid #1f2a4a;
+}
+.admin-secret-input {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #2a2f3a;
+  background: #0b0d12;
+  color: #e5e9f0;
+  font-family: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.admin-secret-input:focus { outline: none; border-color: #5b8def; }
+.admin-publish-msg {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.admin-publish-msg.ok {
+  background: #1f3a23;
+  color: #6dd07a;
+  border: 1px solid #2e5a36;
+}
+.admin-publish-msg.err {
+  background: #3a1f23;
+  color: #ef6a6a;
+  border: 1px solid #5a2e36;
+}
+
 /* Today's-games rail in informational mode — no hover/click state. */
 .today-rail.informational .today-side.static {
   cursor: default;

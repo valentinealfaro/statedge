@@ -4,12 +4,15 @@ import {
   getTodayGames,
   getTodaySlate,
   postManualSlate,
+  postTodaySlate,
   type EspnScoreboardGame,
   type ManualSlateLine,
   type Player,
   type SlateResponse,
   type Team,
 } from './api';
+import { isAdminEmail } from './admin';
+import { useAuth } from './auth';
 import { TeamLogo } from './Avatar';
 import { userKey } from './userKey';
 
@@ -171,6 +174,9 @@ type Props = {
 };
 
 export function SlateManualEntry({ onResult }: Props) {
+  const auth = useAuth();
+  const isAdmin = !!auth.user?.email && isAdminEmail(auth.user.email);
+
   const [text, setText] = useState('');
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,9 +184,71 @@ export function SlateManualEntry({ onResult }: Props) {
   const [stored, setStored] = useState<StoredSlate | null>(() => loadStoredSlate());
   const [showPaste, setShowPaste] = useState(false);
   const [report, setReport] = useState<ParseReport | null>(null);
-  // Used to make sure auto-build only fires once per mount, not on every
-  // re-render.
   const [autoBuildAttempted, setAutoBuildAttempted] = useState(false);
+
+  // Admin-only — publish today's lines to the backend so every visitor
+  // sees them automatically. The secret is held in localStorage so the
+  // admin enters it once per browser. Hidden for everyone else.
+  const ADMIN_SECRET_KEY = 'slate:admin:secret';
+  const [adminSecret, setAdminSecret] = useState<string>(() => {
+    try { return localStorage.getItem(ADMIN_SECRET_KEY) ?? ''; } catch { return ''; }
+  });
+  const [adminText, setAdminText] = useState('');
+  const [adminPublishing, setAdminPublishing] = useState(false);
+  const [adminMsg, setAdminMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  function saveAdminSecret(v: string) {
+    setAdminSecret(v);
+    try { localStorage.setItem(ADMIN_SECRET_KEY, v); } catch { /* ignore */ }
+  }
+
+  async function publishToday() {
+    if (!adminSecret.trim()) {
+      setAdminMsg({ ok: false, text: 'Admin secret required.' });
+      return;
+    }
+    if (!adminText.trim()) {
+      setAdminMsg({ ok: false, text: 'Paste tonight\'s lines first.' });
+      return;
+    }
+    const parsed = parsePasteText(adminText);
+    if (parsed.lines.length === 0) {
+      setAdminMsg({ ok: false, text: 'No valid lines parsed.' });
+      return;
+    }
+    setAdminPublishing(true);
+    setAdminMsg(null);
+    try {
+      const r = await postTodaySlate(parsed.lines, adminSecret);
+      setAdminMsg({
+        ok: true,
+        text: `Published ${r.count} lines for ${r.date}. Visitors now see this slate.`,
+      });
+      setAdminText('');
+      // Re-fetch the slate so this admin's view also refreshes.
+      const today = await getTodaySlate();
+      if (today.resolved) {
+        const teamSet = new Set<string>();
+        for (const l of today.resolved.lines) if (l.team) teamSet.add(l.team);
+        setStored({
+          lines: today.resolved.lines.map((l) => ({
+            playerName: l.playerName,
+            statLabel: l.statLabel,
+            line: l.line,
+            team: l.team ?? undefined,
+            opponentAbbr: null,
+          })),
+          teams: [...teamSet],
+        });
+        onResult(today.resolved);
+      }
+    } catch (e) {
+      setAdminMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setAdminPublishing(false);
+    }
+  }
 
   // Today's games rail is now informational only — no click handlers.
   // Helps users orient without becoming a "research" surface.
@@ -296,6 +364,66 @@ export function SlateManualEntry({ onResult }: Props) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="admin-publish">
+          <button
+            type="button"
+            className="admin-publish-toggle"
+            onClick={() => setShowAdmin((s) => !s)}
+          >
+            <span className="admin-tag">ADMIN</span>
+            {showAdmin ? '▾ Hide publish slate' : '▸ Publish tonight\'s slate'}
+          </button>
+          {showAdmin && (
+            <div className="admin-publish-body">
+              <p className="muted small" style={{ margin: 0 }}>
+                Paste tonight's prop sheet (pipe-delimited, one row per prop).
+                Replaces today's published board for every visitor — they
+                land on these cards automatically without pasting anything.
+              </p>
+              <input
+                type="password"
+                className="admin-secret-input"
+                placeholder="Admin secret (saved to your browser)"
+                value={adminSecret}
+                onChange={(e) => saveAdminSecret(e.target.value)}
+              />
+              <textarea
+                className="bulk-paste-input"
+                placeholder={'Jalen Brunson|NYK|points|26.5|both\nJoel Embiid|PHI|points|26.5|both\n…'}
+                rows={10}
+                value={adminText}
+                onChange={(e) => setAdminText(e.target.value)}
+                disabled={adminPublishing}
+              />
+              <div className="bulk-paste-actions">
+                <button
+                  type="button"
+                  className="cta primary"
+                  onClick={publishToday}
+                  disabled={adminPublishing || !adminText.trim() || !adminSecret.trim()}
+                >
+                  {adminPublishing ? 'Publishing…' : 'Publish to all visitors →'}
+                </button>
+                <button
+                  type="button"
+                  className="cta ghost"
+                  onClick={() => { setAdminText(''); setAdminMsg(null); }}
+                  disabled={adminPublishing}
+                >
+                  Clear
+                </button>
+              </div>
+              {adminMsg && (
+                <div className={`admin-publish-msg ${adminMsg.ok ? 'ok' : 'err'}`}>
+                  {adminMsg.text}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
