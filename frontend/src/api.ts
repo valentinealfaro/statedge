@@ -521,6 +521,56 @@ export type SlateResolvedLine = {
     last5Avg: number;
     deltaVsL10: number;
   };
+
+  // Layered projection-engine output (numeric stats only; double_double
+  // stays on hitProbability/ddRate). Mirrors backend ProjectionResult.
+  projection?: SlateProjection;
+};
+
+export type SlateProjection = {
+  selectedStat: Last10StatId;
+  lineValue: number;
+  projection: {
+    baseline: number;
+    contextAdjusted: number;
+    final: number;
+    rangeLow: number;
+    rangeHigh: number;
+  };
+  probability: { over: number; under: number };
+  confidence: { score: number; label: string };
+  risk: { score: number; label: string };
+  edge: { score: number; label: string; lean: string };
+  historicalHitRates: {
+    season: number | null;
+    last10: number | null;
+    last5: number | null;
+    vsOpponent: number | null;
+    homeAway: number | null;
+  };
+  factorBreakdown: {
+    seasonAvg: number | null;
+    last10Avg: number | null;
+    last5Avg: number | null;
+    vsOpponentAvg: number | null;
+    homeAwayAvg: number | null;
+    seasonMedian: number | null;
+    last10Median: number | null;
+    blendedStdDev: number;
+    projectedMinutes: number | null;
+    minutesMultiplier: number;
+    usageMultiplier: number;
+    injuryMultiplier: number;
+    opponentDefenseMultiplier: number;
+    paceMultiplier: number;
+    restMultiplier: number;
+    gameImportanceMultiplier: number;
+    blowoutMultiplier: number;
+    modelAgreementScore: number;
+  };
+  modelNotes: string[];
+  disclaimer: string;
+  noProjection?: boolean;
 };
 
 export type SlateUnresolvedLine = {

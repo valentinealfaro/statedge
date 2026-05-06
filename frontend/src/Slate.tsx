@@ -9,6 +9,7 @@ import {
   postSlateImage,
   type BackendVersion,
   type DataFreshness,
+  type SlateProjection,
   type SlateResolvedLine,
   type SlateResponse,
   type SlateUnresolvedLine,
@@ -641,7 +642,14 @@ function LineCard({
         {line.trend && line.last10Avg > 0 && (
           <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
         )}
+        {line.projection && !line.projection.noProjection && (
+          <ProjectionLeanBadge projection={line.projection} />
+        )}
       </Link>
+
+      {line.projection && !line.projection.noProjection && (
+        <ProjectionPanel projection={line.projection} />
+      )}
 
       {canInsight && !insight && !insightLoading && (
         <button className="slate-why" onClick={loadInsight}>
@@ -858,6 +866,136 @@ function TrendChip({
   return (
     <div className={cls}>
       L5 <strong>{trend.last5Avg.toFixed(1)}</strong> {arrow} {label}
+    </div>
+  );
+}
+
+// Lean + edge-score badge from the layered projection engine. Sits at
+// the bottom of the card front so the user sees the model's verdict at
+// a glance without expanding details. Tone matches confidence/risk.
+function ProjectionLeanBadge({ projection }: { projection: SlateProjection }) {
+  const lean = projection.edge.lean;
+  const tone =
+    lean.startsWith('Strong')
+      ? 'hot'
+      : lean.startsWith('Slight')
+      ? 'mid'
+      : 'flat';
+  return (
+    <div className={`slate-lean-badge ${tone}`} title={`Edge ${projection.edge.score} · Confidence ${projection.confidence.score} · Risk ${projection.risk.score}`}>
+      <strong>{lean}</strong>
+      <span className="muted small">
+        edge {projection.edge.score} · conf {projection.confidence.score} · risk {projection.risk.score}
+      </span>
+    </div>
+  );
+}
+
+// Expandable details panel — shows the projection range, the factor
+// breakdown the user would expect from a "professional model", and the
+// human-readable model notes. Collapsed by default to keep cards small.
+function ProjectionPanel({ projection }: { projection: SlateProjection }) {
+  const [open, setOpen] = useState(false);
+  const p = projection.projection;
+  const fb = projection.factorBreakdown;
+  const hr = projection.historicalHitRates;
+  const overUnderTone =
+    projection.probability.over >= 60
+      ? 'hot'
+      : projection.probability.under >= 60
+      ? 'cold'
+      : 'flat';
+
+  return (
+    <div className="slate-projection">
+      <button
+        className="slate-projection-toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} Projection details · {p.final.toFixed(1)} ({p.rangeLow.toFixed(1)}–{p.rangeHigh.toFixed(1)})
+      </button>
+      {open && (
+        <div className="slate-projection-body">
+          <div className="slate-projection-grid">
+            <div className={`slate-projection-cell ${overUnderTone}`}>
+              <span className="muted small">Over</span>
+              <strong>{projection.probability.over}%</strong>
+            </div>
+            <div className="slate-projection-cell">
+              <span className="muted small">Under</span>
+              <strong>{projection.probability.under}%</strong>
+            </div>
+            <div className="slate-projection-cell">
+              <span className="muted small">Confidence</span>
+              <strong>{projection.confidence.label}</strong>
+              <span className="muted small">{projection.confidence.score}</span>
+            </div>
+            <div className="slate-projection-cell">
+              <span className="muted small">Risk</span>
+              <strong>{projection.risk.label}</strong>
+              <span className="muted small">{projection.risk.score}</span>
+            </div>
+          </div>
+
+          <div className="slate-projection-factors">
+            <div className="slate-projection-factor-row">
+              <span>Baseline → Adjusted</span>
+              <span><strong>{p.baseline.toFixed(1)}</strong> → <strong>{p.contextAdjusted.toFixed(1)}</strong></span>
+            </div>
+            <div className="slate-projection-factor-row">
+              <span>Std dev (blended)</span>
+              <span>{fb.blendedStdDev.toFixed(2)}</span>
+            </div>
+            <div className="slate-projection-factor-row">
+              <span>Model agreement</span>
+              <span>{fb.modelAgreementScore}%</span>
+            </div>
+
+            <FactorMultiplier label="Minutes" value={fb.minutesMultiplier} />
+            <FactorMultiplier label="Usage" value={fb.usageMultiplier} />
+            <FactorMultiplier label="Injury" value={fb.injuryMultiplier} />
+            <FactorMultiplier label="Opp defense" value={fb.opponentDefenseMultiplier} />
+            <FactorMultiplier label="Pace" value={fb.paceMultiplier} />
+            <FactorMultiplier label="Rest" value={fb.restMultiplier} />
+            <FactorMultiplier label="Game importance" value={fb.gameImportanceMultiplier} />
+            <FactorMultiplier label="Blowout" value={fb.blowoutMultiplier} />
+
+            <div className="slate-projection-factor-row" style={{ marginTop: 6 }}>
+              <span className="muted small">Hit rates</span>
+              <span className="muted small">
+                S {hr.season ?? '—'}% · L10 {hr.last10 ?? '—'}% · L5 {hr.last5 ?? '—'}%
+                {hr.vsOpponent != null && ` · vs-opp ${hr.vsOpponent}%`}
+              </span>
+            </div>
+          </div>
+
+          {projection.modelNotes.length > 0 && (
+            <ul className="slate-projection-notes">
+              {projection.modelNotes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          )}
+          <div className="muted small slate-projection-disclaimer">
+            {projection.disclaimer}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single multiplier row. Tinted green/red when the multiplier is
+// meaningfully above/below 1.0 so the eye picks up which factors are
+// driving the adjustment.
+function FactorMultiplier({ label, value }: { label: string; value: number }) {
+  const tone =
+    value >= 1.03 ? 'hot' : value <= 0.97 ? 'cold' : 'flat';
+  return (
+    <div className={`slate-projection-factor-row ${tone}`}>
+      <span>{label}</span>
+      <span>×{value.toFixed(2)}</span>
     </div>
   );
 }

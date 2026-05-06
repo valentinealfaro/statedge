@@ -9,6 +9,12 @@ import {
 import { currentSeason, type PlayerGame } from '../nba/client.js';
 import { computeHitProbability, type HitProbability } from './comparisonEngine.js';
 import { isDoubleDoubleGame, STAT_MAP, type Last10StatId } from './last10.js';
+import {
+  isProjectable,
+  project,
+  type InjuryStatus,
+  type ProjectionResult,
+} from './projectionEngine.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
 import { normalizeStatLabel, statLabelFor } from './slateNormalize.js';
 import {
@@ -75,6 +81,13 @@ export type ResolvedLine = {
     last5Avg: number;
     deltaVsL10: number;     // last5 - last10
   };
+
+  // Layered projection-engine output. Populated for numeric stats only
+  // (skipped for double_double, which is a binary not a continuous
+  // distribution). Contains the full factor breakdown, confidence,
+  // risk, edge, and human-readable model notes the UI surfaces in the
+  // "Projection details" panel.
+  projection?: ProjectionResult;
 };
 
 export type UnresolvedLine = {
@@ -93,6 +106,19 @@ export type SlateResponse = {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// Normalize the ESPN-sourced injury status string to the projection
+// engine's InjuryStatus. We treat "Doubtful" as "Out" for projection
+// purposes — players listed Doubtful rarely play meaningful minutes.
+function mapInjuryStatus(s: string | undefined): InjuryStatus {
+  if (!s) return null;
+  const norm = s.trim();
+  if (norm === 'Out' || norm === 'Doubtful') return 'Out';
+  if (norm === 'Questionable') return 'Questionable';
+  if (norm === 'Day-To-Day') return 'Day-To-Day';
+  if (norm === 'Probable') return 'Probable';
+  return null;
 }
 
 /**
@@ -283,6 +309,28 @@ export async function resolveSlate(
     const sampleValues = combinedSample.map(get);
     const hit = computeHitProbability(sampleValues, p.raw.line);
 
+    // Run the layered projection engine. We pass the full season log
+    // (engine slices its own L10/L5/vs-opp/HA windows) plus what context
+    // we have today: opponent abbr, ESPN injury status. Pace/defense/
+    // usage stay null until upstream sync gathers them — the engine
+    // gracefully redistributes weight in their absence.
+    const inj = injuryFor(p.canonicalName);
+    let projection: ProjectionResult | undefined;
+    if (isProjectable(p.statKey)) {
+      const injStatus = mapInjuryStatus(inj?.status);
+      // Short-circuit: don't render a projection card for an OUT player.
+      if (injStatus !== 'Out') {
+        projection = project({
+          selectedStat: p.statKey,
+          lineValue: p.raw.line,
+          seasonGames: games,
+          opponentAbbr: oppAbbr,
+          isHome: null, // tonight's home/away unknown at slate-build time
+          playerInjuryStatus: injStatus,
+        });
+      }
+    }
+
     resolved.push({
       ppId: p.raw.ppId,
       playerId: p.playerId,
@@ -302,9 +350,10 @@ export async function resolveSlate(
       last10Avg: round2(last10Avg),
       last10Values: last10Values,
       hitProbability: hit,
-      injury: injuryFor(p.canonicalName),
+      injury: inj,
       vsOpponent,
       trend,
+      projection,
     });
   }
 

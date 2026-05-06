@@ -1742,6 +1742,111 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-color: #2a2f3a;
 }
 
+/* StatEdge layered projection — lean badge + collapsible details panel */
+.slate-lean-badge {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+  border: 1px solid #2a2f3a;
+}
+.slate-lean-badge.hot { background: #1f3a23; border-color: #2e5a36; }
+.slate-lean-badge.hot strong { color: #6dd07a; }
+.slate-lean-badge.mid { background: #2a2f3a; }
+.slate-lean-badge.mid strong { color: #e5e9f0; }
+.slate-lean-badge.flat { background: #1a1f2b; }
+.slate-lean-badge.flat strong { color: #8a93a6; }
+
+.slate-projection {
+  margin-top: 8px;
+  border-top: 1px solid #1f2330;
+  padding-top: 6px;
+}
+.slate-projection-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #8a93a6;
+  text-align: left;
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 11px;
+  font-family: inherit;
+}
+.slate-projection-toggle:hover { color: #c8cfdc; }
+.slate-projection-body {
+  padding: 8px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.slate-projection-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.slate-projection-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  background: #0b0d12;
+  border: 1px solid #1f2330;
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+}
+.slate-projection-cell strong { color: #e5e9f0; font-size: 12px; }
+.slate-projection-cell.hot {
+  background: #14241a;
+  border-color: #2e5a36;
+}
+.slate-projection-cell.hot strong { color: #6dd07a; }
+.slate-projection-cell.cold {
+  background: #241418;
+  border-color: #5a2e36;
+}
+.slate-projection-cell.cold strong { color: #ef6a6a; }
+.slate-projection-factors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.slate-projection-factor-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: #c8cfdc;
+}
+.slate-projection-factor-row.hot { background: rgba(109, 208, 122, 0.08); color: #6dd07a; }
+.slate-projection-factor-row.cold { background: rgba(239, 106, 106, 0.08); color: #ef6a6a; }
+.slate-projection-notes {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #c8cfdc;
+}
+.slate-projection-notes li {
+  padding: 4px 8px;
+  background: #0b0d12;
+  border-left: 2px solid #5b8def;
+  border-radius: 0 4px 4px 0;
+}
+.slate-projection-disclaimer {
+  font-size: 10px;
+  font-style: italic;
+}
+
 /* Dual-team game-picker modal — opens from the today's-games rail. */
 .game-modal {
   background: #14171f;
