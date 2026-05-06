@@ -1,12 +1,42 @@
 import { Router } from 'express';
 import { currentSeason } from '../nba/client.js';
-import { getRecentGamesFromDb, isDbConfigured } from '../db.js';
+import {
+  getBoxscoreFromDb,
+  getRecentGamesFromDb,
+  isDbConfigured,
+} from '../db.js';
 
 export const gamesRouter: Router = Router();
 
 // Most recent completed NBA games (paired team scores). Used to populate
 // a 'last night around the league' card on the Home page — no live data
 // dependency, just the same DB cache that drives the comparison views.
+// Full boxscore for a single game — both teams + every player's stat line.
+gamesRouter.get('/:gameId/boxscore', async (req, res) => {
+  const gameId = String(req.params.gameId ?? '');
+  if (!gameId) {
+    res.status(400).json({ error: 'gameId required' });
+    return;
+  }
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'Boxscore requires DB' });
+    return;
+  }
+  const season = String(req.query.season ?? currentSeason());
+
+  try {
+    const boxscore = await getBoxscoreFromDb(season, gameId);
+    if (!boxscore) {
+      res.status(404).json({ error: 'Game not found in cache' });
+      return;
+    }
+    res.json({ boxscore });
+  } catch (err) {
+    console.error('boxscore failed', err);
+    res.status(500).json({ error: 'failed to compute boxscore' });
+  }
+});
+
 gamesRouter.get('/recent', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ games: [], season: null, source: 'no-db' });

@@ -366,6 +366,49 @@ export async function getRecentGames(limit = 6): Promise<RecentGame[]> {
   return data.games;
 }
 
+export type BoxscorePlayer = {
+  playerId: number;
+  fullName: string;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
+  pf: number;
+};
+
+export type BoxscoreSide = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  points: number;
+  players: BoxscorePlayer[];
+};
+
+export type Boxscore = {
+  gameId: string;
+  date: string;
+  away: BoxscoreSide;
+  home: BoxscoreSide;
+};
+
+export async function getBoxscore(gameId: string): Promise<Boxscore> {
+  const res = await fetch(`${API_BASE}/api/games/${gameId}/boxscore`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { boxscore: Boxscore };
+  return data.boxscore;
+}
+
 export async function getTrendingTeams(limit = 8): Promise<TrendingTeam[]> {
   const res = await fetch(`${API_BASE}/api/trending/teams?limit=${limit}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

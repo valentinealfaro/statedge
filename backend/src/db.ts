@@ -155,6 +155,157 @@ export type RecentGame = {
   home: RecentGameSide;
 };
 
+export type BoxscorePlayer = {
+  playerId: number;
+  fullName: string;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
+  pf: number;
+};
+
+export type BoxscoreSide = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  points: number;
+  players: BoxscorePlayer[];
+};
+
+export type Boxscore = {
+  gameId: string;
+  date: string;
+  away: BoxscoreSide;
+  home: BoxscoreSide;
+};
+
+// Build a full boxscore for a single game out of the JSONB caches.
+// Strategy: first pull the two team_game_logs rows (for the matchup
+// header / final score / W-L / home-away), then pull every player whose
+// player_game_logs has a row with matching gameId. The player's matchup
+// string ("LAL vs. DEN" or "LAL @ DEN") tells us which team they were
+// playing FOR in this specific game — important because the players
+// table only knows their CURRENT team, not their team at the time.
+export async function getBoxscoreFromDb(
+  season: string,
+  gameId: string,
+): Promise<Boxscore | null> {
+  const pool = getPool();
+
+  // Step 1: paired team rows for this gameId.
+  const teamRes = await pool.query<{
+    team_id: number;
+    points: number;
+    is_home: boolean;
+    result: 'W' | 'L' | null;
+    matchup: string;
+    date: string;
+  }>(
+    `SELECT
+       tgl.team_id,
+       (g->>'points')::int                     AS points,
+       (g->>'isHome')::boolean                 AS is_home,
+       NULLIF(g->>'result','')                 AS result,
+       g->>'matchup'                           AS matchup,
+       (g->>'date')::date::text                AS date
+       FROM team_game_logs tgl
+       , jsonb_array_elements(tgl.games) g
+      WHERE tgl.season = $1 AND g->>'gameId' = $2`,
+    [season, gameId],
+  );
+  if (teamRes.rows.length !== 2) return null;
+
+  // Step 2: every player with a stat line for this gameId.
+  const playerRes = await pool.query<{
+    player_id: number;
+    full_name: string;
+    games: { gameId: string; matchup: string; minutes: number; points: number;
+             rebounds: number; assists: number; steals: number; blocks: number;
+             turnovers: number; fgm?: number; fga?: number; fg3m?: number;
+             fg3a?: number; ftm?: number; fta?: number; pf?: number }[];
+  }>(
+    `SELECT pgl.player_id, p.full_name, pgl.games
+       FROM player_game_logs pgl
+       JOIN players p ON p.id = pgl.player_id
+      WHERE pgl.season = $1
+        AND pgl.games @> jsonb_build_array(jsonb_build_object('gameId', $2::text))`,
+    [season, gameId],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const meta = (id: number) => NBA_TEAMS.find((t) => t.id === id);
+
+  // Build a side keyed by the team_abbreviation so we can sort each
+  // player's row into the right side using their matchup string.
+  const sides = new Map<string, BoxscoreSide>();
+  for (const t of teamRes.rows) {
+    const team = meta(t.team_id);
+    if (!team) return null;
+    sides.set(team.abbreviation, {
+      teamId: team.id,
+      abbreviation: team.abbreviation,
+      fullName: team.fullName,
+      isHome: t.is_home,
+      result: t.result,
+      points: t.points,
+      players: [],
+    });
+  }
+
+  // Drop each player's stat row into the appropriate side based on the
+  // matchup string for the matching game.
+  for (const r of playerRes.rows) {
+    const game = r.games.find((g) => g.gameId === gameId);
+    if (!game) continue;
+    // matchup is "TEAM vs. OPP" or "TEAM @ OPP" — first 3 chars are the
+    // player's team for this game.
+    const playerTeam = game.matchup.slice(0, 3).toUpperCase();
+    const side = sides.get(playerTeam);
+    if (!side) continue;
+    side.players.push({
+      playerId: r.player_id,
+      fullName: r.full_name,
+      minutes:  Number(game.minutes  ?? 0),
+      points:   Number(game.points   ?? 0),
+      rebounds: Number(game.rebounds ?? 0),
+      assists:  Number(game.assists  ?? 0),
+      steals:   Number(game.steals   ?? 0),
+      blocks:   Number(game.blocks   ?? 0),
+      turnovers:Number(game.turnovers?? 0),
+      fgm:      Number(game.fgm      ?? 0),
+      fga:      Number(game.fga      ?? 0),
+      fg3m:     Number(game.fg3m     ?? 0),
+      fg3a:     Number(game.fg3a     ?? 0),
+      ftm:      Number(game.ftm      ?? 0),
+      fta:      Number(game.fta      ?? 0),
+      pf:       Number(game.pf       ?? 0),
+    });
+  }
+  // Most-minutes-first feels like the natural starting-five-then-bench order.
+  for (const side of sides.values()) {
+    side.players.sort((a, b) => b.minutes - a.minutes);
+  }
+
+  const sideArr = [...sides.values()];
+  const home = sideArr.find((s) => s.isHome);
+  const away = sideArr.find((s) => !s.isHome);
+  if (!home || !away) return null;
+
+  return { gameId, date: teamRes.rows[0]!.date, home, away };
+}
+
 // Most recent N completed games. Each game appears in two team_game_logs
 // rows (one per team's POV); we group by gameId to pair them and emit a
 // home-vs-away record.

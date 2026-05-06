@@ -55,8 +55,8 @@ export function RecentGames() {
                 <Link
                   key={g.gameId}
                   className="recent-game"
-                  to={`/compare?m=tvt&ta=${g.away.teamId}&tb=${g.home.teamId}`}
-                  title="Open Team vs Team"
+                  to={`/game/${g.gameId}`}
+                  title="View boxscore"
                 >
                   <div className="recent-game-date">{fmtDate(g.date)}</div>
                   <Side side={g.away} won={awayWon} />
