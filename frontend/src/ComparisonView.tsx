@@ -157,15 +157,15 @@ export function ComparisonView({ player, team }: Props) {
 
   useTitle([`${player.fullName} vs ${team.abbreviation}`]);
 
-  if (!canRunComparison) {
-    // The PlanGate above the comparison view already explains the limit and
-    // offers an unlock; nothing else to render until the user upgrades.
-    return null;
-  }
+  // ALL hooks must fire before any conditional return. The previous
+  // version had two useEffects below the `if (!canRunComparison)
+  // return null;` — when auth resolved and canRunComparison flipped
+  // false→true the hook count changed and React threw error #310.
 
   // Whenever a line input changes, refetch hit probability for stats that
   // have a valid number entered. Debounced so each keystroke doesn't fire.
   useEffect(() => {
+    if (!canRunComparison) return;
     const id = setTimeout(async () => {
       for (const k of HIT_STATS) {
         const v = parseFloat(lines[k]);
@@ -185,10 +185,11 @@ export function ComparisonView({ player, team }: Props) {
       }
     }, 400);
     return () => clearTimeout(id);
-  }, [lines, player.id, team.id, range, seasons, selectedStat]);
+  }, [lines, player.id, team.id, range, seasons, selectedStat, canRunComparison]);
 
   // Same debounced fetch for the combo-panel line.
   useEffect(() => {
+    if (!canRunComparison) return;
     const v = parseFloat(comboLine);
     if (!Number.isFinite(v)) {
       setComboHit(null);
@@ -207,6 +208,11 @@ export function ComparisonView({ player, team }: Props) {
     }, 400);
     return () => clearTimeout(id);
   }, [comboLine, player.id, team.id, range, seasons, selectedStat]);
+
+  // Early return AFTER all hooks have fired. PlanGate already shows
+  // the limit-reached message above, so we hide the comparison body
+  // until the user upgrades or the limit resets.
+  if (!canRunComparison) return null;
 
   return (
     <div className="comparison">

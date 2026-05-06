@@ -65,7 +65,12 @@ export async function ocrPropBoard(
 ): Promise<OcrResult> {
   const ai = getGemini();
   if (!ai) {
-    throw new Error('OCR requires GEMINI_API_KEY');
+    // Mentioning both env var names + the location (backend project)
+    // because the previous error only said the var name and users hit
+    // the wrong Vercel project trying to fix it.
+    throw new Error(
+      'OCR requires GEMINI_API_KEY in the backend Vercel project env (Production scope), then redeploy.',
+    );
   }
 
   const b64 = imageBuffer.toString('base64');

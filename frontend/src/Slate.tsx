@@ -28,6 +28,7 @@ export function Slate() {
   const [data, setData] = useState<SlateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorSource, setErrorSource] = useState<'auto' | 'upload' | null>(null);
   const [autoTried, setAutoTried] = useState(false);
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
@@ -81,9 +82,10 @@ export function Slate() {
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setErrorSource(null);
     getSlateAuto()
       .then(setData)
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => { setError((e as Error).message); setErrorSource('auto'); })
       .finally(() => { setLoading(false); setAutoTried(true); });
 
     getDataFreshness().then(setFreshness).catch(() => {});
@@ -118,20 +120,23 @@ export function Slate() {
   function retryAuto() {
     setLoading(true);
     setError(null);
+    setErrorSource(null);
     getSlateAuto()
-      .then(setData)
-      .catch((e) => setError((e as Error).message))
+      .then((d) => { setData(d); setError(null); })
+      .catch((e) => { setError((e as Error).message); setErrorSource('auto'); })
       .finally(() => setLoading(false));
   }
 
   async function handleFile(file: File) {
     setLoading(true);
     setError(null);
+    setErrorSource(null);
     try {
       const result = await postSlateImage(file);
       setData(result);
     } catch (e) {
       setError((e as Error).message);
+      setErrorSource('upload');
     } finally {
       setLoading(false);
     }
@@ -204,11 +209,40 @@ export function Slate() {
 
       {error && (
         <div className="slate-error">
-          <strong>Auto-pull failed:</strong> {error}
-          <p className="muted small">
-            PrizePicks's API rate-limits non-browser traffic. Take a screenshot
-            of any prop board and drop it above — we'll OCR it the same way.
-          </p>
+          <strong>
+            {errorSource === 'upload' ? 'Screenshot OCR failed:' : 'Auto-pull failed:'}
+          </strong>{' '}
+          {error}
+          {/* OPENAI_API_KEY in the error means the deployed backend is
+              still on the pre-Gemini code. Vercel hasn't redeployed
+              the backend with the latest commits — point the user at
+              the right env var to set. */}
+          {error.includes('OPENAI_API_KEY') ? (
+            <p className="muted small">
+              Your Vercel <strong>backend</strong> deployment is on stale code.
+              Either redeploy the backend project (so it picks up the latest
+              commits) or — if you really do want to keep using OpenAI — set
+              <code> OPENAI_API_KEY</code>. Otherwise, set
+              <code> GEMINI_API_KEY</code> in the backend project's env vars
+              (<em>Production + Preview + Development</em>) and redeploy.
+            </p>
+          ) : error.includes('GEMINI_API_KEY') ? (
+            <p className="muted small">
+              Set <code>GEMINI_API_KEY</code> in your Vercel <strong>backend</strong>
+              project's env vars (Production + Preview + Development scopes),
+              then click "Redeploy" on the latest deployment.
+            </p>
+          ) : errorSource === 'upload' ? (
+            <p className="muted small">
+              The image OCR pipeline couldn't process the file. Try a clearer
+              screenshot or a different format (PNG / JPG / WebP).
+            </p>
+          ) : (
+            <p className="muted small">
+              PrizePicks's API rate-limits non-browser traffic. Take a screenshot
+              of any prop board and drop it above — we'll OCR it the same way.
+            </p>
+          )}
         </div>
       )}
 
