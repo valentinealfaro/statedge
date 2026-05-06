@@ -1368,19 +1368,48 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 
 .slate-card {
+  position: relative;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 12px;
+  transition: border-color 120ms, background 120ms;
+}
+.slate-card:hover { border-color: #5b8def; background: #1a1f2b; }
+.slate-card.in-parlay {
+  border-color: #6ee7a4;
+  box-shadow: 0 0 0 1px #6ee7a440;
+}
+.slate-card-body {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
   padding: 16px 14px;
-  background: #14171f;
-  border: 1px solid #1f2330;
-  border-radius: 12px;
   text-decoration: none;
   color: inherit;
-  transition: border-color 120ms;
 }
-.slate-card:hover { border-color: #5b8def; background: #1a1f2b; }
+.slate-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #2a2f3a;
+  background: #0b0d12;
+  color: #c8cfdc;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  transition: all 120ms;
+}
+.slate-pin:hover { border-color: #5b8def; color: #5b8def; }
+.slate-pin.pinned {
+  background: #6ee7a4;
+  color: #0b0d12;
+  border-color: #6ee7a4;
+}
 .slate-card-name {
   font-size: 14px;
   font-weight: 600;
@@ -1498,9 +1527,110 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 @media (max-width: 640px) {
   .slate-actions { flex-direction: column; }
   .slate-grid { grid-template-columns: repeat(2, 1fr); }
-  .slate-card { padding: 12px 8px; }
+  .slate-card-body { padding: 12px 8px; }
   .slate-line-num { font-size: 22px; }
 }
+
+/* --- Parlay tray (sticky bottom on /slate) --- */
+.parlay-tray {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: #0b0d12ee;
+  backdrop-filter: blur(8px);
+  border-top: 1px solid #2a2f3a;
+  padding: 14px 16px;
+  box-shadow: 0 -8px 24px #00000080;
+}
+.parlay-tray-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.parlay-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.parlay-count {
+  font-size: 14px;
+}
+.parlay-count strong {
+  font-size: 22px;
+  color: #6ee7a4;
+}
+.parlay-prob {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.parlay-prob-pct {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+.parlay-prob-label {
+  font-size: 11px;
+  color: #8a93a6;
+  margin-top: 2px;
+}
+.parlay-payout {
+  font-size: 13px;
+  color: #c8cfdc;
+}
+.parlay-payout strong { color: #5b8def; }
+.parlay-legs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.parlay-leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid #2a2f3a;
+  border-radius: 999px;
+  background: #14171f;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.parlay-leg:hover { border-color: #ef6a6a; color: #ef6a6a; }
+.parlay-leg-name { font-weight: 600; }
+.parlay-leg-stat { color: #8a93a6; }
+.parlay-leg-pct {
+  background: #5b8def;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+.parlay-leg-x { color: #8a93a6; font-size: 11px; }
+.parlay-leg:hover .parlay-leg-x { color: #ef6a6a; }
+@media (max-width: 640px) {
+  .parlay-tray { padding: 10px 12px; }
+  .parlay-prob-pct { font-size: 18px; }
+  .parlay-count strong { font-size: 18px; }
+}
+
+/* Bottom padding on slate when tray is showing — handled via JS would
+ * require measuring; CSS just gives the page room to breathe. */
+.app:has(.parlay-tray) { padding-bottom: 160px; }
 
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {

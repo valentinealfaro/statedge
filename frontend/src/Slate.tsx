@@ -24,6 +24,24 @@ export function Slate() {
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
 
+  // Parlay builder: selected card identifiers ("playerId-statKey-line").
+  // Combined probability assumes leg independence — it's a model, not a
+  // promise; the receipts ('hit X/10' per leg) keep users honest.
+  const [parlay, setParlay] = useState<string[]>([]);
+  function cardKey(l: SlateResolvedLine): string {
+    return `${l.playerId}-${l.statKey}-${l.line}`;
+  }
+  function toggleParlay(l: SlateResolvedLine) {
+    const k = cardKey(l);
+    setParlay((prev) =>
+      prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k],
+    );
+  }
+  function removeFromParlay(k: string) {
+    setParlay((prev) => prev.filter((x) => x !== k));
+  }
+  function clearParlay() { setParlay([]); }
+
   // First mount: kick off the auto-fetch from PrizePicks. If it fails
   // (Cloudflare blocks our IP, schema changes, etc.) we fall back to
   // showing only the upload prompt.
@@ -150,12 +168,30 @@ export function Slate() {
 
       {filtered.length > 0 && (
         <div className="slate-grid">
-          {filtered.map((l) => <LineCard key={`${l.playerId}-${l.statKey}-${l.line}`} line={l} />)}
+          {filtered.map((l) => {
+            const k = cardKey(l);
+            return (
+              <LineCard
+                key={k}
+                line={l}
+                inParlay={parlay.includes(k)}
+                onToggleParlay={() => toggleParlay(l)}
+              />
+            );
+          })}
         </div>
       )}
 
       {data && data.unresolved.length > 0 && (
         <UnresolvedSection unresolved={data.unresolved} />
+      )}
+
+      {parlay.length > 0 && lines.length > 0 && (
+        <ParlayTray
+          legs={lines.filter((l) => parlay.includes(cardKey(l)))}
+          onRemove={(l) => removeFromParlay(cardKey(l))}
+          onClear={clearParlay}
+        />
       )}
     </div>
   );
@@ -182,7 +218,15 @@ function FilterTab({
   );
 }
 
-function LineCard({ line }: { line: SlateResolvedLine }) {
+function LineCard({
+  line,
+  inParlay,
+  onToggleParlay,
+}: {
+  line: SlateResolvedLine;
+  inParlay: boolean;
+  onToggleParlay: () => void;
+}) {
   const hit = line.hitProbability;
   const pct = hit?.mightHitPct ?? 0;
   const lean = hit?.lean ?? 'OVER';
@@ -192,53 +236,142 @@ function LineCard({ line }: { line: SlateResolvedLine }) {
     ? 'slate-badge red'
     : 'slate-badge gray';
 
-  // Historical hit ratio (X/10) for the lean side.
   const ratio = hit?.lean === 'OVER' ? hit?.hitOver : hit?.hitUnder;
   const hitCount = ratio != null ? Math.round(ratio * line.gamesAnalyzed) : 0;
   const aboveOrBelow = lean === 'OVER' ? 'over' : 'under';
 
   return (
-    <Link
-      className="slate-card"
-      to={`/compare?m=last10&pid=${line.playerId}`}
-      title="See player's last 10 games"
-    >
-      <PlayerAvatar playerId={line.playerId} name={line.playerName} size="lg" />
-      <div className="slate-card-name">{line.playerName}</div>
-      <div className="slate-card-meta">
-        {line.team && (
-          <TeamLogo abbr={line.team} name={line.team} size="md" />
-        )}
-        <span>
-          {line.team ?? '—'}
-          {line.position && ` · ${line.position}`}
-        </span>
-      </div>
-      <div className="slate-line">
-        <span className="slate-line-num">{line.line}</span>
-        <span className="slate-line-stat">{line.statLabel}</span>
-      </div>
-      {hit ? (
-        <>
-          <div className={cls}>
-            <span className="slate-pct">{pct}%</span>
-            <span className="slate-lean">{lean}</span>
-          </div>
-          <div className="slate-receipts">
-            Hit {hitCount}/{line.gamesAnalyzed} {aboveOrBelow} · L10 avg{' '}
-            <strong>{line.last10Avg.toFixed(1)}</strong>
-          </div>
-        </>
-      ) : line.statKey === 'double_double' ? (
-        <div className="slate-receipts">
-          DD rate: <strong>{Math.round((line.ddRate ?? 0) * 100)}%</strong> in last {line.gamesAnalyzed}
+    <div className={inParlay ? 'slate-card in-parlay' : 'slate-card'}>
+      <button
+        className={inParlay ? 'slate-pin pinned' : 'slate-pin'}
+        onClick={onToggleParlay}
+        title={inParlay ? 'Remove from parlay' : 'Add to parlay'}
+        aria-label={inParlay ? 'Remove from parlay' : 'Add to parlay'}
+      >
+        {inParlay ? '✓' : '+'}
+      </button>
+
+      <Link
+        className="slate-card-body"
+        to={`/compare?m=last10&pid=${line.playerId}`}
+        title="See player's last 10 games"
+      >
+        <PlayerAvatar playerId={line.playerId} name={line.playerName} size="lg" />
+        <div className="slate-card-name">{line.playerName}</div>
+        <div className="slate-card-meta">
+          {line.team && (
+            <TeamLogo abbr={line.team} name={line.team} size="md" />
+          )}
+          <span>
+            {line.team ?? '—'}
+            {line.position && ` · ${line.position}`}
+          </span>
         </div>
-      ) : (
-        <div className="slate-receipts">No probability available.</div>
-      )}
-    </Link>
+        <div className="slate-line">
+          <span className="slate-line-num">{line.line}</span>
+          <span className="slate-line-stat">{line.statLabel}</span>
+        </div>
+        {hit ? (
+          <>
+            <div className={cls}>
+              <span className="slate-pct">{pct}%</span>
+              <span className="slate-lean">{lean}</span>
+            </div>
+            <div className="slate-receipts">
+              Hit {hitCount}/{line.gamesAnalyzed} {aboveOrBelow} · L10 avg{' '}
+              <strong>{line.last10Avg.toFixed(1)}</strong>
+            </div>
+          </>
+        ) : line.statKey === 'double_double' ? (
+          <div className="slate-receipts">
+            DD rate: <strong>{Math.round((line.ddRate ?? 0) * 100)}%</strong> in last {line.gamesAnalyzed}
+          </div>
+        ) : (
+          <div className="slate-receipts">No probability available.</div>
+        )}
+      </Link>
+    </div>
   );
 }
+
+// Sticky tray at the bottom of /slate. Combined probability assumes
+// independence between legs — that's a real assumption since one
+// player's points and another's rebounds are roughly uncorrelated, but
+// it isn't a guarantee. The "≈" in the label is the visual disclaimer.
+function ParlayTray({
+  legs,
+  onRemove,
+  onClear,
+}: {
+  legs: SlateResolvedLine[];
+  onRemove: (line: SlateResolvedLine) => void;
+  onClear: () => void;
+}) {
+  const probs = legs.map((l) => (l.hitProbability?.mightHitPct ?? 50) / 100);
+  const combined = probs.reduce((p, q) => p * q, 1);
+  const combinedPct = Math.round(combined * 100);
+  const tooFew = legs.length < 2;
+  const ppPayout = PRIZEPICKS_PAYOUTS[legs.length];
+
+  return (
+    <div className="parlay-tray">
+      <div className="parlay-tray-inner">
+        <div className="parlay-summary">
+          <div className="parlay-count">
+            <strong>{legs.length}</strong>
+            <span> {legs.length === 1 ? 'leg' : 'legs'}</span>
+          </div>
+          <div className="parlay-prob">
+            <span className="parlay-prob-pct">≈ {combinedPct}%</span>
+            <span className="parlay-prob-label">
+              {tooFew
+                ? 'add 1+ more for a parlay'
+                : 'combined hit (assumes independence)'}
+            </span>
+          </div>
+          {ppPayout != null && !tooFew && (
+            <div className="parlay-payout">
+              PP {legs.length}-pick: <strong>{ppPayout}×</strong>
+            </div>
+          )}
+          <button className="link" onClick={onClear}>Clear</button>
+        </div>
+        <div className="parlay-legs">
+          {legs.map((l) => {
+            const lean = l.hitProbability?.lean ?? 'OVER';
+            const pct = l.hitProbability?.mightHitPct ?? 0;
+            return (
+              <button
+                key={`${l.playerId}-${l.statKey}-${l.line}`}
+                className="parlay-leg"
+                onClick={() => onRemove(l)}
+                title="Remove from parlay"
+              >
+                <span className="parlay-leg-name">{l.playerName}</span>
+                <span className="parlay-leg-stat">
+                  {l.statLabel} {l.line} {lean === 'OVER' ? '↑' : '↓'}
+                </span>
+                <span className="parlay-leg-pct">{pct}%</span>
+                <span className="parlay-leg-x" aria-hidden>✕</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Reference PrizePicks payout multipliers (Power Plays). Used for a
+// rough "if this hits, you'd win Nx your entry" hint — informational,
+// no betting advice in any direction.
+const PRIZEPICKS_PAYOUTS: Record<number, number | undefined> = {
+  2: 3,
+  3: 5,
+  4: 10,
+  5: 20,
+  6: 35,
+};
 
 function UnresolvedSection({ unresolved }: { unresolved: SlateUnresolvedLine[] }) {
   return (
