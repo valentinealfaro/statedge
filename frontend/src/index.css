@@ -516,18 +516,24 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   text-decoration: none;
   margin-bottom: 4px;
 }
-.brand-logo {
-  height: 44px;
-  width: auto;
-  display: block;
-  /* The current logo asset has a white background. Wrap it in a
-     white rounded pill so it reads as intentional brand chrome
-     against the dark navbar instead of "small white box". When the
-     transparent-bg version of the logo lands, drop these two lines
-     and the pill disappears naturally. */
-  background: #fff;
-  padding: 4px 10px;
-  border-radius: 8px;
+/* Navbar wordmark — styled text match for the logo art:
+ * 'Stat' in light navbar foreground, 'Edge' in the cyan accent that
+ * mirrors the logo's own colorblock. Used in place of the raster logo
+ * in the navbar because the asset has a hard white background that
+ * doesn't sit well against the dark chrome at small sizes. */
+.brand-mark {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  color: #e6e8ee;
+  display: inline-block;
+}
+.brand-accent {
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* --- Top nav (Compare / Standings / Game pages) --- */
@@ -727,7 +733,7 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 @media (max-width: 640px) {
   .hero { padding: 40px 0 32px; }
   .hero-logo { max-width: 260px; }
-  .brand-logo { height: 32px; padding: 3px 8px; }
+  .brand-mark { font-size: 18px; }
 }
 .hero-tag {
   font-size: 20px;

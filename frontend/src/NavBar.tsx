@@ -15,7 +15,9 @@ export function NavBar() {
   return (
     <nav className="navbar">
       <Link to="/" className="brand" aria-label="StatEdge home">
-        <img src="/statedge-logo.png" alt="StatEdge" className="brand-logo" />
+        <span className="brand-mark">
+          Stat<span className="brand-accent">Edge</span>
+        </span>
       </Link>
       <div className="nav-links">
         <Link to="/compare" className={active('/compare')}>Compare</Link>
