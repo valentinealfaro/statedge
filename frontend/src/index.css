@@ -1820,6 +1820,62 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-right: 4px;
 }
 
+/* Prop-board status strip — shows whether a slate is loaded today
+   and lets the user paste a new sheet or clear. */
+.propboard-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+}
+.propboard-status-info { flex: 1; min-width: 200px; }
+.propboard-status-info strong { color: #e5e9f0; }
+.propboard-status-actions {
+  display: flex;
+  gap: 8px;
+}
+.cta.ghost {
+  background: transparent;
+  border: 1px solid #2a2f3a;
+  color: #8a93a6;
+}
+.cta.ghost:hover { color: #c8cfdc; border-color: #5b8def; }
+.bulk-paste.expanded {
+  margin-top: 0;
+  padding: 14px;
+  border-style: solid;
+}
+.propboard-loading {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #14171f;
+  border: 1px dashed #2a2f3a;
+  border-radius: 8px;
+  text-align: center;
+}
+
+/* Today's-games rail in informational mode — no hover/click state. */
+.today-rail.informational .today-side.static {
+  cursor: default;
+  background: transparent;
+  border: 1px solid #1f2330;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.today-rail.informational .today-side.static:hover {
+  background: transparent;
+  border-color: #1f2330;
+}
+
 /* StatEdge layered projection — lean badge + collapsible details panel */
 .slate-lean-badge {
   margin-top: 8px;

@@ -65,11 +65,23 @@ export function Slate() {
   function cardKey(l: SlateResolvedLine): string {
     return `${l.playerId}-${l.statKey}-${l.line}`;
   }
+  // Hard cap at 6 legs per the new prop-board spec — building beyond
+  // 6 silently caps so the user has to drop a leg to add a new one.
+  const PARLAY_MAX_LEGS = 6;
   function toggleParlay(l: SlateResolvedLine) {
     const k = cardKey(l);
-    setParlay((prev) =>
-      prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k],
-    );
+    setParlay((prev) => {
+      if (prev.includes(k)) return prev.filter((x) => x !== k);
+      if (prev.length >= PARLAY_MAX_LEGS) {
+        // Surface a quick error toast — drop the user's add silently
+        // would be confusing. Use the existing setError so the slate
+        // banner shows it.
+        setError(`Parlay caps at ${PARLAY_MAX_LEGS} legs — drop one before adding more.`);
+        return prev;
+      }
+      setError(null);
+      return [...prev, k];
+    });
   }
   function removeFromParlay(k: string) {
     setParlay((prev) => prev.filter((x) => x !== k));
@@ -232,8 +244,9 @@ export function Slate() {
 
       <h1 style={{ marginTop: 8 }}>Slate</h1>
       <p className="tag">
-        Build a prop slate — pick players, enter their lines, and we'll
-        compute hit probability against their last 10 games.
+        Tonight's prop board with the model's probability on every line.
+        Tap any card to add it to your parlay (up to 6 legs) and we'll
+        score the combined hit probability.
       </p>
 
       {!data && (
