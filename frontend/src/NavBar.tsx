@@ -1,9 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
+import { NavSearch } from './NavSearch';
 
 // Shared top-of-page brand row. The brand wordmark goes home, the nav
-// links cover the secondary routes. Active link is highlighted by
-// matching pathname (Compare highlights for any /compare* URL since
-// sub-routes don't yet exist but URL params do).
+// links cover the secondary routes, and the always-visible NavSearch
+// lets the user jump straight to any player's last-10 from any page.
 export function NavBar() {
   const { pathname } = useLocation();
   const active = (path: string): string => {
@@ -18,6 +18,7 @@ export function NavBar() {
         <Link to="/compare" className={active('/compare')}>Compare</Link>
         <Link to="/standings" className={active('/standings')}>Standings</Link>
       </div>
+      <NavSearch />
     </nav>
   );
 }

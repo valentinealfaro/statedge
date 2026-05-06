@@ -543,6 +543,64 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   background: #14171f;
 }
 
+/* --- NavBar player search --- */
+.nav-search {
+  position: relative;
+  flex: 1;
+  max-width: 280px;
+  min-width: 160px;
+}
+.nav-search input {
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: inherit;
+  font-size: 13px;
+}
+.nav-search input:focus { outline: none; border-color: #5b8def; }
+.nav-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 6px;
+  z-index: 50;
+  max-height: 320px;
+  overflow: auto;
+  box-shadow: 0 8px 24px #00000080;
+}
+.nav-search-empty {
+  padding: 8px 12px;
+  color: #8a93a6;
+  font-size: 13px;
+}
+.nav-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-search-row:hover { background: #1a1f2b; }
+.nav-search-row .avatar { width: 28px; height: 28px; }
+.nav-search-name { flex: 1; font-size: 13px; }
+.nav-search-team { font-size: 12px; color: #8a93a6; }
+@media (max-width: 640px) {
+  .nav-search { flex-basis: 100%; max-width: none; }
+}
+
 .hero {
   padding: 80px 0 64px;
   text-align: center;
