@@ -1216,6 +1216,105 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .performer-stats strong { color: #5b8def; font-size: 14px; }
 
+/* --- Live pill (today's games) --- */
+.live-pill {
+  display: inline-block;
+  background: #ef6a6a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.bs-final.live { color: #ef6a6a; }
+
+/* --- ESPN game detail: side-by-side panels --- */
+.espn-side-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.leaders-panel,
+.injuries-panel {
+  padding: 14px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+}
+.leaders-panel h4,
+.injuries-panel h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #c8cfdc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.leaders-list,
+.injuries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.leader-row,
+.injury-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.leader-row .avatar,
+.injury-row .avatar { width: 32px; height: 32px; flex-shrink: 0; }
+.leader-body,
+.injury-body { flex: 1; min-width: 0; }
+.leader-name,
+.injury-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.leader-meta { font-size: 12px; color: #8a93a6; margin-top: 2px; }
+.leader-meta strong { color: #5b8def; }
+.injury-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #2a2f3a;
+  color: #c8cfdc;
+  flex-shrink: 0;
+}
+.injury-status.out { background: #ef6a6a; color: #fff; }
+.injury-status.d2d { background: #f0c14b; color: #0b0d12; }
+.injury-type {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.espn-section-label {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 14px 0 6px;
+  font-weight: 600;
+}
+.dnp-pill {
+  display: inline-block;
+  background: #2a2f3a;
+  color: #8a93a6;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }

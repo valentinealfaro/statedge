@@ -444,6 +444,118 @@ export async function getTopPerformers(limit = 6): Promise<TopPerformer[]> {
   return data.performers;
 }
 
+// --- ESPN today's games + game summary ---
+
+export type EspnGameTeam = {
+  id: string;
+  abbreviation: string;
+  displayName: string;
+  logo: string;
+  score: string;
+  homeAway: 'home' | 'away';
+  record?: string;
+};
+
+export type EspnScoreboardGame = {
+  id: string;
+  date: string;
+  status: {
+    state: 'pre' | 'in' | 'post';
+    name: string;
+    detail: string;
+    completed: boolean;
+  };
+  away: EspnGameTeam;
+  home: EspnGameTeam;
+};
+
+export async function getTodayGames(date?: string): Promise<{
+  date: string | null;
+  games: EspnScoreboardGame[];
+}> {
+  const url = date
+    ? `${API_BASE}/api/games/today?date=${encodeURIComponent(date)}`
+    : `${API_BASE}/api/games/today`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { date: string | null; games: EspnScoreboardGame[] };
+}
+
+export type EspnPlayerLine = {
+  athleteId: string;
+  displayName: string;
+  shortName: string;
+  jersey: string;
+  position: string;
+  headshot: string;
+  starter: boolean;
+  didNotPlay: boolean;
+  reason?: string;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  fouls: number;
+  fg: string;
+  threePt: string;
+  ft: string;
+  plusMinus: string;
+};
+
+export type EspnInjury = {
+  status: string;
+  athleteId: string;
+  displayName: string;
+  headshot: string;
+  position: string;
+  type?: string;
+};
+
+export type EspnLeader = {
+  category: string;
+  displayName: string;
+  athleteId: string;
+  athleteName: string;
+  athleteHeadshot: string;
+  value: string;
+};
+
+export type EspnTeamSummary = {
+  id: string;
+  abbreviation: string;
+  displayName: string;
+  logo: string;
+  score: string;
+  homeAway: 'home' | 'away';
+  record?: string;
+  isWinner?: boolean;
+  starters: EspnPlayerLine[];
+  bench: EspnPlayerLine[];
+  injuries: EspnInjury[];
+  leaders: EspnLeader[];
+};
+
+export type EspnGameSummary = {
+  eventId: string;
+  date: string;
+  state: 'pre' | 'in' | 'post';
+  statusDetail: string;
+  venue?: string;
+  attendance?: number;
+  away: EspnTeamSummary;
+  home: EspnTeamSummary;
+};
+
+export async function getEspnGameSummary(eventId: string): Promise<EspnGameSummary> {
+  const res = await fetch(`${API_BASE}/api/games/espn/${encodeURIComponent(eventId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { summary: EspnGameSummary };
+  return data.summary;
+}
+
 export async function getStandings(): Promise<{ east: StandingRow[]; west: StandingRow[] }> {
   const res = await fetch(`${API_BASE}/api/standings`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
