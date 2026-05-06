@@ -331,6 +331,13 @@ export function Slate() {
         <UnresolvedSection unresolved={data.unresolved} />
       )}
 
+      {parlay.length === 0 && lines.length >= 3 && (
+        <SuggestedParlay
+          lines={lines}
+          onAccept={(legs) => setParlay(legs)}
+        />
+      )}
+
       {parlay.length > 0 && lines.length > 0 && (
         <ParlayTray
           legs={lines.filter((l) => parlay.includes(cardKey(l)))}
@@ -464,6 +471,57 @@ function LineCard({
           <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
         )}
       </Link>
+    </div>
+  );
+}
+
+// Auto-curated starter parlay: top 3 best-edge legs from the current
+// slate, OUT players removed. Shown only when the user has no legs
+// selected — disappears the moment they pin or add anything. Click
+// 'Try this slip' to pin all three legs at once.
+function SuggestedParlay({
+  lines,
+  onAccept,
+}: {
+  lines: SlateResolvedLine[];
+  onAccept: (legs: string[]) => void;
+}) {
+  const top3 = lines
+    .filter((l) => l.injury?.status !== 'Out')
+    .map((l) => ({ line: l, edge: edgeScore(l) }))
+    .filter((r) => r.edge >= 65)
+    .sort((a, b) => b.edge - a.edge)
+    .slice(0, 3)
+    .map((r) => r.line);
+
+  if (top3.length < 3) return null;
+
+  // Combined hit % assuming independence (matches the tray's math).
+  const combined = Math.round(
+    top3.reduce((p, l) => p * ((l.hitProbability?.mightHitPct ?? 50) / 100), 1) * 100,
+  );
+
+  const legs = top3.map((l) => `${l.playerId}-${l.statKey}-${l.line}`);
+
+  return (
+    <div className="suggested-parlay">
+      <div className="suggested-parlay-head">
+        <strong>Suggested 3-leg parlay</strong>
+        <span className="muted small">
+          combined ≈ {combined}% · pays {PRIZEPICKS_PAYOUTS[3]}× on PrizePicks
+        </span>
+      </div>
+      <div className="suggested-parlay-legs">
+        {top3.map((l) => (
+          <span key={`${l.playerId}-${l.statKey}-${l.line}`} className="suggested-parlay-leg">
+            <strong>{l.playerName}</strong> {l.statLabel} {l.line}{' '}
+            <span className="muted">{l.hitProbability?.lean === 'OVER' ? '↑' : '↓'}</span>
+          </span>
+        ))}
+      </div>
+      <button className="cta primary" onClick={() => onAccept(legs)}>
+        Try this slip →
+      </button>
     </div>
   );
 }

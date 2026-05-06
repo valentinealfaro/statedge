@@ -1813,6 +1813,42 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   color: #c8cfdc;
 }
 
+/* --- Suggested 3-leg parlay banner --- */
+.suggested-parlay {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 18px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #14171f 0%, #1a1f2b 100%);
+  border: 1px solid #5b8def;
+  border-radius: 10px;
+}
+.suggested-parlay-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+}
+.suggested-parlay-head strong { color: #5b8def; }
+.suggested-parlay-legs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.suggested-parlay-leg {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0b0d12;
+  border: 1px solid #2a2f3a;
+}
+.suggested-parlay .cta {
+  align-self: flex-start;
+  padding: 8px 16px;
+}
+
 /* --- Saved parlays section on /slate --- */
 .saved-parlays {
   margin: 16px 0 24px;
