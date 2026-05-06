@@ -601,6 +601,74 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   .nav-search { flex-basis: 100%; max-width: none; }
 }
 
+/* --- User menu (sign in / signed-in dropdown) --- */
+.usermenu-signin {
+  background: #5b8def;
+  border: none;
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.usermenu-signin:hover { background: #4a7adf; }
+.usermenu-signin:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.usermenu { position: relative; }
+.usermenu-trigger {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  cursor: pointer;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.usermenu-trigger:hover { border-color: #5b8def; }
+.usermenu-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.usermenu-initial {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c8cfdc;
+  font-weight: 700;
+  font-size: 14px;
+}
+.usermenu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 50;
+  box-shadow: 0 8px 24px #00000080;
+}
+.usermenu-name { font-weight: 600; font-size: 14px; }
+.usermenu-email { font-size: 12px; color: #8a93a6; margin-top: 2px; }
+.usermenu-signout {
+  margin-top: 12px;
+  width: 100%;
+  background: none;
+  border: 1px solid #2a2f3a;
+  color: #c8cfdc;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.usermenu-signout:hover { border-color: #ef6a6a; color: #ef6a6a; }
+
 .hero {
   padding: 80px 0 64px;
   text-align: center;

@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { NavSearch } from './NavSearch';
+import { UserMenu } from './UserMenu';
 
 // Shared top-of-page brand row. The brand wordmark goes home, the nav
 // links cover the secondary routes, and the always-visible NavSearch
@@ -20,6 +21,7 @@ export function NavBar() {
         <Link to="/standings" className={active('/standings')}>Standings</Link>
       </div>
       <NavSearch />
+      <UserMenu />
     </nav>
   );
 }
