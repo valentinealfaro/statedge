@@ -1016,11 +1016,22 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .bs-table th.sortable:hover { color: #5b8def; }
 .bs-table th.sortable.active { color: #5b8def; }
 .bs-player-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: inherit;
   text-decoration: none;
   font-weight: 500;
 }
 .bs-player-link:hover { color: #5b8def; }
+.bs-player-link .avatar { width: 28px; height: 28px; flex-shrink: 0; }
+
+.game-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted #2a2f3a;
+}
+.game-link:hover { color: #5b8def; border-bottom-color: #5b8def; }
 
 /* --- Standings --- */
 .standings-grid {

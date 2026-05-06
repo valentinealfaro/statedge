@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   getPlayerLast10,
   type Last10Response,
@@ -88,7 +89,11 @@ export function Last10Panel({ playerId, heading = 'Last 10 games · all opponent
           <tbody>
             {games.map((g) => (
               <tr key={g.gameId}>
-                <td>{g.date}</td>
+                <td>
+                  <Link className="game-link" to={`/game/${g.gameId}`} title="View boxscore">
+                    {g.date}
+                  </Link>
+                </td>
                 <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.minutes}</td>

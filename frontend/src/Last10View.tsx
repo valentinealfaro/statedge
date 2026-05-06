@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -204,7 +205,11 @@ function NumericStatView({ data }: { data: Extract<Last10Response, { average: nu
           <tbody>
             {data.gameLog.map((g, i) => (
               <tr key={g.gameId}>
-                <td>{g.date}</td>
+                <td>
+                  <Link className="game-link" to={`/game/${g.gameId}`} title="View boxscore">
+                    {g.date}
+                  </Link>
+                </td>
                 <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.minutes}</td>
@@ -251,7 +256,11 @@ function DoubleDoubleView({ data }: { data: Extract<Last10Response, { selectedSt
           <tbody>
             {data.gameLog.map((g, i) => (
               <tr key={g.gameId}>
-                <td>{g.date}</td>
+                <td>
+                  <Link className="game-link" to={`/game/${g.gameId}`} title="View boxscore">
+                    {g.date}
+                  </Link>
+                </td>
                 <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td>{g.points}</td>

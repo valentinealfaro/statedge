@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -404,7 +404,11 @@ export function ComparisonView({ player, team }: Props) {
               <tbody>
                 {data.report.gamesAgainstTeam.map((g) => (
                   <tr key={g.gameId}>
-                    <td>{g.date}</td>
+                    <td>
+                      <Link className="game-link" to={`/game/${g.gameId}`} title="View boxscore">
+                        {g.date}
+                      </Link>
+                    </td>
                     <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                     <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                     <td>{g.minutes}</td>

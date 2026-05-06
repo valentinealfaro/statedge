@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getTeamLast10, type TeamGame, type TeamLast10Response } from './api';
 import { Last10Skeleton } from './Last10Panel';
 import { MatchupCell } from './MatchupCell';
@@ -74,7 +75,11 @@ export function TeamLast10Panel({ teamId, heading = 'Last 10 games · all oppone
           <tbody>
             {games.map((g) => (
               <tr key={g.gameId}>
-                <td>{g.date}</td>
+                <td>
+                  <Link className="game-link" to={`/game/${g.gameId}`} title="View boxscore">
+                    {g.date}
+                  </Link>
+                </td>
                 <td><MatchupCell opponentAbbr={g.opponentAbbr} isHome={g.isHome} /></td>
                 <td className={g.result === 'W' ? 'pos' : 'neg'}>{g.result ?? '—'}</td>
                 <td><strong>{g.points}</strong></td>

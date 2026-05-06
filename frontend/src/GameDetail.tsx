@@ -6,7 +6,7 @@ import {
   type BoxscorePlayer,
   type BoxscoreSide,
 } from './api';
-import { TeamLogo } from './Avatar';
+import { PlayerAvatar, TeamLogo } from './Avatar';
 import { FreshnessBanner } from './FreshnessBanner';
 import { useTitle } from './useTitle';
 
@@ -134,7 +134,8 @@ function BoxscoreTable({
                     to={`/compare?m=last10&pid=${p.playerId}`}
                     title="See last 10 games"
                   >
-                    {p.fullName}
+                    <PlayerAvatar playerId={p.playerId} name={p.fullName} size="md" />
+                    <span>{p.fullName}</span>
                   </Link>
                 </td>
                 <td>{p.minutes}</td>
