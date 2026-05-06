@@ -618,6 +618,37 @@ function BestPicksRail({
     return out;
   }
 
+  // Stricter version of pickDiverse: avoids both same-player AND
+  // same-stat-label collisions. Used by Wild Card to force variety
+  // (otherwise the longshot ends up being 6 Points props from
+  // different players, which isn't really "wild" — just safe).
+  function pickDiverseByStat(sorted: Candidate[], n: number): Candidate[] {
+    const seenPlayers = new Set<number>();
+    const seenStats = new Set<string>();
+    const out: Candidate[] = [];
+    for (const c of sorted) {
+      if (seenPlayers.has(c.line.playerId)) continue;
+      if (seenStats.has(c.line.statLabel)) continue;
+      out.push(c);
+      seenPlayers.add(c.line.playerId);
+      seenStats.add(c.line.statLabel);
+      if (out.length === n) break;
+    }
+    // If strict diversity didn't fill 6 (small slate, few stat types
+    // with strong picks), relax the stat constraint and fill from
+    // remaining candidates by player only.
+    if (out.length < n) {
+      for (const c of sorted) {
+        if (out.includes(c)) continue;
+        if (seenPlayers.has(c.line.playerId)) continue;
+        out.push(c);
+        seenPlayers.add(c.line.playerId);
+        if (out.length === n) break;
+      }
+    }
+    return out;
+  }
+
   function combinedPct(picks: Candidate[]): number {
     return picks.reduce((p, c) => p * (c.pct / 100), 1) * 100;
   }
@@ -630,25 +661,42 @@ function BestPicksRail({
     if (legs.length === n) combos.push({ label: `Best ${n}`, legs });
   }
 
-  // Wild Card: 6-leg longshot pulling only from Demons (over-only,
-  // higher payout) and standard props ('both'). Goblins (under-only,
-  // shorter line, lower payout) are excluded — they don't add the
-  // upside that makes a Wild Card worth playing. Within that pool
-  // we sort by edge × probability so the strongest model verdicts
-  // float to the top, with a Demon preference baked in: a Demon and
-  // a standard prop tied on edge × pct break tie toward the Demon.
-  const wildPool = candidates.filter((c) => c.line.direction !== 'under');
-  const sortedByEdgeProb = [...wildPool].sort((a, b) => {
-    const aScore = a.edge * a.pct;
-    const bScore = b.edge * b.pct;
+  // Wild Card: a real longshot. NOT a re-shuffle of the Best 6
+  // safest plays. Three things differentiate it:
+  //   1. Pool excludes Goblins (under-only, lower payout) AND the
+  //      very-highest-probability picks (those already live in Best
+  //      6 — no point repeating them with a different sort).
+  //   2. Sort favors model conviction (edge) with a longshot bonus:
+  //      higher edge + moderate probability beats slight edge +
+  //      runaway probability. We score by edge × (105 - pct) which
+  //      peaks around 70-80% pct + edge ≥ 50.
+  //   3. Strict diversity by stat label — a Wild Card with 6 Points
+  //      props isn't 'wild', it's just a Best 6 in disguise. Forcing
+  //      6 different stat types creates the variety pack the user
+  //      actually wants.
+  const wildPool = candidates.filter((c) => {
+    if (c.line.direction === 'under') return false;        // no Goblins
+    if (c.pct >= 90) return false;                          // skip the locks (Best 6 territory)
+    if (c.edge < 40) return false;                          // skip weak edges
+    return true;
+  });
+  const sortedByLongshot = [...wildPool].sort((a, b) => {
+    // Longshot score: high edge × (room above 50%). A 75%-confidence
+    // edge-70 pick beats a 92%-confidence edge-72 pick because the
+    // first one moves the combined-% needle more if it hits.
+    const score = (c: Candidate) => c.edge * (105 - c.pct);
+    const aScore = score(a);
+    const bScore = score(b);
     if (aScore !== bScore) return bScore - aScore;
-    // Tiebreak: Demons first.
+    // Tiebreak: Demons first (higher payout).
     const aDemon = a.line.direction === 'over' ? 1 : 0;
     const bDemon = b.line.direction === 'over' ? 1 : 0;
     return bDemon - aDemon;
   });
-  const wildLegs = pickDiverse(sortedByEdgeProb, 6);
-  if (wildLegs.length === 6) {
+  const wildLegs = pickDiverseByStat(sortedByLongshot, 6);
+  if (wildLegs.length >= 4) {
+    // Allow 4-6 legs even if we couldn't fill 6 (some slates won't
+    // have enough variety in the longshot zone).
     combos.push({ label: 'Wild Card', legs: wildLegs, tag: 'wild' });
   }
 
@@ -682,7 +730,7 @@ function BestPicksRail({
               </div>
               <div
                 className="best-pick-pct"
-                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card pulls only from Demons (over-only, higher payout) and standard props — Goblins are excluded since they pay less. Sorted by edge × probability so the strongest model verdicts surface, with Demons winning ties for the longshot upside.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
+                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card is the slate longshot: skips the 90%+ locks (those live in Best 6), skips Goblins (lower payout), keeps only edge ≥ 40 picks in the 60-89% range. Forces stat-type diversity so you get a variety pack — a points play, a rebound play, a 3-PT play — instead of 6 same-stat props masquerading as different picks.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
               >
                 {pct.toFixed(1)}%
               </div>
