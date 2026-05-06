@@ -21,8 +21,10 @@ import {
 import { AdvancedCards } from './AdvancedCards';
 import { AiSummary } from './AiSummary';
 import { HitBadge } from './HitBadge';
+import { SaveButton } from './SaveButton';
 import { SeasonTabs } from './SeasonTabs';
 import { STAT_LABELS, StatPicker } from './StatPicker';
+import { usePlan } from './plan';
 
 // Stat tiles for which we offer a "Line" input + hit-probability badge.
 // (Minutes / FG% / 3PT% don't map cleanly to traditional prop lines.)
@@ -59,6 +61,9 @@ function statAvgFor(data: CompareResponse, stat: SelectedStat): number {
 }
 
 export function ComparisonView({ player, team }: Props) {
+  const { plan, canRunComparison, recordComparison } = usePlan();
+  const isFree = plan === 'free';
+  // Free plan is locked to last-5 per spec; force the range if the user is free.
   const [range, setRange] = useState<Range>('last5');
   const [seasons, setSeasons] = useState<SeasonRange>('current');
   const [selectedStat, setSelectedStat] = useState<SelectedStat>('PRA');
@@ -76,13 +81,28 @@ export function ComparisonView({ player, team }: Props) {
   });
 
   useEffect(() => {
+    if (!canRunComparison) return;
     setLoading(true);
     setError(null);
     comparePlayerVsTeam(player.id, team.id, range, seasons, selectedStat)
       .then(setData)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [player.id, team.id, range, seasons, selectedStat]);
+  }, [player.id, team.id, range, seasons, selectedStat, canRunComparison]);
+
+  // Count one comparison-toward-the-daily-cap per (player, team) pair.
+  // Subsequent range/season tweaks against the same matchup don't re-bill.
+  useEffect(() => {
+    if (plan === 'pro') return;
+    recordComparison();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.id, team.id]);
+
+  if (!canRunComparison) {
+    // The PlanGate above the comparison view already explains the limit and
+    // offers an unlock; nothing else to render until the user upgrades.
+    return null;
+  }
 
   // Whenever a line input changes, refetch hit probability for stats that
   // have a valid number entered. Debounced so each keystroke doesn't fire.
@@ -122,18 +142,33 @@ export function ComparisonView({ player, team }: Props) {
         </div>
       </div>
 
-      <SeasonTabs value={seasons} onChange={setSeasons} />
+      <div className="actions-row">
+        <SaveButton draft={{ type: 'pvt', player, team }} />
+      </div>
+
+      {!isFree && <SeasonTabs value={seasons} onChange={setSeasons} />}
 
       <div className="range-tabs">
-        {(['last5', 'last10', 'last20', 'season'] as Range[]).map((r) => (
-          <button
-            key={r}
-            className={r === range ? 'tab active' : 'tab'}
-            onClick={() => setRange(r)}
-          >
-            {r === 'season' ? 'All' : `Last ${r.replace('last', '')}`}
-          </button>
-        ))}
+        {(['last5', 'last10', 'last20', 'season'] as Range[]).map((r) => {
+          const locked = isFree && r !== 'last5';
+          return (
+            <button
+              key={r}
+              className={
+                r === range
+                  ? 'tab active'
+                  : locked
+                  ? 'tab locked'
+                  : 'tab'
+              }
+              onClick={() => { if (!locked) setRange(r); }}
+              title={locked ? 'Pro feature — upgrade to unlock' : undefined}
+            >
+              {r === 'season' ? 'All' : `Last ${r.replace('last', '')}`}
+              {locked && <span className="lock-pill small">PRO</span>}
+            </button>
+          );
+        })}
       </div>
 
       {data && (

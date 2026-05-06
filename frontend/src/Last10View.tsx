@@ -15,6 +15,8 @@ import {
   type Last10StatId,
   type Player,
 } from './api';
+import { SaveButton } from './SaveButton';
+import { usePlan } from './plan';
 
 type Props = { player: Player };
 
@@ -66,10 +68,17 @@ const LABELS: Record<Last10StatId, string> = {
 };
 
 export function Last10View({ player }: Props) {
+  const { plan, recordComparison } = usePlan();
   const [stat, setStat] = useState<Last10StatId>('points');
   const [data, setData] = useState<Last10Response | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (plan === 'pro') return;
+    recordComparison();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.id]);
 
   useEffect(() => {
     setLoading(true);
@@ -91,6 +100,10 @@ export function Last10View({ player }: Props) {
         <div className="side">
           <div className="small">All opponents</div>
         </div>
+      </div>
+
+      <div className="actions-row">
+        <SaveButton draft={{ type: 'last10', player }} />
       </div>
 
       <div className="chips">

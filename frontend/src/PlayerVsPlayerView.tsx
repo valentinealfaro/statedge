@@ -7,7 +7,9 @@ import {
   type StatKey,
 } from './api';
 import { AiSummary } from './AiSummary';
+import { SaveButton } from './SaveButton';
 import { SeasonTabs } from './SeasonTabs';
+import { usePlan } from './plan';
 
 type Props = { a: Player; b: Player };
 type Range = 'last5' | 'last10' | 'last20' | 'season';
@@ -29,11 +31,18 @@ function fmt(k: StatKey, v: number): string {
 }
 
 export function PlayerVsPlayerView({ a, b }: Props) {
-  const [range, setRange] = useState<Range>('last10');
+  const { plan, recordComparison } = usePlan();
+  const [range, setRange] = useState<Range>(plan === 'free' ? 'last5' : 'last10');
   const [seasons, setSeasons] = useState<SeasonRange>('current');
   const [data, setData] = useState<PvpResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (plan === 'pro') return;
+    recordComparison();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.id, b.id]);
 
   useEffect(() => {
     setLoading(true);
@@ -56,6 +65,10 @@ export function PlayerVsPlayerView({ a, b }: Props) {
           <div className="big">{b.fullName}</div>
           <div className="small">{b.teamAbbreviation ?? '—'}</div>
         </div>
+      </div>
+
+      <div className="actions-row">
+        <SaveButton draft={{ type: 'pvp', a, b }} />
       </div>
 
       <SeasonTabs value={seasons} onChange={setSeasons} />

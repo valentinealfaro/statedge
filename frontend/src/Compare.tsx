@@ -7,18 +7,24 @@ import { PlayerVsPlayerView } from './PlayerVsPlayerView';
 import { TeamVsTeamView } from './TeamVsTeamView';
 import { Last10View } from './Last10View';
 import { FreshnessBanner } from './FreshnessBanner';
+import { PlanGate } from './PlanGate';
+import { SavedList } from './SavedList';
+import { usePlan } from './plan';
+import type { SavedItem } from './saved';
 import type { Player, Team } from './api';
 
-type Mode = 'pvt' | 'pvp' | 'tvt' | 'last10';
+type Mode = 'pvt' | 'pvp' | 'tvt' | 'last10' | 'saved';
 
 const MODE_LABELS: Record<Mode, string> = {
   pvt: 'Player vs Team',
   pvp: 'Player vs Player',
   tvt: 'Team vs Team',
   last10: 'Last 10 Games',
+  saved: 'Saved',
 };
 
 export function Compare() {
+  const { plan, canRunComparison } = usePlan();
   const [mode, setMode] = useState<Mode>('pvt');
   const [player, setPlayer] = useState<Player | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
@@ -43,14 +49,45 @@ export function Compare() {
     reset();
   }
 
+  function openSaved(item: SavedItem) {
+    reset();
+    switch (item.type) {
+      case 'pvt':
+        setPlayer(item.player);
+        setTeam(item.team);
+        setMode('pvt');
+        return;
+      case 'pvp':
+        setPA(item.a);
+        setPB(item.b);
+        setMode('pvp');
+        return;
+      case 'tvt':
+        setTA(item.a);
+        setTB(item.b);
+        setMode('tvt');
+        return;
+      case 'last10':
+        setSolo(item.player);
+        setMode('last10');
+        return;
+    }
+  }
+
+  // Free users don't get the Saved tab — saving is a Pro feature.
+  const visibleModes = (Object.keys(MODE_LABELS) as Mode[]).filter(
+    (m) => m !== 'saved' || plan === 'pro',
+  );
+
   return (
     <div className="app">
       <Link to="/" className="brand">StatEdge</Link>
       <p className="tag">NBA stats comparison</p>
       <FreshnessBanner />
+      <PlanGate />
 
       <div className="mode-tabs">
-        {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
+        {visibleModes.map((m) => (
           <button
             key={m}
             className={m === mode ? 'mode-tab active' : 'mode-tab'}
@@ -79,7 +116,7 @@ export function Compare() {
               <PlayerSearch selected={pB} onSelect={setPB} />
             </>
           )}
-          {pA && pB && <PlayerVsPlayerView a={pA} b={pB} />}
+          {pA && pB && canRunComparison && <PlayerVsPlayerView a={pA} b={pB} />}
         </>
       )}
 
@@ -93,18 +130,25 @@ export function Compare() {
               <TeamPicker selected={tB} onSelect={setTB} />
             </>
           )}
-          {tA && tB && <TeamVsTeamView a={tA} b={tB} />}
+          {tA && tB && canRunComparison && <TeamVsTeamView a={tA} b={tB} />}
         </>
       )}
 
       {mode === 'last10' && (
         <>
           <PlayerSearch selected={solo} onSelect={setSolo} />
-          {solo && <Last10View player={solo} />}
+          {solo && canRunComparison && <Last10View player={solo} />}
         </>
       )}
 
-      {(player || team || pA || pB || tA || tB || solo) && (
+      {mode === 'saved' && (
+        <>
+          <h2>Your saved comparisons</h2>
+          <SavedList onOpen={openSaved} />
+        </>
+      )}
+
+      {(player || team || pA || pB || tA || tB || solo) && mode !== 'saved' && (
         <button className="reset" onClick={reset}>
           Start over
         </button>

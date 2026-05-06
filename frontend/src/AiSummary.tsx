@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { getAiSummary } from './api';
+import { usePlan } from './plan';
 
 type Props = {
   payload: unknown;
 };
 
 export function AiSummary({ payload }: Props) {
+  const { plan } = usePlan();
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +24,20 @@ export function AiSummary({ payload }: Props) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (plan === 'free') {
+    return (
+      <div className="ai locked">
+        <div className="ai-head">
+          <h3>AI summary <span className="lock-pill">PRO</span></h3>
+        </div>
+        <p className="muted">
+          AI-generated breakdowns of trends, matchups, consistency, and risk are a Pro feature.
+          Upgrade to unlock — never betting picks, just analysis.
+        </p>
+      </div>
+    );
   }
 
   return (
