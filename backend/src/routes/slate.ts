@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import multer from 'multer';
-import OpenAI from 'openai';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import { isDbConfigured } from '../db.js';
+import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
 
 export const slateRouter: Router = Router();
 
@@ -82,7 +82,7 @@ slateRouter.get('/auto', async (_req, res) => {
 });
 
 // Image-upload path: multipart screenshot in, structured slate out.
-// Image is OCR'd via OpenAI Vision (gpt-4o-mini), then run through the
+// Image is OCR'd via Gemini Vision (gemini-2.5-flash), then run through the
 // same resolver+probability pipeline as the auto path. The image bytes
 // live in memory for the request lifetime only — never persisted.
 slateRouter.post('/parse-image', upload.single('image'), async (req, res) => {
@@ -119,17 +119,9 @@ slateRouter.post('/parse-image', upload.single('image'), async (req, res) => {
 
 // AI analysis of a parlay slip. Frontend POSTs the resolved legs (so
 // the LLM sees the per-leg stats it should reason over — no need to
-// re-fetch DB), we ask gpt-4o-mini for a concise paragraph: strongest
-// pick, biggest risk, useful context. Single call regardless of leg
-// count keeps the cost roughly $0.001 per analysis.
-let aiClient: OpenAI | null = null;
-function getOpenAi(): OpenAI | null {
-  if (aiClient) return aiClient;
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  aiClient = new OpenAI({ apiKey: key });
-  return aiClient;
-}
+// re-fetch DB), we ask gemini-2.5-flash for a concise paragraph:
+// strongest pick, biggest risk, useful context. Single call regardless
+// of leg count keeps the cost minimal.
 
 const ANALYZE_SYSTEM = `You are a precise sports data analyst, not a tout.
 
@@ -156,9 +148,9 @@ NEVER:
 Output is the paragraph itself, no headers, no preamble.`;
 
 slateRouter.post('/analyze', async (req, res) => {
-  const c = getOpenAi();
-  if (!c) {
-    res.status(503).json({ error: 'AI analysis unavailable: OPENAI_API_KEY not set' });
+  const ai = getGemini();
+  if (!ai) {
+    res.status(503).json({ error: 'AI analysis unavailable: GEMINI_API_KEY not set' });
     return;
   }
   const legs = req.body?.legs;
@@ -192,18 +184,20 @@ slateRouter.post('/analyze', async (req, res) => {
   }));
 
   try {
-    const completion = await c.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: ANALYZE_SYSTEM },
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
         {
           role: 'user',
-          content: 'Analyze this slip:\n' + JSON.stringify(trimmed, null, 2),
+          parts: [{ text: 'Analyze this slip:\n' + JSON.stringify(trimmed, null, 2) }],
         },
       ],
-      temperature: 0.3,
+      config: {
+        systemInstruction: ANALYZE_SYSTEM,
+        temperature: 0.3,
+      },
     });
-    const summary = completion.choices[0]?.message?.content?.trim() ?? '';
+    const summary = (response.text ?? '').trim();
     res.json({ summary });
   } catch (err) {
     console.error('slate/analyze failed', err);

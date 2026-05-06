@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
+import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
 
 export const aiRouter: Router = Router();
 
@@ -20,21 +20,12 @@ Return:
 4. Risks
 5. Insight`;
 
-let client: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (client) return client;
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  client = new OpenAI({ apiKey: key });
-  return client;
-}
-
 aiRouter.post('/summary', async (req, res) => {
-  const c = getClient();
-  if (!c) {
+  const ai = getGemini();
+  if (!ai) {
     res
       .status(503)
-      .json({ error: 'AI summaries unavailable: set OPENAI_API_KEY in backend/.env to enable.' });
+      .json({ error: 'AI summaries unavailable: set GEMINI_API_KEY in env to enable.' });
     return;
   }
 
@@ -45,20 +36,27 @@ aiRouter.post('/summary', async (req, res) => {
   }
 
   try {
-    const completion = await c.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
         {
           role: 'user',
-          content:
-            'Analyze this comparison data and return the requested 5-section breakdown. Data:\n' +
-            JSON.stringify(payload, null, 2),
+          parts: [
+            {
+              text:
+                'Analyze this comparison data and return the requested 5-section breakdown. Data:\n' +
+                JSON.stringify(payload, null, 2),
+            },
+          ],
         },
       ],
-      temperature: 0.4,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        temperature: 0.4,
+      },
     });
-    const summary = completion.choices[0]?.message?.content ?? '';
+
+    const summary = response.text ?? '';
     res.json({ summary });
   } catch (err) {
     console.error('ai/summary failed', err);

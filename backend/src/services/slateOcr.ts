@@ -1,45 +1,58 @@
-// OCR-by-Vision: send a screenshot to GPT-4o-mini and ask for structured
-// {playerName, statLabel, line}[] back. Far more reliable than Tesseract
-// on stylized prop boards (dark backgrounds, custom fonts, photos).
+// OCR-by-Vision: send a screenshot to Gemini and ask for structured
+// {playerName, statLabel, line}[] back. Far more reliable than
+// Tesseract on stylized prop boards (dark backgrounds, custom fonts,
+// player headshots).
 
-import OpenAI from 'openai';
+import { Type } from '@google/genai';
+import { getGemini, GEMINI_MODEL } from './gemini.js';
 import type { RawLine } from './slatePipeline.js';
-
-let client: OpenAI | null = null;
-function getClient(): OpenAI | null {
-  if (client) return client;
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  client = new OpenAI({ apiKey: key });
-  return client;
-}
 
 const SYSTEM = `You are a precise data extractor.
 You receive a screenshot of a sports prop board (PrizePicks, Underdog,
 DraftKings Pick6, etc).
 Extract every player+stat+line you can see.
 
-Output valid JSON only — no commentary, no code fences.
-
-Schema:
-{
-  "lines": [
-    { "playerName": "First Last", "statLabel": "Points|Rebounds|Pts+Rebs+Asts|3-PT Made|Steals|Blocked Shots|Turnovers|Pts+Asts|Pts+Rebs|Rebs+Asts|FG Made|Free Throws Made|Personal Fouls|Blks+Stls|Double-Double", "line": 24.5, "team": "LAL", "opponent": "DEN" }
-  ]
-}
-
 Rules:
 - "playerName": full name, exactly as printed (do not invent middle names).
-- "statLabel": match one of the values listed above. Map common abbreviations
-  back to the canonical form ("PRA" -> "Pts+Rebs+Asts", "PR" -> "Pts+Rebs",
-  "Threes" -> "3-PT Made", etc).
+- "statLabel": map to one of:
+  Points, Rebounds, Pts+Rebs+Asts, 3-PT Made, Steals, Blocked Shots,
+  Turnovers, Pts+Asts, Pts+Rebs, Rebs+Asts, FG Made, Free Throws Made,
+  Personal Fouls, Blks+Stls, Double-Double.
+  Map common abbreviations back to the canonical form ("PRA" -> "Pts+Rebs+Asts",
+  "PR" -> "Pts+Rebs", "Threes" -> "3-PT Made").
 - "line": numeric line value (e.g., 24.5, not "24.5+").
 - "team": 2-3 letter team abbreviation if visible (LAL, BOS, GSW), else omit.
 - "opponent": 2-3 letter abbreviation of tonight's opposing team if visible
-  (often shown as "vs DEN", "@ DEN", or "LAL/DEN"). Omit if not visible.
+  ("vs DEN", "@ DEN", "LAL/DEN"); omit if not visible.
 - Only include single-player props. Skip combos like "Brunson + Embiid".
 - Skip "Live" / "Pre-game" / promotional banners.
-- If you can't read a line clearly, skip it — don't guess.`;
+- If you can't read a line clearly, skip it — don't guess.
+
+Output valid JSON conforming to the schema.`;
+
+// Strict response schema so Gemini always returns the same shape.
+// Gemini's structured-output mode validates against this server-side.
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    lines: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          playerName: { type: Type.STRING },
+          statLabel:  { type: Type.STRING },
+          line:       { type: Type.NUMBER },
+          team:       { type: Type.STRING },
+          opponent:   { type: Type.STRING },
+        },
+        required: ['playerName', 'statLabel', 'line'],
+        propertyOrdering: ['playerName', 'statLabel', 'line', 'team', 'opponent'],
+      },
+    },
+  },
+  required: ['lines'],
+} as const;
 
 export type OcrResult = {
   raw: RawLine[];
@@ -50,31 +63,34 @@ export async function ocrPropBoard(
   imageBuffer: Buffer,
   mimeType: string,
 ): Promise<OcrResult> {
-  const c = getClient();
-  if (!c) {
-    throw new Error('OCR requires OPENAI_API_KEY');
+  const ai = getGemini();
+  if (!ai) {
+    throw new Error('OCR requires GEMINI_API_KEY');
   }
 
   const b64 = imageBuffer.toString('base64');
-  const dataUrl = `data:${mimeType};base64,${b64}`;
 
-  const completion = await c.chat.completions.create({
-    model: 'gpt-4o-mini',
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM },
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
       {
         role: 'user',
-        content: [
-          { type: 'text', text: 'Extract the prop lines from this screenshot.' },
-          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
+        parts: [
+          { inlineData: { mimeType, data: b64 } },
+          { text: 'Extract the prop lines from this screenshot.' },
         ],
       },
     ],
-    temperature: 0.0,
+    config: {
+      systemInstruction: SYSTEM,
+      temperature: 0.0,
+      responseMimeType: 'application/json',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      responseSchema: RESPONSE_SCHEMA as any,
+    },
   });
 
-  const text = completion.choices[0]?.message?.content ?? '{}';
+  const text = (response.text ?? '{}').trim();
   let parsed: { lines?: unknown };
   try {
     parsed = JSON.parse(text) as { lines?: unknown };
@@ -82,7 +98,7 @@ export async function ocrPropBoard(
     throw new Error(`OCR returned invalid JSON: ${(err as Error).message}`);
   }
   if (!Array.isArray(parsed.lines)) {
-    return { raw: [], modelUsed: 'gpt-4o-mini' };
+    return { raw: [], modelUsed: GEMINI_MODEL };
   }
 
   const raw: RawLine[] = [];
@@ -104,5 +120,5 @@ export async function ocrPropBoard(
     });
   }
 
-  return { raw, modelUsed: 'gpt-4o-mini' };
+  return { raw, modelUsed: GEMINI_MODEL };
 }
