@@ -78,6 +78,32 @@ export function Slate() {
     getDataFreshness().then(setFreshness).catch(() => {});
   }, []);
 
+  // Background refresh: PP lines move during the day, so we re-pull
+  // every 5 minutes while the tab is visible and immediately after the
+  // tab returns to focus. We DON'T set loading=true on these refreshes
+  // — silent updates keep the parlay tray and filters from flickering.
+  useEffect(() => {
+    let alive = true;
+    const silentRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Only refresh the auto path — uploaded slates are static by design.
+      if (data && data.source === 'image_upload') return;
+      getSlateAuto()
+        .then((d) => { if (alive) setData(d); })
+        .catch(() => { /* keep stale data on transient errors */ });
+    };
+    const interval = setInterval(silentRefresh, 5 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') silentRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [data]);
+
   function retryAuto() {
     setLoading(true);
     setError(null);
