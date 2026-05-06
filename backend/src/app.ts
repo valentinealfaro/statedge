@@ -57,7 +57,6 @@ export function createApp(): Express {
       branch: process.env.VERCEL_GIT_COMMIT_REF ?? null,
       deployedAt: process.env.VERCEL_DEPLOYMENT_CREATED_AT ?? null,
       hasGeminiKey: !!process.env.GEMINI_API_KEY,
-      hasOpenAiKey: !!process.env.OPENAI_API_KEY,
       hasDb: !!process.env.DATABASE_URL,
     });
   });

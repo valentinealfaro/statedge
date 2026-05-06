@@ -763,7 +763,6 @@ export type BackendVersion = {
   branch: string | null;
   deployedAt: string | null;
   hasGeminiKey: boolean;
-  hasOpenAiKey: boolean;
   hasDb: boolean;
 };
 

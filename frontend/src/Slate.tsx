@@ -274,17 +274,13 @@ export function Slate() {
           </strong>{' '}
           {error}
           {/* OPENAI_API_KEY in the error means the deployed backend is
-              still on the pre-Gemini code. Vercel hasn't redeployed
-              the backend with the latest commits — point the user at
-              the right env var to set. */}
+              still on the pre-Gemini code path — i.e. Vercel hasn't
+              picked up the latest commits. Tell the user to redeploy. */}
           {error.includes('OPENAI_API_KEY') ? (
             <p className="muted small">
-              Your Vercel <strong>backend</strong> deployment is on stale code.
-              Either redeploy the backend project (so it picks up the latest
-              commits) or — if you really do want to keep using OpenAI — set
-              <code> OPENAI_API_KEY</code>. Otherwise, set
-              <code> GEMINI_API_KEY</code> in the backend project's env vars
-              (<em>Production + Preview + Development</em>) and redeploy.
+              Your Vercel <strong>backend</strong> deployment is on stale code
+              (still references OPENAI_API_KEY). Trigger a manual redeploy
+              of the backend project so it picks up the Gemini migration.
             </p>
           ) : error.includes('GEMINI_API_KEY') ? (
             <p className="muted small">
