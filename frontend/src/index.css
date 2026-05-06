@@ -172,7 +172,7 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 
 .muted.sample { font-size: 12px; margin: 4px 0 12px; color: #8a93a6; }
 
-.range-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.range-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .tab {
   padding: 8px 14px;
   border-radius: 999px;
@@ -420,7 +420,8 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 
 .mode-tabs {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin-bottom: 24px;
   border-bottom: 1px solid #1f2330;
   padding-bottom: 8px;
@@ -910,5 +911,72 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
     );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+/* --- Error boundary fallback --- */
+.boundary {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.boundary-card {
+  max-width: 520px;
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+}
+.boundary-card h2 { margin: 0 0 12px; }
+.boundary-msg {
+  margin: 16px 0;
+  padding: 12px;
+  background: #0b0d12;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #ef6a6a;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.boundary-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* --- Mobile responsiveness --- */
+@media (max-width: 640px) {
+  .app { padding: 24px 16px 64px; }
+  h1 { font-size: 24px; }
+  /* Matchup header: avatars sit above shrunken text on phones */
+  .matchup { padding: 14px; }
+  .matchup .big { font-size: 14px; line-height: 1.2; }
+  .matchup .small { font-size: 11px; }
+  .matchup .vs { font-size: 11px; padding: 0 8px; }
+  .avatar.lg { width: 48px; height: 48px; }
+  /* Stat-picker / chip rows already wrap; tighten the spacing. */
+  .picker-row, .chips, .range-tabs { gap: 4px; }
+  /* The combo display's giant 56px number is too dominant on phones. */
+  .combo-value { font-size: 40px; }
+  /* Cards grid drops to 2-up on phones for legibility. */
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  /* Trending rails: 2-up cards on phones. */
+  .trending-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .trending-card { padding: 12px 8px; }
+  .trending-name { font-size: 12px; }
+  /* Embedded last10 averages: 4-up on phones (was auto-fill 80px). */
+  .last10-avgs { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .last10-avg { padding: 8px 6px; }
+  .last10-avg-v { font-size: 14px; }
+  /* Plan bar wraps onto multiple lines; let the messages breathe. */
+  .plan-bar { font-size: 12px; }
+  .plan-msg { flex-basis: 100%; }
+  /* Tables already use .games-scroll; nothing else to do for them. */
 }
 
