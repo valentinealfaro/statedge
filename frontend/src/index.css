@@ -1749,8 +1749,21 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-radius: 8px;
   background: #0f1218;
 }
+.bulk-paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bulk-paste-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 14px;
+}
 .bulk-paste-toggle {
-  width: 100%;
+  flex: 1;
   background: none;
   border: none;
   color: #c8cfdc;

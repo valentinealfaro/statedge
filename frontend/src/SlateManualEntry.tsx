@@ -15,6 +15,7 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { TeamRosterModal } from './TeamRosterModal';
+import { userKey } from './userKey';
 import {
   blendedSample,
   computeHitProbability,
@@ -105,6 +106,52 @@ type Props = {
   onResult: (response: SlateResponse) => void;
 };
 
+// localStorage key for today's pasted slate. Keyed by ISO date so a new
+// slate starts every day automatically — and userKey'd so two people
+// sharing a browser don't see each other's picks.
+function slateStorageKey(): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return userKey(`slate:saved:${today}`);
+}
+
+// Slot serialized for persistence. We strip the random `id` since it's
+// re-minted each load, and store the player/opponent as plain JSON.
+type StoredSlot = {
+  player: Player;
+  opponent: Team | null;
+  lines: Record<string, string>;
+};
+
+function loadStoredSlots(): Slot[] | null {
+  try {
+    const raw = localStorage.getItem(slateStorageKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredSlot[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    return parsed.map((s) => ({
+      ...newSlot(),
+      player: s.player,
+      opponent: s.opponent,
+      lines: s.lines ?? {},
+    }));
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredSlots(slots: Slot[]): void {
+  try {
+    const serializable: StoredSlot[] = slots
+      .filter((s) => s.player !== null)
+      .map((s) => ({ player: s.player!, opponent: s.opponent, lines: s.lines }));
+    if (serializable.length === 0) {
+      localStorage.removeItem(slateStorageKey());
+    } else {
+      localStorage.setItem(slateStorageKey(), JSON.stringify(serializable));
+    }
+  } catch { /* quota / disabled — ignore */ }
+}
+
 // L10 cache entry. We keep the raw gameLog around so we can compute both
 // per-stat averages AND live hit probabilities on the fly (including
 // dedup'd L10 + vs-opp blends when an opponent is set).
@@ -114,7 +161,10 @@ type PlayerL10 = {
 };
 
 export function SlateManualEntry({ onResult }: Props) {
-  const [slots, setSlots] = useState<Slot[]>([newSlot()]);
+  // Hydrate today's slate from localStorage on first render. Falls back
+  // to a single empty slot if there's nothing saved (or if the user
+  // already cleared today's storage).
+  const [slots, setSlots] = useState<Slot[]>(() => loadStoredSlots() ?? [newSlot()]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -130,6 +180,19 @@ export function SlateManualEntry({ onResult }: Props) {
       .then((d) => setTodayGames(d.games))
       .catch(() => setTodayGames([]));
   }, []);
+
+  // Debounced persistence — every change to the slot grid (paste, edit,
+  // add, remove) gets saved to localStorage so a refresh restores
+  // exactly where the user left off.
+  useEffect(() => {
+    const t = setTimeout(() => saveStoredSlots(slots), 400);
+    return () => clearTimeout(t);
+  }, [slots]);
+
+  function clearSlate() {
+    try { localStorage.removeItem(slateStorageKey()); } catch { /* ignore */ }
+    setSlots([newSlot()]);
+  }
 
   // Lazily fetch L10 game logs for any picked player we don't have yet.
   // Mark loading=true synchronously to prevent double-fetches on rapid
@@ -444,7 +507,11 @@ export function SlateManualEntry({ onResult }: Props) {
         </div>
       )}
 
-      <BulkPasteSection onImport={importBulkPaste} />
+      <BulkPasteSection
+        onImport={importBulkPaste}
+        slotCount={slots.filter((s) => s.player).length}
+        onClear={clearSlate}
+      />
 
       <div className="manual-slots">
         {slots.map((s, idx) => (
@@ -826,12 +893,16 @@ function SuggestStrip({
 // number they disagree with.
 function BulkPasteSection({
   onImport,
+  slotCount,
+  onClear,
 }: {
   onImport: (text: string) => Promise<{
     slotsCreated: number;
     linesImported: number;
     errors: { line: string; reason: string }[];
   }>;
+  slotCount: number;
+  onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -859,13 +930,31 @@ function BulkPasteSection({
 
   return (
     <div className="bulk-paste">
-      <button
-        type="button"
-        className="bulk-paste-toggle"
-        onClick={() => setOpen((o) => !o)}
-      >
-        {open ? '▾' : '▸'} Paste a full prop sheet (one line per row)
-      </button>
+      <div className="bulk-paste-head">
+        <button
+          type="button"
+          className="bulk-paste-toggle"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? '▾' : '▸'} Paste a full prop sheet (one line per row)
+        </button>
+        {slotCount > 0 && (
+          <div className="bulk-paste-saved">
+            <span className="muted small">
+              Today's slate: {slotCount} player{slotCount === 1 ? '' : 's'} loaded
+            </span>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                if (confirm('Clear today\'s saved slate and start fresh?')) onClear();
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
       {open && (
         <div className="bulk-paste-body">
           <p className="muted small" style={{ marginTop: 0 }}>
