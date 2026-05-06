@@ -7,14 +7,17 @@ name: Sync NBA data to Neon
 # work — the deployed Vercel backend just reads from Neon.
 
 on:
-  # Twice a day, in UTC. NBA games are mostly East Coast evenings:
-  #  - 09:00 UTC  ≈ 04:00 ET  → all of yesterday's games are final
-  #  - 21:00 UTC  ≈ 16:00 ET  → before tip-off, picks up any afternoon games
-  schedule:
-    - cron: "0 9,21 * * *"
+  # NOTE: Scheduled cron is intentionally disabled. stats.nba.com blocks
+  # GitHub-hosted runner IPs (Azure datacenter ranges), so the sync can't
+  # reach the upstream API and fails in ~8s with NbaUpstreamBlockedError.
+  # Restore the schedule below only when running on a self-hosted runner
+  # whose outbound IP is not blocked (e.g. a home/residential machine).
+  #
+  # schedule:
+  #   - cron: "0 9,21 * * *"   # 04:00 ET / 16:00 ET
 
-  # Lets you click "Run workflow" in the Actions tab whenever you want an
-  # immediate refresh.
+  # Manual trigger from the Actions tab. Run this from a self-hosted runner,
+  # or use it as a record of how the local sync should behave.
   workflow_dispatch:
     inputs:
       skip_players:
