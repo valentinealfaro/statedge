@@ -44,7 +44,56 @@ const ESPN_TO_NBA_ABBR: Record<string, string> = {
   UTAH: 'UTA',
 };
 
-const MAX_SLOTS = 10;
+// Cap raised from 10 → 30 to fit a full game's worth of players when
+// the user pastes a complete prop sheet. Bulk paste defaults to one
+// slot per parsed player.
+const MAX_SLOTS = 30;
+
+// Stat-key aliases for the bulk-paste parser. Keys are the lowercased
+// short keys users typically paste (matching backend Last10StatId);
+// values are the canonical labels used by the slot grid + backend
+// normalizer. Lets users paste pipe-delimited prop sheets directly.
+const PASTE_STAT_TO_LABEL: Record<string, string> = {
+  points: 'Points',
+  pts: 'Points',
+  rebounds: 'Rebounds',
+  reb: 'Rebounds',
+  rebs: 'Rebounds',
+  assists: 'Assists',
+  ast: 'Assists',
+  asts: 'Assists',
+  three_pt_made: '3-PT Made',
+  '3pt_made': '3-PT Made',
+  '3pm': '3-PT Made',
+  fg_made: 'FG Made',
+  fgm: 'FG Made',
+  fg_attempted: 'FG Attempted',
+  fga: 'FG Attempted',
+  ft_made: 'Free Throws Made',
+  ftm: 'Free Throws Made',
+  ft_attempted: 'Free Throws Attempted',
+  fta: 'Free Throws Attempted',
+  personal_fouls: 'Personal Fouls',
+  pf: 'Personal Fouls',
+  steals: 'Steals',
+  stl: 'Steals',
+  blocks: 'Blocked Shots',
+  blk: 'Blocked Shots',
+  turnovers: 'Turnovers',
+  tov: 'Turnovers',
+  to: 'Turnovers',
+  offensive_rebounds: 'Offensive Rebounds',
+  oreb: 'Offensive Rebounds',
+  defensive_rebounds: 'Defensive Rebounds',
+  dreb: 'Defensive Rebounds',
+  pra: 'Pts+Rebs+Asts',
+  pr: 'Pts+Rebs',
+  pa: 'Pts+Asts',
+  ra: 'Rebs+Asts',
+  stocks: 'Blks+Stls',
+  double_double: 'Double-Double',
+  dd: 'Double-Double',
+};
 const newSlot = (): Slot => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   player: null,
@@ -181,6 +230,136 @@ export function SlateManualEntry({ onResult }: Props) {
     setSlots((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
   }
 
+  // Bulk-paste import. Accepts pipe / tab / comma-delimited rows of:
+  //   PlayerName | TeamAbbr | statKey | lineValue [| direction]
+  // Lines for the same player are grouped into a single slot. Opponent
+  // is auto-derived: if exactly two teams appear in the paste, every
+  // player's opponent is set to the OTHER team. Returns parse stats so
+  // we can surface "imported X lines, skipped Y" feedback.
+  async function importBulkPaste(text: string): Promise<{
+    slotsCreated: number;
+    linesImported: number;
+    errors: { line: string; reason: string }[];
+  }> {
+    const errors: { line: string; reason: string }[] = [];
+    type Parsed = { playerName: string; teamAbbr: string; statLabel: string; line: number };
+    const parsed: Parsed[] = [];
+
+    const rawLines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+
+    for (const raw of rawLines) {
+      const fields = raw.split(/[|\t]/).map((f) => f.trim());
+      if (fields.length < 4) {
+        errors.push({ line: raw, reason: 'expected at least 4 fields (Player|Team|stat|line)' });
+        continue;
+      }
+      const [name, team, statKey, lineStr] = fields;
+      const statLabel = PASTE_STAT_TO_LABEL[statKey.toLowerCase()];
+      if (!statLabel) {
+        errors.push({ line: raw, reason: `unknown stat "${statKey}"` });
+        continue;
+      }
+      const lineNum = parseFloat(lineStr);
+      if (!Number.isFinite(lineNum)) {
+        errors.push({ line: raw, reason: `invalid line value "${lineStr}"` });
+        continue;
+      }
+      parsed.push({
+        playerName: name,
+        teamAbbr: ESPN_TO_NBA_ABBR[team.toUpperCase()] ?? team.toUpperCase(),
+        statLabel,
+        line: lineNum,
+      });
+    }
+    if (parsed.length === 0) {
+      return { slotsCreated: 0, linesImported: 0, errors };
+    }
+
+    // Auto-detect matchup: if exactly two distinct teams appear, pair
+    // them up so each slot's opponent is the other team. With 1 team or
+    // 3+ teams, we leave opponent unset (user can pick per slot).
+    const distinctTeams = Array.from(new Set(parsed.map((p) => p.teamAbbr)));
+    const opponentByTeam: Record<string, Team | null> = {};
+    if (distinctTeams.length === 2) {
+      const teamA = teams.find((t) => t.abbreviation === distinctTeams[0]) ?? null;
+      const teamB = teams.find((t) => t.abbreviation === distinctTeams[1]) ?? null;
+      opponentByTeam[distinctTeams[0]] = teamB;
+      opponentByTeam[distinctTeams[1]] = teamA;
+    }
+
+    // Group by player. We need the actual Player object (with NBA id)
+    // so the L10 fetch + projection engine work — fall back to a name-
+    // only stub when search misses, but warn the user.
+    const playersByName = new Map<string, Parsed[]>();
+    for (const p of parsed) {
+      const key = p.playerName;
+      const arr = playersByName.get(key) ?? [];
+      arr.push(p);
+      playersByName.set(key, arr);
+    }
+
+    // Resolve names → Player objects via the search API in parallel.
+    // Pick the top match whose team matches the pasted team, falling
+    // back to first result otherwise.
+    const resolved: { name: string; player: Player | null; teamAbbr: string }[] =
+      await Promise.all(
+        Array.from(playersByName.entries()).map(async ([name, lines]) => {
+          const teamAbbr = lines[0].teamAbbr;
+          try {
+            const list = await searchPlayers(name);
+            const onTeam = list.find((p) => p.teamAbbreviation === teamAbbr);
+            return { name, player: onTeam ?? list[0] ?? null, teamAbbr };
+          } catch {
+            return { name, player: null, teamAbbr };
+          }
+        }),
+      );
+
+    const newSlots: Slot[] = [];
+    let unmatched = 0;
+    for (const { name, player, teamAbbr } of resolved) {
+      if (!player) { unmatched++; continue; }
+      const lines = playersByName.get(name) ?? [];
+      const linesMap: Record<string, string> = {};
+      for (const l of lines) linesMap[l.statLabel] = String(l.line);
+      newSlots.push({
+        ...newSlot(),
+        player,
+        opponent: opponentByTeam[teamAbbr] ?? null,
+        lines: linesMap,
+      });
+    }
+    if (unmatched > 0) {
+      errors.push({
+        line: '',
+        reason: `${unmatched} player${unmatched === 1 ? '' : 's'} couldn't be matched in the database — those lines were dropped.`,
+      });
+    }
+
+    if (newSlots.length === 0) {
+      return { slotsCreated: 0, linesImported: 0, errors };
+    }
+
+    // Replace the slot list. Cap at MAX_SLOTS — anything over gets
+    // surfaced as a parser error so the user knows to trim.
+    if (newSlots.length > MAX_SLOTS) {
+      errors.push({
+        line: '',
+        reason: `${newSlots.length} players parsed but slot cap is ${MAX_SLOTS} — truncating.`,
+      });
+    }
+    const capped = newSlots.slice(0, MAX_SLOTS);
+    setSlots(capped);
+    return {
+      slotsCreated: capped.length,
+      linesImported: capped.reduce((n, s) => n + Object.keys(s.lines).length, 0),
+      errors,
+    };
+  }
+
   async function buildSlate() {
     setError(null);
     const ready: ManualSlateLine[] = [];
@@ -264,6 +443,8 @@ export function SlateManualEntry({ onResult }: Props) {
           </div>
         </div>
       )}
+
+      <BulkPasteSection onImport={importBulkPaste} />
 
       <div className="manual-slots">
         {slots.map((s, idx) => (
@@ -633,6 +814,116 @@ function SuggestStrip({
         <span className="muted small">
           No stat hits 60% confidence yet — try setting an opponent or pick a different player.
         </span>
+      )}
+    </div>
+  );
+}
+
+// Collapsible textarea for pasting an entire prop sheet at once. Each
+// row is parsed, grouped by player, and one slot per player drops into
+// the grid with all their lines pre-filled. Lines stay editable in the
+// grid before the user clicks Build slate, so they can override any
+// number they disagree with.
+function BulkPasteSection({
+  onImport,
+}: {
+  onImport: (text: string) => Promise<{
+    slotsCreated: number;
+    linesImported: number;
+    errors: { line: string; reason: string }[];
+  }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [report, setReport] = useState<{
+    slotsCreated: number;
+    linesImported: number;
+    errors: { line: string; reason: string }[];
+  } | null>(null);
+
+  async function run() {
+    if (!text.trim()) return;
+    setImporting(true);
+    try {
+      const r = await onImport(text);
+      setReport(r);
+      // Auto-collapse on success so the user sees the populated grid.
+      if (r.slotsCreated > 0 && r.errors.length === 0) {
+        setOpen(false);
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="bulk-paste">
+      <button
+        type="button"
+        className="bulk-paste-toggle"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? '▾' : '▸'} Paste a full prop sheet (one line per row)
+      </button>
+      {open && (
+        <div className="bulk-paste-body">
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Format: <code>Player|Team|stat|line</code> — one row per prop.
+            Stats: points, rebounds, assists, pra, pr, pa, ra, three_pt_made,
+            fg_made, ft_made, steals, blocks, turnovers, stocks, double_double,
+            and the rest. Optional 5th field (over/under/both) is ignored.
+          </p>
+          <textarea
+            className="bulk-paste-input"
+            placeholder={'Jalen Brunson|NYK|points|26.5|both\nKarl-Anthony Towns|NYK|rebounds|11|both\n…'}
+            rows={8}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={importing}
+          />
+          <div className="bulk-paste-actions">
+            <button
+              type="button"
+              className="cta primary"
+              onClick={run}
+              disabled={importing || !text.trim()}
+            >
+              {importing ? 'Importing…' : 'Parse & populate slots'}
+            </button>
+            <button
+              type="button"
+              className="cta"
+              onClick={() => { setText(''); setReport(null); }}
+              disabled={importing}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+      {report && (
+        <div className={`bulk-paste-report ${report.errors.length > 0 ? 'warn' : 'ok'}`}>
+          <strong>
+            Imported {report.linesImported} line{report.linesImported === 1 ? '' : 's'}{' '}
+            across {report.slotsCreated} player{report.slotsCreated === 1 ? '' : 's'}.
+          </strong>
+          {report.errors.length > 0 && (
+            <details style={{ marginTop: 4 }}>
+              <summary>{report.errors.length} skipped — show details</summary>
+              <ul className="bulk-paste-errors">
+                {report.errors.slice(0, 20).map((e, i) => (
+                  <li key={i}>
+                    {e.line && <code>{e.line}</code>} {e.reason}
+                  </li>
+                ))}
+                {report.errors.length > 20 && (
+                  <li className="muted">…and {report.errors.length - 20} more</li>
+                )}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
     </div>
   );

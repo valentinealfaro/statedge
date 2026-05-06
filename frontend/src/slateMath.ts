@@ -19,7 +19,11 @@ export const SLATE_STAT_OPTIONS: string[] = [
   'Turnovers',
   'Blks+Stls',
   'FG Made',
+  'FG Attempted',
   'Free Throws Made',
+  'Free Throws Attempted',
+  'Offensive Rebounds',
+  'Defensive Rebounds',
   'Personal Fouls',
   'Double-Double',
 ];
@@ -40,7 +44,11 @@ export const STAT_TO_VALUE: Record<string, (g: PlayerGame) => number> = {
   'Turnovers': (g) => g.turnovers,
   'Blks+Stls': (g) => g.blocks + g.steals,
   'FG Made': (g) => g.fgm ?? 0,
+  'FG Attempted': (g) => g.fga ?? 0,
   'Free Throws Made': (g) => g.ftm ?? 0,
+  'Free Throws Attempted': (g) => g.fta ?? 0,
+  'Offensive Rebounds': (g) => g.oreb ?? 0,
+  'Defensive Rebounds': (g) => g.dreb ?? 0,
   'Personal Fouls': (g) => g.pf ?? 0,
   'Double-Double': (g) => (isDDGame(g) ? 1 : 0),
 };

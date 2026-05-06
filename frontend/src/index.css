@@ -1742,6 +1742,71 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-color: #2a2f3a;
 }
 
+/* Bulk-paste collapsible — sits above the slot grid. */
+.bulk-paste {
+  margin: 12px 0;
+  border: 1px dashed #2a2f3a;
+  border-radius: 8px;
+  background: #0f1218;
+}
+.bulk-paste-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #c8cfdc;
+  text-align: left;
+  cursor: pointer;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+}
+.bulk-paste-toggle:hover { color: #fff; }
+.bulk-paste-body {
+  padding: 4px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bulk-paste-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #2a2f3a;
+  background: #0b0d12;
+  color: #e5e9f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.bulk-paste-input:focus { outline: none; border-color: #5b8def; }
+.bulk-paste-actions {
+  display: flex;
+  gap: 8px;
+}
+.bulk-paste-report {
+  padding: 10px 14px;
+  border-top: 1px solid #1f2330;
+  font-size: 12px;
+}
+.bulk-paste-report.ok strong { color: #6dd07a; }
+.bulk-paste-report.warn strong { color: #ffb86b; }
+.bulk-paste-errors {
+  list-style: disc;
+  padding-left: 20px;
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #c8cfdc;
+}
+.bulk-paste-errors code {
+  background: #1a1f2b;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  margin-right: 4px;
+}
+
 /* StatEdge layered projection — lean badge + collapsible details panel */
 .slate-lean-badge {
   margin-top: 8px;
