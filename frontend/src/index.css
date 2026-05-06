@@ -1968,6 +1968,28 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   text-align: center;
 }
 
+/* Clean "waiting for admin" empty state — no paste box, no clutter. */
+.slate-empty-state {
+  margin: 24px 0;
+  padding: 40px 24px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-0) 100%);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-xl);
+}
+.slate-empty-state-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 8px;
+}
+.slate-empty-state .muted {
+  max-width: 480px;
+  margin: 0 auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 /* Admin-only publish slate panel — visible to admin emails only.
    Lets the owner paste tonight's lines from the live site instead of
    running a CLI script. */

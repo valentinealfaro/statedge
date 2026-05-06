@@ -427,105 +427,20 @@ export function SlateManualEntry({ onResult }: Props) {
         </div>
       )}
 
-      <div className="propboard-status">
-        {hasSlate ? (
-          <>
-            <div className="propboard-status-info">
-              <strong>Today's prop board loaded.</strong>{' '}
-              <span className="muted small">
-                {stored!.lines.length} line{stored!.lines.length === 1 ? '' : 's'}
-                {stored!.teams.length > 0 && ` · ${stored!.teams.join(' vs ')}`}
-              </span>
-              {importing && <span className="muted small"> · re-running…</span>}
-            </div>
-            <div className="propboard-status-actions">
-              <button
-                type="button"
-                className="cta"
-                onClick={() => setShowPaste((s) => !s)}
-              >
-                {showPaste ? 'Hide paste' : 'Paste new sheet'}
-              </button>
-              <button
-                type="button"
-                className="cta ghost"
-                onClick={clearSlate}
-              >
-                Clear
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="propboard-status-info">
-            <strong>No prop board loaded yet.</strong>{' '}
-            <span className="muted small">
-              Paste tonight's lines to see the model's verdict on every prop and start building a parlay.
-            </span>
+      {/* When no slate is loaded, show a clean message instead of a
+          paste box. Pasting now lives exclusively in the ADMIN panel
+          above (visible only to admin emails). Regular users wait for
+          the admin to publish; once that happens, the page hydrates
+          automatically and this empty state goes away. */}
+      {!hasSlate && !importing && (
+        <div className="slate-empty-state">
+          <div className="slate-empty-state-title">
+            Tonight's slate hasn't been published yet
           </div>
-        )}
-      </div>
-
-      {(showPaste || !hasSlate) && (
-        <div className="bulk-paste expanded">
-          <p className="muted small" style={{ marginTop: 0 }}>
-            Format: <code>Player|Team|stat|line</code> — one row per prop.
-            Stats: <code>points</code>, <code>rebounds</code>, <code>assists</code>,{' '}
-            <code>pra</code>, <code>pr</code>, <code>pa</code>, <code>ra</code>,{' '}
-            <code>three_pt_made</code>, <code>fg_made</code>, <code>fg_attempted</code>,{' '}
-            <code>ft_made</code>, <code>ft_attempted</code>, <code>steals</code>,{' '}
-            <code>blocks</code>, <code>turnovers</code>, <code>stocks</code>,{' '}
-            <code>personal_fouls</code>, <code>offensive_rebounds</code>,{' '}
-            <code>defensive_rebounds</code>, <code>double_double</code>.
+          <p className="muted">
+            Check back soon — once the lines are live you'll see every prop with
+            the model's probability on it, plus pre-built parlays at the top.
           </p>
-          <textarea
-            className="bulk-paste-input"
-            placeholder={'Jalen Brunson|NYK|points|26.5|both\nKarl-Anthony Towns|NYK|rebounds|11|both\n…'}
-            rows={8}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={importing}
-          />
-          <div className="bulk-paste-actions">
-            <button
-              type="button"
-              className="cta primary"
-              onClick={importPaste}
-              disabled={importing || !text.trim()}
-            >
-              {importing ? 'Building…' : 'Build prop board →'}
-            </button>
-            {hasSlate && (
-              <button
-                type="button"
-                className="cta"
-                onClick={() => { setText(''); setShowPaste(false); }}
-                disabled={importing}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {report && report.errors.length > 0 && (
-        <div className="bulk-paste-report warn">
-          <strong>
-            {report.lines.length} parsed, {report.errors.length} skipped.
-          </strong>
-          <details style={{ marginTop: 4 }}>
-            <summary>Show skipped rows</summary>
-            <ul className="bulk-paste-errors">
-              {report.errors.slice(0, 20).map((e, i) => (
-                <li key={i}>
-                  {e.line && <code>{e.line}</code>} {e.reason}
-                </li>
-              ))}
-              {report.errors.length > 20 && (
-                <li className="muted">…and {report.errors.length - 20} more</li>
-              )}
-            </ul>
-          </details>
         </div>
       )}
 

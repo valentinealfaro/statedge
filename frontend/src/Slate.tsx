@@ -253,104 +253,10 @@ export function Slate() {
         <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
       )}
 
-      {data && (
-        <div className="slate-actions" style={{ marginTop: 12 }}>
-          <button
-            className="cta"
-            onClick={() => { setData(null); setError(null); }}
-          >
-            ← Build a different slate
-          </button>
-        </div>
-      )}
-
       {error && (
         <div className="slate-error">
           <strong>Slate failed:</strong> {error}
         </div>
-      )}
-
-      {data && data.source === 'prizepicks_auto' && (
-        <p className="muted small slate-source">
-          Source: PrizePicks · {lines.length} resolved lines
-          {data.unresolved.length > 0 && ` · ${data.unresolved.length} unmatched`}
-          {' · '}as of {new Date(data.fetchedAt).toLocaleTimeString()}
-        </p>
-      )}
-      {data && data.source === 'image_upload' && (
-        <p className="muted small slate-source">
-          Source: your screenshot · {lines.length} resolved lines
-          {data.unresolved.length > 0 && ` · ${data.unresolved.length} unmatched`}
-        </p>
-      )}
-      {data && data.source === 'manual' && (
-        <p className="muted small slate-source">
-          Source: your custom slate · {lines.length} {lines.length === 1 ? 'pick' : 'picks'} resolved
-          {data.unresolved.length > 0 && ` · ${data.unresolved.length} unresolved`}
-        </p>
-      )}
-
-      {lines.length > 0 && (
-        <SlateSummary lines={lines} />
-      )}
-
-      {lines.length > 0 && (
-        <>
-          <div className="slate-filters">
-            <FilterTab v="all"    cur={filter} onSet={setFilter}>All</FilterTab>
-            <FilterTab v="strong" cur={filter} onSet={setFilter}>Strong (≥75%)</FilterTab>
-            <FilterTab v="over"   cur={filter} onSet={setFilter}>Over leans</FilterTab>
-            <FilterTab v="under"  cur={filter} onSet={setFilter}>Under leans</FilterTab>
-            {outCount > 0 && (
-              <button
-                className={hideOut ? 'pick-btn active' : 'pick-btn'}
-                onClick={() => setHideOut(!hideOut)}
-                title={hideOut ? 'Show OUT players' : 'Hide OUT players'}
-              >
-                {hideOut ? `Hiding ${outCount} OUT` : `Showing ${outCount} OUT`}
-              </button>
-            )}
-          </div>
-          <div className="slate-filters">
-            <select
-              className="slate-select"
-              value={teamFilter}
-              onChange={(e) => setTeamFilter(e.target.value)}
-            >
-              <option value="">All teams ({teams.length})</option>
-              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select
-              className="slate-select"
-              value={statFilter}
-              onChange={(e) => setStatFilter(e.target.value)}
-            >
-              <option value="">All stats ({stats.length})</option>
-              {stats.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {(teamFilter || statFilter) && (
-              <button
-                className="pick-btn"
-                onClick={() => { setTeamFilter(''); setStatFilter(''); }}
-              >
-                Clear filters
-              </button>
-            )}
-            <select
-              className="slate-select"
-              value={sort}
-              onChange={(e) => setSort(e.target.value as typeof sort)}
-              title="Sort"
-            >
-              <option value="confidence">Sort: Confidence</option>
-              <option value="edge">Sort: Best edge</option>
-              <option value="tipoff">Sort: Tipoff time</option>
-            </select>
-            <span className="slate-result-count muted small">
-              {sorted.length} of {lines.length}
-            </span>
-          </div>
-        </>
       )}
 
       {isPro && savedParlays.length > 0 && (
