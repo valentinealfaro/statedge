@@ -630,12 +630,23 @@ function BestPicksRail({
     if (legs.length === n) combos.push({ label: `Best ${n}`, legs });
   }
 
-  // Wild Card: 6-leg parlay sorted by edge × probability (richer signal),
-  // picking the strongest model verdicts. The combined % naturally lands
-  // lower than a pure-pct top-6, so this is the longshot.
-  const sortedByEdgeProb = [...candidates].sort(
-    (a, b) => (b.edge * b.pct) - (a.edge * a.pct),
-  );
+  // Wild Card: 6-leg longshot pulling only from Demons (over-only,
+  // higher payout) and standard props ('both'). Goblins (under-only,
+  // shorter line, lower payout) are excluded — they don't add the
+  // upside that makes a Wild Card worth playing. Within that pool
+  // we sort by edge × probability so the strongest model verdicts
+  // float to the top, with a Demon preference baked in: a Demon and
+  // a standard prop tied on edge × pct break tie toward the Demon.
+  const wildPool = candidates.filter((c) => c.line.direction !== 'under');
+  const sortedByEdgeProb = [...wildPool].sort((a, b) => {
+    const aScore = a.edge * a.pct;
+    const bScore = b.edge * b.pct;
+    if (aScore !== bScore) return bScore - aScore;
+    // Tiebreak: Demons first.
+    const aDemon = a.line.direction === 'over' ? 1 : 0;
+    const bDemon = b.line.direction === 'over' ? 1 : 0;
+    return bDemon - aDemon;
+  });
   const wildLegs = pickDiverse(sortedByEdgeProb, 6);
   if (wildLegs.length === 6) {
     combos.push({ label: 'Wild Card', legs: wildLegs, tag: 'wild' });
@@ -671,7 +682,7 @@ function BestPicksRail({
               </div>
               <div
                 className="best-pick-pct"
-                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card stacks the strongest model verdicts (edge × probability) instead of pure %, so combined % naturally lands lower → bigger payout if it hits.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
+                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card pulls only from Demons (over-only, higher payout) and standard props — Goblins are excluded since they pay less. Sorted by edge × probability so the strongest model verdicts surface, with Demons winning ties for the longshot upside.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
               >
                 {pct.toFixed(1)}%
               </div>
