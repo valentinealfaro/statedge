@@ -174,6 +174,50 @@ function round1(x: number): number {
   return Math.round(x * 10) / 10;
 }
 
+export type SeasonVsL10 = {
+  stat: 'pts' | 'reb' | 'ast' | 'stl' | 'blk' | 'min' | 'fgPct' | 'fg3Pct' | 'ftPct';
+  label: string;
+  seasonAvg: number;
+  l10Avg: number;
+  delta: number;       // l10 - season; positive = trending up
+};
+
+// Side-by-side season vs last-10 across the major box-score columns.
+// Used by Last10View as a "is the player hot or cold across the
+// board" overview at the top of the page. Uses the player's full
+// cached game log for the season average and the last 10 for the
+// recent average.
+export function buildSeasonVsL10(games: PlayerGame[]): SeasonVsL10[] {
+  if (games.length === 0) return [];
+  const last10 = games.slice(0, Math.min(10, games.length));
+
+  const avg = (xs: number[]): number => xs.length === 0
+    ? 0
+    : Math.round((xs.reduce((s, v) => s + v, 0) / xs.length) * 10) / 10;
+  const avgPct = (xs: number[]): number => xs.length === 0
+    ? 0
+    : Math.round((xs.reduce((s, v) => s + v, 0) / xs.length) * 1000) / 1000;
+
+  const stats: SeasonVsL10[] = [
+    { stat: 'pts',    label: 'PTS',  seasonAvg: avg(games.map((g) => g.points)),    l10Avg: avg(last10.map((g) => g.points)),    delta: 0 },
+    { stat: 'reb',    label: 'REB',  seasonAvg: avg(games.map((g) => g.rebounds)),  l10Avg: avg(last10.map((g) => g.rebounds)),  delta: 0 },
+    { stat: 'ast',    label: 'AST',  seasonAvg: avg(games.map((g) => g.assists)),   l10Avg: avg(last10.map((g) => g.assists)),   delta: 0 },
+    { stat: 'stl',    label: 'STL',  seasonAvg: avg(games.map((g) => g.steals)),    l10Avg: avg(last10.map((g) => g.steals)),    delta: 0 },
+    { stat: 'blk',    label: 'BLK',  seasonAvg: avg(games.map((g) => g.blocks)),    l10Avg: avg(last10.map((g) => g.blocks)),    delta: 0 },
+    { stat: 'min',    label: 'MIN',  seasonAvg: avg(games.map((g) => g.minutes)),   l10Avg: avg(last10.map((g) => g.minutes)),   delta: 0 },
+    { stat: 'fgPct',  label: 'FG%',  seasonAvg: avgPct(games.map((g) => g.fgPct)),  l10Avg: avgPct(last10.map((g) => g.fgPct)),  delta: 0 },
+    { stat: 'fg3Pct', label: '3P%',  seasonAvg: avgPct(games.map((g) => g.fg3Pct)), l10Avg: avgPct(last10.map((g) => g.fg3Pct)), delta: 0 },
+    { stat: 'ftPct',  label: 'FT%',  seasonAvg: avgPct(games.map((g) => g.ftPct)),  l10Avg: avgPct(last10.map((g) => g.ftPct)),  delta: 0 },
+  ];
+
+  // Compute delta after construction so the rounded numbers above
+  // match the values shown in the UI exactly.
+  for (const s of stats) {
+    s.delta = Math.round((s.l10Avg - s.seasonAvg) * 1000) / 1000;
+  }
+  return stats;
+}
+
 export type ByOpponentRow = {
   opponentAbbr: string;
   gamesPlayed: number;

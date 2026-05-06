@@ -1014,6 +1014,38 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   text-overflow: ellipsis;
 }
 
+/* --- Season vs L10 averages strip (Last10View header) --- */
+.svl-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+  gap: 6px;
+  margin: 16px 0 18px;
+}
+.svl-cell {
+  text-align: center;
+  padding: 8px 6px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 8px;
+}
+.svl-cell.pos { border-color: #6ee7a4; }
+.svl-cell.neg { border-color: #ef6a6a; }
+.svl-label {
+  font-size: 10px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.svl-l10 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.svl-cell.pos .svl-arrow { color: #6ee7a4; }
+.svl-cell.neg .svl-arrow { color: #ef6a6a; }
+.svl-arrow { color: #8a93a6; font-size: 12px; }
+.svl-season { font-size: 10px; color: #8a93a6; margin-top: 2px; }
+
 /* --- Embedded "Last 10 games" panel (player or team) --- */
 .last10-panel {
   margin-top: 28px;

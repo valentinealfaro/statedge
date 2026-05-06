@@ -116,6 +116,10 @@ export function Last10View({ player }: Props) {
         <SaveButton draft={{ type: 'last10', player }} />
       </div>
 
+      {data && data.seasonVsL10 && data.seasonVsL10.length > 0 && (
+        <SeasonVsL10Strip rows={data.seasonVsL10} />
+      )}
+
       <div className="chips">
         {STAT_ORDER.map((s) => (
           <button
@@ -146,6 +150,36 @@ export function Last10View({ player }: Props) {
           isDD={data.selectedStat === 'double_double'}
         />
       )}
+    </div>
+  );
+}
+
+function SeasonVsL10Strip({
+  rows,
+}: {
+  rows: NonNullable<Last10Response['seasonVsL10']>;
+}) {
+  // Threshold for showing a directional ↑/↓: 5% of season avg or 0.3
+  // raw units, whichever is larger. Below that we render '·' (neutral).
+  return (
+    <div className="svl-strip">
+      {rows.map((r) => {
+        const isPct = r.stat === 'fgPct' || r.stat === 'fg3Pct' || r.stat === 'ftPct';
+        const fmt = (v: number) => isPct ? `${(v * 100).toFixed(1)}%` : v.toFixed(1);
+        const threshold = Math.max(isPct ? 0.005 : 0.3, Math.abs(r.seasonAvg) * 0.05);
+        const dir = r.delta > threshold ? 'up'
+          : r.delta < -threshold ? 'down'
+          : 'flat';
+        const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '·';
+        const cls = `svl-cell ${dir === 'up' ? 'pos' : dir === 'down' ? 'neg' : ''}`;
+        return (
+          <div key={r.stat} className={cls}>
+            <div className="svl-label">{r.label}</div>
+            <div className="svl-l10">{fmt(r.l10Avg)} <span className="svl-arrow">{arrow}</span></div>
+            <div className="svl-season">season {fmt(r.seasonAvg)}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -277,11 +277,20 @@ export type ByOpponentRow = {
   low: number;
 };
 
+export type SeasonVsL10Row = {
+  stat: 'pts' | 'reb' | 'ast' | 'stl' | 'blk' | 'min' | 'fgPct' | 'fg3Pct' | 'ftPct';
+  label: string;
+  seasonAvg: number;
+  l10Avg: number;
+  delta: number;
+};
+
 export type Last10Response = (Last10NumericReport | Last10DoubleDoubleReport) & {
   playerId: number;
   availableStats: Last10StatId[];
   labels: Record<Last10StatId, string>;
   byOpponent?: ByOpponentRow[];
+  seasonVsL10?: SeasonVsL10Row[];
 };
 
 export type TeamGame = {

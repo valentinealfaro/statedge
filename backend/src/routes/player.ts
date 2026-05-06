@@ -15,6 +15,7 @@ import {
 import {
   buildByOpponentBreakdown,
   buildLast10Report,
+  buildSeasonVsL10,
   LAST10_LABELS,
   LAST10_STATS,
   type Last10StatId,
@@ -96,6 +97,10 @@ playerRouter.get('/:playerId/last-10', async (req, res) => {
     // per opponent is small (1-4 games typical), but useful for finding
     // who the player feasts on / gets held by.
     const byOpponent = buildByOpponentBreakdown(games, selectedStat);
+    // Cross-stat season-vs-L10 strip — independent of selectedStat
+    // so it reads as a 'how is this player playing right now overall'
+    // header on the Last10 page.
+    const seasonVsL10 = buildSeasonVsL10(games);
 
     res.json({
       playerId,
@@ -104,6 +109,7 @@ playerRouter.get('/:playerId/last-10', async (req, res) => {
       ...report,
       ...(hitProbability != null ? { hitProbability, line } : {}),
       byOpponent,
+      seasonVsL10,
     });
   } catch (err) {
     if (err instanceof NbaUpstreamBlockedError) {
