@@ -517,9 +517,12 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   margin-bottom: 4px;
 }
 .brand-logo {
-  height: 32px;
+  height: 56px;
   width: auto;
   display: block;
+  /* The logo art has soft internal padding — push it slightly past
+     the navbar's nominal line height so it reads at full weight. */
+  margin: -8px 0;
 }
 
 /* --- Top nav (Compare / Standings / Game pages) --- */
@@ -719,7 +722,7 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 @media (max-width: 640px) {
   .hero { padding: 40px 0 32px; }
   .hero-logo { max-width: 260px; }
-  .brand-logo { height: 24px; }
+  .brand-logo { height: 40px; margin: -4px 0; }
 }
 .hero-tag {
   font-size: 20px;
