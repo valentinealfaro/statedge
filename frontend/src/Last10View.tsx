@@ -20,6 +20,7 @@ import { SaveButton } from './SaveButton';
 import { ShareButton } from './ShareButton';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
+import { useTitle } from './useTitle';
 
 type Props = { player: Player };
 
@@ -82,6 +83,8 @@ export function Last10View({ player }: Props) {
     recordRecent({ type: 'last10', player });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.id]);
+
+  useTitle([`${player.fullName} · Last 10`]);
 
   useEffect(() => {
     setLoading(true);

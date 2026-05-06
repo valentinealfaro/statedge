@@ -158,6 +158,19 @@ export function Compare() {
     setTBState(null);
     setSoloState(null);
     syncUrl({ pid: null, tid: null, pa: null, pb: null, ta: null, tb: null });
+    // View-level params (range/seasons/stat) belong to whatever matchup is
+    // on screen — when entities change, those should reset too so a stale
+    // ?r=last20 from a previous matchup doesn't bleed into the next one.
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete('r');
+        sp.delete('s');
+        sp.delete('st');
+        return sp;
+      },
+      { replace: true },
+    );
   }
 
   function changeMode(m: Mode) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   compareTeamVsTeam,
   type SeasonRange,
@@ -14,9 +15,13 @@ import { SeasonTabs } from './SeasonTabs';
 import { TeamLast10Panel } from './TeamLast10Panel';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
+import { useTitle } from './useTitle';
 
 type Props = { a: Team; b: Team };
 type Range = 'last5' | 'last10' | 'last20' | 'season';
+
+const VALID_RANGES = new Set<Range>(['last5', 'last10', 'last20', 'season']);
+const VALID_SEASONS = new Set<SeasonRange>(['current', 'last2', 'last3', 'last5']);
 
 const LABELS: Record<TeamStatKey, string> = {
   points: 'Points',
@@ -36,17 +41,44 @@ function fmt(k: TeamStatKey, v: number): string {
 
 export function TeamVsTeamView({ a, b }: Props) {
   const { plan, recordComparison } = usePlan();
-  const [range, setRange] = useState<Range>(plan === 'free' ? 'last5' : 'last10');
-  const [seasons, setSeasons] = useState<SeasonRange>('current');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const defaultRange: Range = plan === 'free' ? 'last5' : 'last10';
+  const initRange = (() => {
+    const r = searchParams.get('r');
+    if (r && VALID_RANGES.has(r as Range)) return plan === 'free' ? 'last5' : (r as Range);
+    return defaultRange;
+  })();
+  const initSeasons = (() => {
+    const s = searchParams.get('s');
+    return s && VALID_SEASONS.has(s as SeasonRange) ? (s as SeasonRange) : 'current';
+  })();
+  const [range, setRangeState] = useState<Range>(initRange);
+  const [seasons, setSeasonsState] = useState<SeasonRange>(initSeasons);
   const [data, setData] = useState<TvtResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function pushParam(key: string, value: string, defaultValue: string) {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (value === defaultValue) sp.delete(key);
+        else sp.set(key, value);
+        return sp;
+      },
+      { replace: true },
+    );
+  }
+  function setRange(r: Range)         { setRangeState(r);   pushParam('r', r, defaultRange); }
+  function setSeasons(s: SeasonRange) { setSeasonsState(s); pushParam('s', s, 'current'); }
 
   useEffect(() => {
     if (plan === 'free') recordComparison();
     recordRecent({ type: 'tvt', a, b });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.id, b.id]);
+
+  useTitle([`${a.abbreviation} vs ${b.abbreviation}`]);
 
   useEffect(() => {
     setLoading(true);

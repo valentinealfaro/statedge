@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -29,6 +30,7 @@ import { SeasonTabs } from './SeasonTabs';
 import { STAT_LABELS, StatPicker } from './StatPicker';
 import { usePlan } from './plan';
 import { recordRecent } from './recents';
+import { useTitle } from './useTitle';
 
 // Stat tiles for which we offer a "Line" input + hit-probability badge.
 // (Minutes / FG% / 3PT% don't map cleanly to traditional prop lines.)
@@ -41,6 +43,12 @@ type Props = {
 };
 
 type Range = 'last5' | 'last10' | 'last20' | 'season';
+
+const VALID_RANGES = new Set<Range>(['last5', 'last10', 'last20', 'season']);
+const VALID_SEASONS = new Set<SeasonRange>(['current', 'last2', 'last3', 'last5']);
+const VALID_STATS = new Set<SelectedStat>([
+  'points', 'rebounds', 'assists', 'PRA', 'PR', 'PA', 'RA', 'STOCKS',
+]);
 
 const PER_STAT_LABELS: Record<StatKey, string> = {
   points: 'Points',
@@ -67,13 +75,49 @@ function statAvgFor(data: CompareResponse, stat: SelectedStat): number {
 export function ComparisonView({ player, team }: Props) {
   const { plan, canRunComparison, recordComparison } = usePlan();
   const isFree = plan === 'free';
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initial values come from URL params so a shared link rehydrates the
+  // exact view the sender was looking at — not just the matchup.
+  const initRange = (() => {
+    const r = searchParams.get('r');
+    if (r && VALID_RANGES.has(r as Range)) return r as Range;
+    return 'last5';
+  })();
+  const initSeasons = (() => {
+    const s = searchParams.get('s');
+    if (s && VALID_SEASONS.has(s as SeasonRange)) return s as SeasonRange;
+    return 'current';
+  })();
+  const initStat = (() => {
+    const st = searchParams.get('st');
+    if (st && VALID_STATS.has(st as SelectedStat)) return st as SelectedStat;
+    return 'PRA';
+  })();
+
   // Free plan is locked to last-5 per spec; force the range if the user is free.
-  const [range, setRange] = useState<Range>('last5');
-  const [seasons, setSeasons] = useState<SeasonRange>('current');
-  const [selectedStat, setSelectedStat] = useState<SelectedStat>('PRA');
+  const [range, setRangeState] = useState<Range>(isFree ? 'last5' : initRange);
+  const [seasons, setSeasonsState] = useState<SeasonRange>(initSeasons);
+  const [selectedStat, setSelectedStatState] = useState<SelectedStat>(initStat);
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Mirror state to URL — same one-way data flow as Compare.tsx.
+  function pushParam(key: string, value: string | null, defaultValue: string) {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (value == null || value === defaultValue) sp.delete(key);
+        else sp.set(key, value);
+        return sp;
+      },
+      { replace: true },
+    );
+  }
+  function setRange(r: Range)             { setRangeState(r);        pushParam('r',  r, 'last5'); }
+  function setSeasons(s: SeasonRange)     { setSeasonsState(s);      pushParam('s',  s, 'current'); }
+  function setSelectedStat(st: SelectedStat) { setSelectedStatState(st); pushParam('st', st, 'PRA'); }
 
   // Per-tile prop line inputs and the resulting hit-probability per stat.
   // We fire one debounced refetch per stat with a numeric line set.
@@ -109,6 +153,8 @@ export function ComparisonView({ player, team }: Props) {
     recordRecent({ type: 'pvt', player, team });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.id, team.id]);
+
+  useTitle([`${player.fullName} vs ${team.abbreviation}`]);
 
   if (!canRunComparison) {
     // The PlanGate above the comparison view already explains the limit and
