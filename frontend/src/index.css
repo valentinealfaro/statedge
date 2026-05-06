@@ -1624,11 +1624,38 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-radius: 6px;
   font-size: 12px;
 }
+.manual-stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
 .manual-stat-label {
   color: #c8cfdc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.manual-stat-hint {
+  align-self: flex-start;
+  background: #1a1f2b;
+  border: 1px solid #2a2f3a;
+  color: #8a93a6;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.2;
+  cursor: pointer;
+  font-family: inherit;
+}
+.manual-stat-hint:hover:not(:disabled) {
+  color: #c8cfdc;
+  border-color: #5b8def;
+}
+.manual-stat-hint:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 .manual-stat-input {
   width: 70px;

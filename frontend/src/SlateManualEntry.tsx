@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  getPlayerLast10,
   getTeams,
   getTodayGames,
   postManualSlate,
@@ -7,12 +8,44 @@ import {
   type EspnScoreboardGame,
   type ManualSlateLine,
   type Player,
+  type PlayerGame,
   type RosterPlayer,
   type SlateResponse,
   type Team,
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { TeamRosterModal } from './TeamRosterModal';
+
+// Frontend mirror of the backend STAT_MAP — keyed by the same 16 canonical
+// labels we offer in the grid. Used to compute per-stat L10 averages so we
+// can hint the user toward a sensible line value.
+const STAT_TO_VALUE: Record<string, (g: PlayerGame) => number> = {
+  'Points': (g) => g.points,
+  'Rebounds': (g) => g.rebounds,
+  'Assists': (g) => g.assists,
+  'Pts+Rebs+Asts': (g) => g.points + g.rebounds + g.assists,
+  'Pts+Rebs': (g) => g.points + g.rebounds,
+  'Pts+Asts': (g) => g.points + g.assists,
+  'Rebs+Asts': (g) => g.rebounds + g.assists,
+  '3-PT Made': (g) => g.fg3m ?? 0,
+  'Steals': (g) => g.steals,
+  'Blocked Shots': (g) => g.blocks,
+  'Turnovers': (g) => g.turnovers,
+  'Blks+Stls': (g) => g.blocks + g.steals,
+  'FG Made': (g) => g.fgm ?? 0,
+  'Free Throws Made': (g) => g.ftm ?? 0,
+  'Personal Fouls': (g) => g.pf ?? 0,
+  // Double-double is a rate, not an avg — handled specially in the hint UI.
+  'Double-Double': (g) => {
+    let c = 0;
+    if (g.points >= 10) c++;
+    if (g.rebounds >= 10) c++;
+    if (g.assists >= 10) c++;
+    if (g.steals >= 10) c++;
+    if (g.blocks >= 10) c++;
+    return c >= 2 ? 1 : 0;
+  },
+};
 
 // Each slot is one player + one opponent. The user can enter a line for
 // any subset of the 16 canonical stats; we expand each non-empty entry
@@ -44,6 +77,20 @@ const STAT_OPTIONS: string[] = [
   'Double-Double',
 ];
 
+// ESPN sometimes uses shorter franchise abbreviations than NBA stats.com
+// (e.g. "NY" instead of "NYK"). When matching a rail abbreviation back to
+// our Team list — which is keyed off the NBA stats.com canonical form —
+// fall back through this alias table. Without it, clicking PHI/MIN
+// silently no-ops because their opponents (NY, SA) don't resolve.
+const ESPN_TO_NBA_ABBR: Record<string, string> = {
+  NY: 'NYK',
+  SA: 'SAS',
+  GS: 'GSW',
+  NO: 'NOP',
+  WSH: 'WAS',
+  UTAH: 'UTA',
+};
+
 const MAX_SLOTS = 10;
 const newSlot = (): Slot => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -56,6 +103,14 @@ type Props = {
   onResult: (response: SlateResponse) => void;
 };
 
+// Computed L10 stats for one player — keyed by stat label so the slot row
+// can read off averages without re-mapping.
+type PlayerL10 = {
+  loading: boolean;
+  averages: Record<string, number>; // statLabel → avg (or rate for Double-Double)
+  gamesAnalyzed: number;
+};
+
 export function SlateManualEntry({ onResult }: Props) {
   const [slots, setSlots] = useState<Slot[]>([newSlot()]);
   const [submitting, setSubmitting] = useState(false);
@@ -65,6 +120,9 @@ export function SlateManualEntry({ onResult }: Props) {
   // When set, opens the roster picker modal for the chosen team. The
   // matched opponent is what we pre-fill the new slot with.
   const [rosterPick, setRosterPick] = useState<{ team: Team; opponent: Team } | null>(null);
+  // L10 stats cache — keyed by playerId. Lookups stay fast across slot
+  // re-renders, and switching opponent doesn't re-trigger a fetch.
+  const [l10Cache, setL10Cache] = useState<Record<number, PlayerL10>>({});
 
   useEffect(() => {
     getTeams().then(setTeams).catch(() => setTeams([]));
@@ -73,8 +131,50 @@ export function SlateManualEntry({ onResult }: Props) {
       .catch(() => setTodayGames([]));
   }, []);
 
+  // When any slot has a picked player whose L10 we haven't fetched yet,
+  // kick off a fetch. We mark loading=true synchronously to avoid double
+  // requests on rapid re-renders.
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(slots.map((s) => s.player?.id).filter((x): x is number => typeof x === 'number')),
+    );
+    const missing = ids.filter((id) => !l10Cache[id]);
+    if (missing.length === 0) return;
+    setL10Cache((prev) => {
+      const next = { ...prev };
+      for (const id of missing) {
+        if (!next[id]) next[id] = { loading: true, averages: {}, gamesAnalyzed: 0 };
+      }
+      return next;
+    });
+    for (const id of missing) {
+      // Stat choice doesn't matter — we only need gameLog. Pick 'points'.
+      getPlayerLast10(id, 'points')
+        .then((r) => {
+          const games = r.gameLog ?? [];
+          const averages: Record<string, number> = {};
+          for (const [label, getter] of Object.entries(STAT_TO_VALUE)) {
+            if (games.length === 0) continue;
+            const sum = games.reduce((a, g) => a + getter(g), 0);
+            averages[label] = sum / games.length;
+          }
+          setL10Cache((prev) => ({
+            ...prev,
+            [id]: { loading: false, averages, gamesAnalyzed: games.length },
+          }));
+        })
+        .catch(() => {
+          setL10Cache((prev) => ({
+            ...prev,
+            [id]: { loading: false, averages: {}, gamesAnalyzed: 0 },
+          }));
+        });
+    }
+  }, [slots, l10Cache]);
+
   function teamByAbbr(abbr: string): Team | null {
-    return teams.find((t) => t.abbreviation === abbr) ?? null;
+    const canonical = ESPN_TO_NBA_ABBR[abbr] ?? abbr;
+    return teams.find((t) => t.abbreviation === canonical) ?? null;
   }
 
   // Click a team in the today's-games rail → open the roster picker
@@ -215,6 +315,7 @@ export function SlateManualEntry({ onResult }: Props) {
             index={idx}
             slot={s}
             teams={teams}
+            l10={s.player ? l10Cache[s.player.id] : undefined}
             onChange={(p) => update(idx, p)}
             onLineChange={(stat, val) => updateLine(idx, stat, val)}
             onRemove={() => removeSlot(idx)}
@@ -262,6 +363,7 @@ function ManualSlotRow({
   index,
   slot,
   teams,
+  l10,
   onChange,
   onLineChange,
   onRemove,
@@ -270,6 +372,7 @@ function ManualSlotRow({
   index: number;
   slot: Slot;
   teams: Team[];
+  l10: PlayerL10 | undefined;
   onChange: (patch: Partial<Slot>) => void;
   onLineChange: (statLabel: string, value: string) => void;
   onRemove: () => void;
@@ -394,23 +497,50 @@ function ManualSlotRow({
         )}
       </div>
 
-      {/* Per-stat line grid — leave any cell blank to skip that stat */}
+      {/* Per-stat line grid — leave any cell blank to skip that stat. The
+          hint shows the player's L10 average; clicking it pre-fills the
+          input with floor(avg)+0.5, the typical PrizePicks-style line. */}
       <div className="manual-slot-grid">
-        {STAT_OPTIONS.map((stat) => (
-          <label key={stat} className="manual-stat-cell">
-            <span className="manual-stat-label">{stat}</span>
-            <input
-              className="manual-stat-input"
-              type="number"
-              inputMode="decimal"
-              step="0.5"
-              placeholder="—"
-              value={slot.lines[stat] ?? ''}
-              onChange={(e) => onLineChange(stat, e.target.value)}
-              disabled={!slot.player}
-            />
-          </label>
-        ))}
+        {STAT_OPTIONS.map((stat) => {
+          const avg = l10?.averages[stat];
+          const isDD = stat === 'Double-Double';
+          const hintText = (() => {
+            if (!slot.player) return '';
+            if (l10?.loading) return '…';
+            if (avg === undefined) return '';
+            if (isDD) return `${Math.round(avg * 100)}%`;
+            return `L10 ${avg.toFixed(1)}`;
+          })();
+          const suggested = avg === undefined || isDD ? null : Math.floor(avg) + 0.5;
+          return (
+            <label key={stat} className="manual-stat-cell">
+              <div className="manual-stat-info">
+                <span className="manual-stat-label">{stat}</span>
+                {hintText && (
+                  <button
+                    type="button"
+                    className="manual-stat-hint"
+                    onClick={() => suggested !== null && onLineChange(stat, String(suggested))}
+                    disabled={suggested === null}
+                    title={suggested !== null ? `Use ${suggested}` : 'Reference only'}
+                  >
+                    {hintText}
+                  </button>
+                )}
+              </div>
+              <input
+                className="manual-stat-input"
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                placeholder="—"
+                value={slot.lines[stat] ?? ''}
+                onChange={(e) => onLineChange(stat, e.target.value)}
+                disabled={!slot.player}
+              />
+            </label>
+          );
+        })}
       </div>
     </div>
   );
