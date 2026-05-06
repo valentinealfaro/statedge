@@ -48,7 +48,9 @@ export function Slate() {
   // Default to 'build' since auto-pull is unreliable (PrizePicks Cloudflare)
   // and OCR depends on env-config the user may not have. Manual entry just
   // works with the data we always have.
-  const [mode, setMode] = useState<'build' | 'auto' | 'upload'>('build');
+  // Mode tabs are temporarily hidden — Build my own is the only path.
+  // Auto-pull (Cloudflare 403s) and Upload screenshot (4.5 MB body limit
+  // on Hobby) are kept in code for easy re-enable once each is fixed.
 
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
@@ -234,48 +236,8 @@ export function Slate() {
         compute hit probability against their last 10 games.
       </p>
 
-      <div className="slate-mode-tabs">
-        <button
-          className={mode === 'build' ? 'pick-btn active' : 'pick-btn'}
-          onClick={() => setMode('build')}
-        >
-          Build my own
-        </button>
-        <button
-          className={mode === 'auto' ? 'pick-btn active' : 'pick-btn'}
-          onClick={() => setMode('auto')}
-        >
-          PrizePicks auto-pull
-        </button>
-        <button
-          className={mode === 'upload' ? 'pick-btn active' : 'pick-btn'}
-          onClick={() => setMode('upload')}
-        >
-          Upload screenshot
-        </button>
-      </div>
-
-      {mode === 'build' && !data && (
+      {!data && (
         <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
-      )}
-
-      {mode === 'auto' && (
-        <div className="slate-actions">
-          <p className="muted small" style={{ flex: 1 }}>
-            Pulls tonight's NBA prop board from PrizePicks's public API.
-            Their Cloudflare layer rate-limits non-browser traffic, so this
-            often returns 403 — fall back to "Build my own" if it does.
-          </p>
-          <button className="cta" onClick={retryAuto} disabled={loading}>
-            {loading ? 'Working…' : data?.source === 'prizepicks_auto' ? 'Refresh' : 'Try auto-pull'}
-          </button>
-        </div>
-      )}
-
-      {mode === 'upload' && (
-        <div className="slate-actions">
-          <DropZone disabled={loading} onFile={handleFile} />
-        </div>
       )}
 
       {data && (
@@ -291,36 +253,7 @@ export function Slate() {
 
       {error && (
         <div className="slate-error">
-          <strong>
-            {errorSource === 'upload' ? 'Screenshot OCR failed:' : 'Auto-pull failed:'}
-          </strong>{' '}
-          {error}
-          {/* OPENAI_API_KEY in the error means the deployed backend is
-              still on the pre-Gemini code path — i.e. Vercel hasn't
-              picked up the latest commits. Tell the user to redeploy. */}
-          {error.includes('OPENAI_API_KEY') ? (
-            <p className="muted small">
-              Your Vercel <strong>backend</strong> deployment is on stale code
-              (still references OPENAI_API_KEY). Trigger a manual redeploy
-              of the backend project so it picks up the Gemini migration.
-            </p>
-          ) : error.includes('GEMINI_API_KEY') ? (
-            <p className="muted small">
-              Set <code>GEMINI_API_KEY</code> in your Vercel <strong>backend</strong>
-              project's env vars (Production + Preview + Development scopes),
-              then click "Redeploy" on the latest deployment.
-            </p>
-          ) : errorSource === 'upload' ? (
-            <p className="muted small">
-              The image OCR pipeline couldn't process the file. Try a clearer
-              screenshot or a different format (PNG / JPG / WebP).
-            </p>
-          ) : (
-            <p className="muted small">
-              PrizePicks's API rate-limits non-browser traffic. Take a screenshot
-              of any prop board and drop it above — we'll OCR it the same way.
-            </p>
-          )}
+          <strong>Slate failed:</strong> {error}
         </div>
       )}
 
