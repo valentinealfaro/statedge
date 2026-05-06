@@ -249,9 +249,22 @@ export function Slate() {
         score the combined hit probability.
       </p>
 
-      {!data && (
-        <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
+      {/* Pre-built parlays sit at the top of the page when a slate
+          is loaded — they're the highest-signal view of the slate
+          and what most users come here for. */}
+      {lines.length >= 2 && (
+        <BestPicksRail
+          lines={lines}
+          onLoad={(legs) => setParlay(legs)}
+          activeKeys={parlay}
+          cardKey={cardKey}
+        />
       )}
+
+      {/* Always render — admin panel + today's-games rail + empty
+          state all live in here, and the admin needs the panel
+          accessible even after a slate has been published. */}
+      <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
 
       {error && (
         <div className="slate-error">
@@ -321,15 +334,6 @@ export function Slate() {
 
       {data && data.unresolved.length > 0 && (
         <UnresolvedSection unresolved={data.unresolved} />
-      )}
-
-      {lines.length >= 2 && (
-        <BestPicksRail
-          lines={lines}
-          onLoad={(legs) => setParlay(legs)}
-          activeKeys={parlay}
-          cardKey={cardKey}
-        />
       )}
 
       {parlay.length > 0 && lines.length > 0 && (
