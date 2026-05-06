@@ -3,7 +3,12 @@ import multer from 'multer';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
-import { isDbConfigured } from '../db.js';
+import {
+  getDailySlateFromDb,
+  isDbConfigured,
+  setDailySlateInDb,
+  type StoredSlateLine,
+} from '../db.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
 
 export const slateRouter: Router = Router();
@@ -325,5 +330,84 @@ slateRouter.post('/parse', async (req, res) => {
   } catch (err) {
     console.error('slate/parse failed', err);
     res.status(500).json({ error: 'slate parse failed' });
+  }
+});
+
+// Public daily slate. The admin POSTs the day's prop sheet once and
+// every visitor's /slate page loads it via GET — no per-user paste
+// required. We auto-resolve on GET so the response carries fully
+// populated cards (with model probabilities) ready to render.
+slateRouter.get('/today', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ slate: null, resolved: null });
+    return;
+  }
+  try {
+    const stored = await getDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ slate: null, resolved: null });
+      return;
+    }
+    const raw: RawLine[] = stored.lines.map((l) => ({
+      playerName: l.playerName,
+      statLabel: l.statLabel,
+      line: l.line,
+      team: l.team,
+      opponentAbbr: l.opponentAbbr ?? null,
+    }));
+    const resolved = await resolveSlate(raw, 'manual');
+    res.json({
+      slate: { date: stored.date, count: stored.lines.length, updatedAt: stored.updatedAt },
+      resolved,
+    });
+  } catch (err) {
+    console.error('slate/today GET failed', err);
+    res.status(500).json({ error: 'slate today failed' });
+  }
+});
+
+// Admin write — replaces today's lines wholesale. Requires
+// SLATE_ADMIN_SECRET env var to be set on the backend; the request
+// must include x-admin-secret header. Any client can read, only an
+// authenticated admin can write.
+slateRouter.post('/today', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'Daily slate requires DB' });
+    return;
+  }
+  const secret = process.env.SLATE_ADMIN_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured on server' });
+    return;
+  }
+  const provided = req.header('x-admin-secret');
+  if (provided !== secret) {
+    res.status(401).json({ error: 'admin secret mismatch' });
+    return;
+  }
+  const lines = req.body?.lines;
+  if (!Array.isArray(lines)) {
+    res.status(400).json({ error: 'body.lines must be an array' });
+    return;
+  }
+  const sanitized: StoredSlateLine[] = [];
+  for (const l of lines) {
+    if (typeof l?.playerName !== 'string' || typeof l?.statLabel !== 'string') continue;
+    const lineNum = Number(l.line);
+    if (!Number.isFinite(lineNum) || lineNum <= 0) continue;
+    sanitized.push({
+      playerName: l.playerName,
+      statLabel: l.statLabel,
+      line: lineNum,
+      team: typeof l.team === 'string' ? l.team : undefined,
+      opponentAbbr: typeof l.opponentAbbr === 'string' ? l.opponentAbbr : null,
+    });
+  }
+  try {
+    const out = await setDailySlateInDb(sanitized);
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    console.error('slate/today POST failed', err);
+    res.status(500).json({ error: 'slate today write failed' });
   }
 });

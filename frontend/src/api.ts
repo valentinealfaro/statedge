@@ -595,6 +595,22 @@ export type ManualSlateLine = {
   opponentAbbr?: string | null; // tonight's opponent (drives vs-opp computation)
 };
 
+// Fetch today's globally-published slate. Returns null when the admin
+// hasn't set today's lines yet — caller should fall back to localStorage
+// or show a paste box. The response carries fully-resolved cards so
+// /slate can render immediately without a second round-trip.
+export async function getTodaySlate(): Promise<{
+  slate: { date: string; count: number; updatedAt: string } | null;
+  resolved: SlateResponse | null;
+}> {
+  const res = await fetch(`${API_BASE}/api/slate/today`);
+  if (!res.ok) return { slate: null, resolved: null };
+  return (await res.json()) as {
+    slate: { date: string; count: number; updatedAt: string } | null;
+    resolved: SlateResponse | null;
+  };
+}
+
 export async function postManualSlate(raw: ManualSlateLine[]): Promise<SlateResponse> {
   const res = await fetch(`${API_BASE}/api/slate/parse`, {
     method: 'POST',

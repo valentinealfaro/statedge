@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   getTeams,
   getTodayGames,
+  getTodaySlate,
   postManualSlate,
   type EspnScoreboardGame,
   type ManualSlateLine,
@@ -189,20 +190,44 @@ export function SlateManualEntry({ onResult }: Props) {
     getTeams().catch(() => {});
   }, []);
 
-  // Auto-build on hydration: if we have a saved slate, immediately
-  // fire it through the backend so the user lands on the cards.
+  // Hydration order:
+  //   1. Try the global daily slate (admin-published; everyone sees the
+  //      same lines). The GET endpoint returns fully-resolved cards in
+  //      one round-trip — no second build call needed.
+  //   2. Fall back to user's localStorage paste from earlier today.
+  //   3. Otherwise show the paste box.
   useEffect(() => {
     if (autoBuildAttempted) return;
-    if (!stored || stored.lines.length === 0) {
-      setAutoBuildAttempted(true);
-      return;
-    }
     setAutoBuildAttempted(true);
-    void build(stored.lines);
-    // We deliberately exclude `build` from the deps — it's stable
-    // enough for this single-shot effect.
+    (async () => {
+      try {
+        const today = await getTodaySlate();
+        if (today.slate && today.resolved && today.resolved.lines.length > 0) {
+          // Reflect the published slate in the local-store cache so a
+          // refresh-without-network still works.
+          const teamSet = new Set<string>();
+          for (const l of today.resolved.lines) if (l.team) teamSet.add(l.team);
+          setStored({
+            lines: today.resolved.lines.map((l) => ({
+              playerName: l.playerName,
+              statLabel: l.statLabel,
+              line: l.line,
+              team: l.team ?? undefined,
+              opponentAbbr: null,
+            })),
+            teams: [...teamSet],
+          });
+          onResult(today.resolved);
+          return;
+        }
+      } catch { /* fall through to local storage */ }
+      // Fallback: locally-saved paste from earlier
+      if (stored && stored.lines.length > 0) {
+        await build(stored.lines);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stored, autoBuildAttempted]);
+  }, [autoBuildAttempted]);
 
   async function build(lines: ManualSlateLine[]) {
     if (lines.length === 0) return;

@@ -875,3 +875,78 @@ export async function getDataFreshness(): Promise<{
   const daysStale = Math.max(0, Math.round((todayUtc - lastMs) / (1000 * 60 * 60 * 24)));
   return { lastGameDate: last, daysStale };
 }
+
+// -----------------------------------------------------------------
+// Daily slate — the "today's prop board" the admin sets, served
+// publicly to /slate so every visitor sees the same lines without
+// having to paste anything. Keyed by ET-calendar date so US sports
+// users see the right day even at 1am UTC.
+// -----------------------------------------------------------------
+
+export type StoredSlateLine = {
+  playerName: string;
+  statLabel: string;
+  line: number;
+  team?: string;
+  opponentAbbr?: string | null;
+};
+
+async function ensureDailySlateTable(): Promise<void> {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS daily_slate (
+      slate_date DATE PRIMARY KEY,
+      lines JSONB NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+// US Eastern calendar date — sports lock on the East Coast clock so
+// using ET avoids a 1am-UTC slate bleed-over.
+function todayEt(): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date());
+}
+
+export async function getDailySlateFromDb(): Promise<{
+  date: string;
+  lines: StoredSlateLine[];
+  updatedAt: string;
+} | null> {
+  await ensureDailySlateTable();
+  const date = todayEt();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    lines: StoredSlateLine[];
+    updated_at: Date;
+  }>(
+    `SELECT slate_date::text, lines, updated_at FROM daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    date: r.slate_date,
+    lines: r.lines,
+    updatedAt: r.updated_at.toISOString(),
+  };
+}
+
+export async function setDailySlateInDb(lines: StoredSlateLine[]): Promise<{
+  date: string;
+  count: number;
+}> {
+  await ensureDailySlateTable();
+  const date = todayEt();
+  await getPool().query(
+    `INSERT INTO daily_slate (slate_date, lines, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (slate_date) DO UPDATE
+       SET lines = EXCLUDED.lines, updated_at = NOW()`,
+    [date, JSON.stringify(lines)],
+  );
+  return { date, count: lines.length };
+}
