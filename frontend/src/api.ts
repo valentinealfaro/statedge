@@ -716,6 +716,25 @@ export async function getTeamLast10(teamId: number): Promise<TeamLast10Response>
   return (await res.json()) as TeamLast10Response;
 }
 
+export type BackendVersion = {
+  commit: string;
+  branch: string | null;
+  deployedAt: string | null;
+  hasGeminiKey: boolean;
+  hasOpenAiKey: boolean;
+  hasDb: boolean;
+};
+
+export async function getBackendVersion(): Promise<BackendVersion | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/version`);
+    if (!res.ok) return null;
+    return (await res.json()) as BackendVersion;
+  } catch {
+    return null;
+  }
+}
+
 export async function getDataFreshness(): Promise<DataFreshness> {
   const res = await fetch(`${API_BASE}/api/data-freshness`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

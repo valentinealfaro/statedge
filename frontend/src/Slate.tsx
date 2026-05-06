@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   analyzeSlateLegs,
+  getBackendVersion,
   getDataFreshness,
   getSlateAuto,
   getSlateInsight,
   postSlateImage,
+  type BackendVersion,
   type DataFreshness,
   type SlateResolvedLine,
   type SlateResponse,
@@ -30,6 +32,7 @@ export function Slate() {
   const [error, setError] = useState<string | null>(null);
   const [errorSource, setErrorSource] = useState<'auto' | 'upload' | null>(null);
   const [autoTried, setAutoTried] = useState(false);
+  const [backendVer, setBackendVer] = useState<BackendVersion | null>(null);
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
   const [hideOut, setHideOut] = useState(true);
@@ -89,6 +92,7 @@ export function Slate() {
       .finally(() => { setLoading(false); setAutoTried(true); });
 
     getDataFreshness().then(setFreshness).catch(() => {});
+    getBackendVersion().then(setBackendVer).catch(() => {});
   }, []);
 
   // Background refresh: PP lines move during the day, so we re-pull
@@ -190,6 +194,18 @@ export function Slate() {
         <div className="freshness stale" style={{ marginBottom: 16 }}>
           Heads up: NBA data is {freshness?.daysStale} days old — these
           percentages may not reflect tonight's form.
+        </div>
+      )}
+
+      {backendVer && !backendVer.hasGeminiKey && (
+        <div className="slate-error" style={{ marginBottom: 16 }}>
+          <strong>Backend missing GEMINI_API_KEY.</strong> Image OCR and AI
+          features won't work until you set <code>GEMINI_API_KEY</code> in
+          your Vercel <strong>backend</strong> project's env (Production
+          scope) and redeploy.
+          {backendVer.commit !== 'local' && (
+            <span className="muted small"> Currently serving commit <code>{backendVer.commit}</code>.</span>
+          )}
         </div>
       )}
 

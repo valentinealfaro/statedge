@@ -47,6 +47,21 @@ export function createApp(): Express {
     res.json({ status: 'ok', service: 'statedge-backend' });
   });
 
+  // Reports which build / commit is currently serving traffic. Vercel
+  // injects VERCEL_GIT_COMMIT_SHA at build time. Useful for spotting
+  // stale deploys when the frontend is on a newer commit than the
+  // backend (or vice versa).
+  app.get('/api/version', (_req, res) => {
+    res.json({
+      commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local',
+      branch: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+      deployedAt: process.env.VERCEL_DEPLOYMENT_CREATED_AT ?? null,
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      hasOpenAiKey: !!process.env.OPENAI_API_KEY,
+      hasDb: !!process.env.DATABASE_URL,
+    });
+  });
+
   app.use('/api/search', searchRouter);
   app.use('/api/teams', teamsRouter);
   app.use('/api/compare', compareRouter);
