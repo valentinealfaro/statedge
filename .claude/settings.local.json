@@ -1,8 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(npm *)",
-      "PowerShell(cd C:\\\\Users\\\\alfar\\\\Projects\\\\StatEdge\\\\backend; $env:SEASON='2023-24'; npm run db:sync-games)"
+      "Bash(*)",
+      "PowerShell(*)",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(npm publish*)",
+      "PowerShell(Remove-Item -Recurse*)",
+      "PowerShell(rm -r*)",
+      "PowerShell(rmdir /s*)"
     ]
   }
 }

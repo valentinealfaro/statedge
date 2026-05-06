@@ -13,7 +13,8 @@
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:sync-players": "tsx scripts/sync-players.ts",
-    "db:sync-games": "tsx scripts/sync-games.ts"
+    "db:sync-games": "tsx scripts/sync-games.ts",
+    "db:diagnose": "tsx scripts/diagnose.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
