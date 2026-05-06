@@ -135,7 +135,7 @@ function parsePasteText(text: string): ParseReport {
       errors.push({ line: raw, reason: 'expected at least 4 fields (Player|Team|stat|line)' });
       continue;
     }
-    const [name, team, statKey, lineStr] = fields;
+    const [name, team, statKey, lineStr, dirRaw] = fields;
     const statLabel = PASTE_STAT_TO_LABEL[statKey.toLowerCase()];
     if (!statLabel) {
       errors.push({ line: raw, reason: `unknown stat "${statKey}"` });
@@ -148,12 +148,20 @@ function parsePasteText(text: string): ParseReport {
     }
     const teamCanonical = ESPN_TO_NBA_ABBR[team.toUpperCase()] ?? team.toUpperCase();
     teamSet.add(teamCanonical);
+    // 5th field is direction restriction: 'over' (Demon = over-only)
+    // / 'under' (Goblin = under-only) / 'both' (standard). Defaults
+    // to 'both' if omitted.
+    const dirNorm = (dirRaw ?? '').toLowerCase().trim();
+    const direction: 'over' | 'under' | 'both' =
+      dirNorm === 'over' ? 'over' :
+      dirNorm === 'under' ? 'under' : 'both';
     ready.push({
       playerName: name,
       statLabel,
       line: lineNum,
       team: teamCanonical,
       opponentAbbr: null, // filled in below once we know the matchup
+      direction,
     });
   }
 

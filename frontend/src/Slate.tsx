@@ -588,6 +588,14 @@ function BestPicksRail({
       const lean = p.edge.lean;
       if (lean === 'No Clear Edge') return null;
       const isOver = lean.includes('Over');
+      // Skip lines where the model's lean conflicts with the
+      // available bettable side. Demon (over-only) + UNDER lean
+      // can't be played; Goblin (under-only) + OVER lean can't
+      // be played either. Either way, the parlay rail shouldn't
+      // surface unbettable picks.
+      const dirRestriction = l.direction;
+      if (dirRestriction === 'over' && !isOver) return null;
+      if (dirRestriction === 'under' && isOver) return null;
       return {
         line: l,
         pct: isOver ? p.probability.over : p.probability.under,
@@ -1183,6 +1191,20 @@ function PropRow({
 
   const tone = (edgeScoreVal ?? 0) >= 60 ? 'hot' : (edgeScoreVal ?? 0) >= 40 ? 'mid' : 'cool';
 
+  // Direction restriction handling. PrizePicks Demons are over-only,
+  // Goblins are under-only — if the model leans the opposite way,
+  // the user can't actually bet the model's pick. Show why and
+  // disable the + button so they don't add an unbettable leg.
+  const restriction = line.direction === 'over' || line.direction === 'under'
+    ? line.direction : null;
+  const restrictionConflict = restriction !== null
+    && !isDD
+    && dir !== 'flat'
+    && dir !== restriction;
+  const canAdd = !restrictionConflict || inParlay;
+  const restrictionLabel = restriction === 'over' ? 'OVER ONLY'
+    : restriction === 'under' ? 'UNDER ONLY' : null;
+
   function commitEdit() {
     const v = parseFloat(editText);
     if (!Number.isFinite(v) || v <= 0) {
@@ -1200,16 +1222,35 @@ function PropRow({
   }
 
   return (
-    <div className={`prop-row ${inParlay ? 'in-parlay' : ''} ${tone} ${isOverridden ? 'overridden' : ''}`}>
+    <div className={`prop-row ${inParlay ? 'in-parlay' : ''} ${tone} ${isOverridden ? 'overridden' : ''} ${restrictionConflict ? 'restricted' : ''}`}>
       <button
         className={`prop-row-pin ${inParlay ? 'pinned' : ''}`}
         onClick={onToggleParlay}
-        title={inParlay ? 'Remove from parlay' : 'Add to parlay'}
+        disabled={!canAdd}
+        title={
+          !canAdd
+            ? `This is a ${restrictionLabel} prop and the model leans ${dir === 'over' ? 'OVER' : 'UNDER'} — that side isn't available to bet.`
+            : inParlay ? 'Remove from parlay' : 'Add to parlay'
+        }
         aria-label={inParlay ? 'Remove from parlay' : 'Add to parlay'}
       >
         {inParlay ? '✓' : '+'}
       </button>
-      <span className="prop-row-stat">{line.statLabel}</span>
+      <span className="prop-row-stat">
+        {line.statLabel}
+        {restrictionLabel && (
+          <span
+            className={`prop-row-restriction ${restriction}`}
+            title={
+              restriction === 'over'
+                ? 'PrizePicks Demon — only the OVER side is available (higher payout multiplier)'
+                : 'PrizePicks Goblin — only the UNDER side is available (lower payout multiplier)'
+            }
+          >
+            {restrictionLabel}
+          </span>
+        )}
+      </span>
       {editing ? (
         <input
           type="number"

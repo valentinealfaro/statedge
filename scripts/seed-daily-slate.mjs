@@ -49,19 +49,24 @@ for (const path of files) {
   for (const row of rows) {
     const f = row.split(/[|\t]/).map((x) => x.trim());
     if (f.length < 4) continue;
-    const [name, team, statKey, lineStr] = f;
+    const [name, team, statKey, lineStr, dirRaw] = f;
     const label = STAT_TO_LABEL[statKey.toLowerCase()];
     if (!label) continue;
     const lineNum = parseFloat(lineStr);
     if (!Number.isFinite(lineNum)) continue;
     const teamCanonical = ESPN_TO_NBA[team.toUpperCase()] ?? team.toUpperCase();
     teamSet.add(teamCanonical);
+    const dirNorm = (dirRaw ?? '').toLowerCase().trim();
+    const direction =
+      dirNorm === 'over' ? 'over' :
+      dirNorm === 'under' ? 'under' : 'both';
     fileLines.push({
       playerName: name,
       statLabel: label,
       line: lineNum,
       team: teamCanonical,
       opponentAbbr: null,
+      direction,
     });
   }
   const teams = [...teamSet];

@@ -321,6 +321,7 @@ slateRouter.post('/parse', async (req, res) => {
       team: typeof r.team === 'string' ? r.team : undefined,
       position: typeof r.position === 'string' ? r.position : undefined,
       opponentAbbr: typeof r.opponentAbbr === 'string' ? r.opponentAbbr.toUpperCase() : null,
+      direction: r.direction === 'over' || r.direction === 'under' ? r.direction : 'both',
     });
   }
 
@@ -354,6 +355,7 @@ slateRouter.get('/today', async (_req, res) => {
       line: l.line,
       team: l.team,
       opponentAbbr: l.opponentAbbr ?? null,
+      direction: l.direction ?? 'both',
     }));
     const resolved = await resolveSlate(raw, 'manual');
     res.json({
@@ -395,12 +397,14 @@ slateRouter.post('/today', async (req, res) => {
     if (typeof l?.playerName !== 'string' || typeof l?.statLabel !== 'string') continue;
     const lineNum = Number(l.line);
     if (!Number.isFinite(lineNum) || lineNum <= 0) continue;
+    const dir = l.direction === 'over' || l.direction === 'under' ? l.direction : 'both';
     sanitized.push({
       playerName: l.playerName,
       statLabel: l.statLabel,
       line: lineNum,
       team: typeof l.team === 'string' ? l.team : undefined,
       opponentAbbr: typeof l.opponentAbbr === 'string' ? l.opponentAbbr : null,
+      direction: dir,
     });
   }
   try {

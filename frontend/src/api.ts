@@ -505,6 +505,13 @@ export type SlateResolvedLine = {
   startTime?: string | null;
   description?: string | null;
 
+  // PrizePicks side restriction passed through from the source slate.
+  // 'over' = Demon / over-only, 'under' = Goblin / under-only,
+  // 'both' (or unset) = standard. Drives the OVER ONLY / UNDER ONLY
+  // badge and prevents the parlay rail from suggesting a side that
+  // isn't available to bet.
+  direction?: 'over' | 'under' | 'both';
+
   gamesAnalyzed: number;
   last10Avg: number;
   last10Values: number[];
@@ -593,6 +600,9 @@ export type ManualSlateLine = {
   line: number;
   team?: string;                // optional, just for display
   opponentAbbr?: string | null; // tonight's opponent (drives vs-opp computation)
+  // PrizePicks side restriction. 'over' = Demon (over-only),
+  // 'under' = Goblin (under-only), 'both' = standard prop.
+  direction?: 'over' | 'under' | 'both';
 };
 
 // Replace today's globally-published slate. Admin-only — requires the

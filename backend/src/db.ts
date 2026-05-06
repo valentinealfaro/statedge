@@ -889,6 +889,10 @@ export type StoredSlateLine = {
   line: number;
   team?: string;
   opponentAbbr?: string | null;
+  // 'over' = PrizePicks Demon (over-only, higher payout)
+  // 'under' = PrizePicks Goblin (under-only, lower line)
+  // 'both' = standard prop, both sides available
+  direction?: 'over' | 'under' | 'both';
 };
 
 async function ensureDailySlateTable(): Promise<void> {

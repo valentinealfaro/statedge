@@ -34,6 +34,9 @@ export type RawLine = {
   startTime?: string | null;
   description?: string | null;
   opponentAbbr?: string | null;   // resolved from `description` if present
+  // PrizePicks side restriction. 'over' = Demon (over-only),
+  // 'under' = Goblin (under-only), 'both' or unset = standard prop.
+  direction?: 'over' | 'under' | 'both';
 };
 
 export type ResolvedLine = {
@@ -81,6 +84,13 @@ export type ResolvedLine = {
     last5Avg: number;
     deltaVsL10: number;     // last5 - last10
   };
+
+  // PrizePicks side restriction passed through from the source slate
+  // ('over' = Demon / over-only, 'under' = Goblin / under-only,
+  // 'both' = standard). Drives the UI's "OVER ONLY" / "UNDER ONLY"
+  // badge and blocks the parlay rail from suggesting a side that
+  // isn't actually available to bet.
+  direction?: 'over' | 'under' | 'both';
 
   // Layered projection-engine output. Populated for numeric stats only
   // (skipped for double_double, which is a binary not a continuous
@@ -269,6 +279,7 @@ export async function resolveSlate(
         statKey: p.statKey,
         statLabel: statLabelFor(p.statKey),
         line: p.raw.line,
+        direction: p.raw.direction ?? 'both',
         startTime: p.raw.startTime ?? null,
         description: p.raw.description ?? null,
         gamesAnalyzed: last10.length,
@@ -342,6 +353,7 @@ export async function resolveSlate(
       statKey: p.statKey,
       statLabel: statLabelFor(p.statKey),
       line: p.raw.line,
+      direction: p.raw.direction ?? 'both',
       startTime: p.raw.startTime ?? null,
       description: p.raw.description ?? null,
       // gamesAnalyzed reflects the COMBINED sample so receipts read

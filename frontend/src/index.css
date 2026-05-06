@@ -2608,11 +2608,45 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: #fff;
 }
 .prop-row-stat {
-  color: #c8cfdc;
+  color: var(--text-2);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prop-row-restriction {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.prop-row-restriction.over {
+  background: rgba(255, 86, 86, 0.12);
+  color: #ff8585;
+  border: 1px solid rgba(255, 86, 86, 0.3);
+}
+.prop-row-restriction.under {
+  background: rgba(109, 208, 122, 0.12);
+  color: var(--hot);
+  border: 1px solid rgba(109, 208, 122, 0.3);
+}
+.prop-row.restricted {
+  opacity: 0.6;
+}
+.prop-row.restricted .prop-row-pin:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.prop-row.restricted .prop-row-pct {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-thickness: 1px;
 }
 .prop-row-line {
   color: #e5e9f0;
