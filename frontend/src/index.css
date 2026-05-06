@@ -1625,6 +1625,17 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   color: #c8cfdc;
 }
 .parlay-payout strong { color: #5b8def; }
+.parlay-copy {
+  background: #14171f;
+  border: 1px solid #2a2f3a;
+  color: #c8cfdc;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.parlay-copy:hover { border-color: #5b8def; }
+.parlay-copy.copied { border-color: #6ee7a4; color: #6ee7a4; }
 .parlay-legs {
   display: flex;
   gap: 6px;

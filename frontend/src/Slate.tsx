@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   getDataFreshness,
   getSlateAuto,
@@ -28,7 +28,13 @@ export function Slate() {
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
   // promise; the receipts ('hit X/10' per leg) keep users honest.
-  const [parlay, setParlay] = useState<string[]>([]);
+  // Pre-populated from ?legs= URL param so shared links work.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [parlay, setParlay] = useState<string[]>(() => {
+    const raw = searchParams.get('legs');
+    if (!raw) return [];
+    return raw.split(',').filter(Boolean);
+  });
   function cardKey(l: SlateResolvedLine): string {
     return `${l.playerId}-${l.statKey}-${l.line}`;
   }
@@ -42,6 +48,21 @@ export function Slate() {
     setParlay((prev) => prev.filter((x) => x !== k));
   }
   function clearParlay() { setParlay([]); }
+
+  // Mirror parlay state into the URL so a 'Copy parlay link' button
+  // can just hand the user `window.location.href`. replace:true keeps
+  // the back/forward stack clean.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (parlay.length === 0) sp.delete('legs');
+        else sp.set('legs', parlay.join(','));
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [parlay, setSearchParams]);
 
   // First mount: kick off the auto-fetch from PrizePicks. If it fails
   // (Cloudflare blocks our IP, schema changes, etc.) we fall back to
@@ -398,6 +419,24 @@ function ParlayTray({
   const tooFew = legs.length < 2;
   const ppPayout = PRIZEPICKS_PAYOUTS[legs.length];
 
+  const [copied, setCopied] = useState(false);
+  async function copyLink() {
+    const url = window.location.href;
+    try { await navigator.clipboard.writeText(url); }
+    catch {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* nothing else */ }
+      finally { ta.remove(); }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
   return (
     <div className="parlay-tray">
       <div className="parlay-tray-inner">
@@ -419,6 +458,12 @@ function ParlayTray({
               PP {legs.length}-pick: <strong>{ppPayout}×</strong>
             </div>
           )}
+          <button
+            className={copied ? 'parlay-copy copied' : 'parlay-copy'}
+            onClick={copyLink}
+          >
+            {copied ? 'Link copied ✓' : 'Copy link'}
+          </button>
           <button className="link" onClick={onClear}>Clear</button>
         </div>
         <div className="parlay-legs">
