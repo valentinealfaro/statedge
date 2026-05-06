@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   getTeams,
+  getTodayGames,
   postManualSlate,
   searchPlayers,
+  type EspnScoreboardGame,
   type ManualSlateLine,
   type Player,
   type SlateResponse,
@@ -58,10 +60,42 @@ export function SlateManualEntry({ onResult }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [todayGames, setTodayGames] = useState<EspnScoreboardGame[]>([]);
 
   useEffect(() => {
     getTeams().then(setTeams).catch(() => setTeams([]));
+    getTodayGames()
+      .then((d) => setTodayGames(d.games))
+      .catch(() => setTodayGames([]));
   }, []);
+
+  // Helper: given a 2-3 letter abbreviation, find the matching NBA Team
+  // object from the loaded teams list. ESPN abbrs match NBA's exactly
+  // for all 30 franchises.
+  function teamByAbbr(abbr: string): Team | null {
+    return teams.find((t) => t.abbreviation === abbr) ?? null;
+  }
+
+  // Quick-add a slot pre-seeded with the player's team for context and
+  // the opponent already filled in. The user just types the player name,
+  // picks the stat, enters the line.
+  function addSlotForGame(playerTeamAbbr: string, opponentAbbr: string) {
+    const opp = teamByAbbr(opponentAbbr);
+    setSlots((prev) => {
+      // Replace the first empty slot if we have one; otherwise append.
+      const empty = prev.findIndex((s) => !s.player && !s.line);
+      if (empty !== -1) {
+        return prev.map((s, i) =>
+          i === empty ? { ...s, opponent: opp } : s,
+        );
+      }
+      if (prev.length >= MAX_SLOTS) return prev;
+      return [...prev, { ...newSlot(), opponent: opp }];
+    });
+    // Hint that the next slot is for that team (we don't filter player
+    // search by team — full search is more forgiving — but we set the
+    // opponent so vs-opp data shows up automatically).
+  }
 
   function update(idx: number, patch: Partial<Slot>) {
     setSlots((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
@@ -113,8 +147,47 @@ export function SlateManualEntry({ onResult }: Props) {
       <p className="muted">
         Add up to {MAX_SLOTS} players, pick a stat, enter the line. We'll pull
         each player's last 10 games and compute hit probability against your
-        line. Adding tonight's opponent unlocks the vs-opp historical row.
+        line.
       </p>
+
+      {todayGames.length > 0 && (
+        <div className="today-rail">
+          <div className="today-rail-head">
+            <span className="recents-title">Tonight's games</span>
+            <span className="muted small">
+              Click a team to add a pick — the opponent gets filled in for you.
+            </span>
+          </div>
+          <div className="today-rail-list">
+            {todayGames.map((g) => (
+              <div key={g.id} className="today-game">
+                <div className="today-game-status">{g.status.detail}</div>
+                <button
+                  className="today-side"
+                  type="button"
+                  onClick={() => addSlotForGame(g.away.abbreviation, g.home.abbreviation)}
+                  title={`Pick a ${g.away.displayName} player (opponent: ${g.home.abbreviation})`}
+                >
+                  <TeamLogo abbr={g.away.abbreviation} name={g.away.displayName} size="md" />
+                  <span className="today-side-abbr">{g.away.abbreviation}</span>
+                  {g.away.record && <span className="muted small">{g.away.record}</span>}
+                </button>
+                <span className="today-at">@</span>
+                <button
+                  className="today-side"
+                  type="button"
+                  onClick={() => addSlotForGame(g.home.abbreviation, g.away.abbreviation)}
+                  title={`Pick a ${g.home.displayName} player (opponent: ${g.away.abbreviation})`}
+                >
+                  <TeamLogo abbr={g.home.abbreviation} name={g.home.displayName} size="md" />
+                  <span className="today-side-abbr">{g.home.abbreviation}</span>
+                  {g.home.record && <span className="muted small">{g.home.record}</span>}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="manual-slots">
         {slots.map((s, idx) => (
