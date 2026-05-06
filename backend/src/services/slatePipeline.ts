@@ -65,6 +65,16 @@ export type ResolvedLine = {
     gamesPlayed: number;
     avg: number;       // for double_double stat, this is the rate (0-1)
   };
+
+  // Last-5 average and the delta vs the last-10 baseline. Positive →
+  // player is heating up coming into tonight; negative → cold.
+  // Threshold for showing an arrow on the UI is intentionally a bit
+  // wide (>= 10% of L10 avg) so noise doesn't trigger directional
+  // chips on flat performers.
+  trend?: {
+    last5Avg: number;
+    deltaVsL10: number;     // last5 - last10
+  };
 };
 
 export type UnresolvedLine = {
@@ -199,6 +209,27 @@ export async function resolveSlate(
       }
     }
 
+    // Last-5 trend (regardless of stat type — for DD it's a rate over
+    // 5 games rather than an avg, but the same comparison works).
+    let trend: ResolvedLine['trend'] | undefined;
+    if (last10.length >= 5) {
+      const last5 = last10.slice(0, 5);
+      let last5Avg: number;
+      let last10Avg: number;
+      if (p.statKey === 'double_double') {
+        last5Avg = last5.filter(isDoubleDoubleGame).length / last5.length;
+        last10Avg = last10.filter(isDoubleDoubleGame).length / last10.length;
+      } else {
+        const get = STAT_MAP[p.statKey];
+        last5Avg = last5.map(get).reduce((a, b) => a + b, 0) / last5.length;
+        last10Avg = last10.map(get).reduce((a, b) => a + b, 0) / last10.length;
+      }
+      trend = {
+        last5Avg: round2(last5Avg),
+        deltaVsL10: round2(last5Avg - last10Avg),
+      };
+    }
+
     if (p.statKey === 'double_double') {
       const dd = last10.filter(isDoubleDoubleGame).length;
       resolved.push({
@@ -220,6 +251,7 @@ export async function resolveSlate(
         ddRate: dd / last10.length,
         injury: injuryFor(p.canonicalName),
         vsOpponent,
+        trend,
       });
       continue;
     }
@@ -248,6 +280,7 @@ export async function resolveSlate(
       hitProbability: hit,
       injury: injuryFor(p.canonicalName),
       vsOpponent,
+      trend,
     });
   }
 

@@ -338,6 +338,9 @@ function LineCard({
             isDD={line.statKey === 'double_double'}
           />
         )}
+        {line.trend && line.last10Avg > 0 && (
+          <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
+        )}
       </Link>
     </div>
   );
@@ -379,6 +382,32 @@ function VsOppRow({
       <strong>{opp.avg.toFixed(1)}</strong>
       {' avg · '}
       {opp.gamesPlayed} game{opp.gamesPlayed === 1 ? '' : 's'}
+    </div>
+  );
+}
+
+function TrendChip({
+  trend,
+  l10Avg,
+}: {
+  trend: { last5Avg: number; deltaVsL10: number };
+  l10Avg: number;
+}) {
+  // Don't render directional chip for noise — require the L5 to differ
+  // from L10 by at least 10% of the L10 magnitude (or 0.5 raw units for
+  // small-counter stats like DD rate or stocks).
+  const threshold = Math.max(0.5, Math.abs(l10Avg) * 0.1);
+  const dir = trend.deltaVsL10 > threshold ? 'up'
+    : trend.deltaVsL10 < -threshold ? 'down'
+    : 'flat';
+  const arrow = dir === 'up' ? '↑' : dir === 'down' ? '↓' : '→';
+  const cls = dir === 'up' ? 'slate-trend hot'
+    : dir === 'down' ? 'slate-trend cold'
+    : 'slate-trend flat';
+  const label = dir === 'up' ? 'hot' : dir === 'down' ? 'cold' : 'steady';
+  return (
+    <div className={cls}>
+      L5 <strong>{trend.last5Avg.toFixed(1)}</strong> {arrow} {label}
     </div>
   );
 }

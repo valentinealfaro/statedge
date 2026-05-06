@@ -480,6 +480,10 @@ export type SlateResolvedLine = {
     gamesPlayed: number;
     avg: number;
   };
+  trend?: {
+    last5Avg: number;
+    deltaVsL10: number;
+  };
 };
 
 export type SlateUnresolvedLine = {
