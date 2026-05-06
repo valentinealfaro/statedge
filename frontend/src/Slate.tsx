@@ -32,6 +32,7 @@ export function Slate() {
   const [hideOut, setHideOut] = useState(true);
   const [teamFilter, setTeamFilter] = useState<string>('');
   const [statFilter, setStatFilter] = useState<string>('');
+  const [sort, setSort] = useState<'confidence' | 'edge' | 'tipoff'>('confidence');
 
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
@@ -158,6 +159,20 @@ export function Slate() {
     return true;
   });
 
+  // Apply user-chosen sort. Default 'confidence' matches the
+  // server-side ordering. 'edge' uses the composite score that
+  // accounts for line-gap, vsOpp agreement, trend agreement, and
+  // injury penalty. 'tipoff' surfaces the soonest games first.
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === 'edge') return edgeScore(b) - edgeScore(a);
+    if (sort === 'tipoff') {
+      const at = a.startTime ? Date.parse(a.startTime) : Number.POSITIVE_INFINITY;
+      const bt = b.startTime ? Date.parse(b.startTime) : Number.POSITIVE_INFINITY;
+      return at - bt;
+    }
+    return (b.hitProbability?.mightHitPct ?? 0) - (a.hitProbability?.mightHitPct ?? 0);
+  });
+
   const isStale = (freshness?.daysStale ?? 0) > 3;
 
   return (
@@ -251,8 +266,18 @@ export function Slate() {
                 Clear filters
               </button>
             )}
+            <select
+              className="slate-select"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as typeof sort)}
+              title="Sort"
+            >
+              <option value="confidence">Sort: Confidence</option>
+              <option value="edge">Sort: Best edge</option>
+              <option value="tipoff">Sort: Tipoff time</option>
+            </select>
             <span className="slate-result-count muted small">
-              {filtered.length} of {lines.length}
+              {sorted.length} of {lines.length}
             </span>
           </div>
         </>
@@ -284,9 +309,9 @@ export function Slate() {
         <p className="muted">No lines returned.</p>
       )}
 
-      {filtered.length > 0 && (
+      {sorted.length > 0 && (
         <div className="slate-grid">
-          {filtered.map((l) => {
+          {sorted.map((l) => {
             const k = cardKey(l);
             return (
               <LineCard
@@ -294,6 +319,7 @@ export function Slate() {
                 line={l}
                 inParlay={parlay.includes(k)}
                 onToggleParlay={() => toggleParlay(l)}
+                showEdge={sort === 'edge'}
               />
             );
           })}
@@ -343,10 +369,12 @@ function LineCard({
   line,
   inParlay,
   onToggleParlay,
+  showEdge,
 }: {
   line: SlateResolvedLine;
   inParlay: boolean;
   onToggleParlay: () => void;
+  showEdge?: boolean;
 }) {
   const hit = line.hitProbability;
   const pct = hit?.mightHitPct ?? 0;
@@ -380,6 +408,11 @@ function LineCard({
       </button>
 
       {inj && <InjuryChip injury={inj} />}
+      {showEdge && (
+        <div className="slate-edge" title="Composite edge score: confidence + line-gap + vs-opp + trend, minus injury penalty">
+          ⚡ {edgeScore(line)}
+        </div>
+      )}
 
       <Link
         className="slate-card-body"
@@ -739,6 +772,53 @@ const PRIZEPICKS_PAYOUTS: Record<number, number | undefined> = {
   5: 20,
   6: 35,
 };
+
+// Composite "best edge" score 0-100 — combines hit confidence with
+// supporting signals. Used by the 'Best edge' sort and shown as a
+// chip on cards when that sort is active. Tunable; an OUT player
+// hard-zeros it because their L10 averages mean nothing tonight.
+function edgeScore(line: SlateResolvedLine): number {
+  if (line.injury?.status === 'Out') return 0;
+
+  let s = line.hitProbability?.mightHitPct ?? 50;
+
+  // Line-gap bonus — bigger gap between L10 avg and the prop line
+  // (in the lean direction) means the line is more out of step
+  // with recent form. Cap at +15 so a 10x outlier doesn't dominate.
+  const lean = line.hitProbability?.lean;
+  const directionalGap = lean === 'OVER'
+    ? line.last10Avg - line.line
+    : lean === 'UNDER'
+    ? line.line - line.last10Avg
+    : 0;
+  if (directionalGap > 0) {
+    const normalized = Math.min(directionalGap / Math.max(line.line, 1), 0.5);
+    s += normalized * 30;
+  }
+
+  // Vs-opponent agreement (only when sample is meaningful)
+  if (line.vsOpponent && line.vsOpponent.gamesPlayed >= 2) {
+    const vsLean = line.vsOpponent.avg > line.line ? 'OVER' : 'UNDER';
+    if (vsLean === lean) s += 5;
+    else s -= 3;
+  }
+
+  // Trend agreement — hot for OVER leans, cold for UNDER leans
+  if (line.trend && line.last10Avg > 0) {
+    const threshold = Math.max(0.5, line.last10Avg * 0.1);
+    const isHot = line.trend.deltaVsL10 > threshold;
+    const isCold = line.trend.deltaVsL10 < -threshold;
+    if ((isHot && lean === 'OVER') || (isCold && lean === 'UNDER')) s += 5;
+    else if ((isHot && lean === 'UNDER') || (isCold && lean === 'OVER')) s -= 3;
+  }
+
+  // Injury penalty (Out is hard-zero above)
+  const injStatus = line.injury?.status?.toLowerCase() ?? '';
+  if (injStatus.startsWith('day')) s -= 12;
+  else if (injStatus.includes('quest') || injStatus.includes('doubt')) s -= 18;
+
+  return Math.max(0, Math.min(100, Math.round(s)));
+}
 
 function UnresolvedSection({ unresolved }: { unresolved: SlateUnresolvedLine[] }) {
   return (

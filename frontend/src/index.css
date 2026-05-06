@@ -1550,6 +1550,22 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .slate-card.is-out { opacity: 0.6; }
 .slate-card.is-out:hover { opacity: 0.9; }
 
+/* Edge chip — top-center pill on slate card when 'Best edge' sort is active */
+.slate-edge {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  color: #0b0d12;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  z-index: 1;
+}
+
 /* Vs-opponent row — small inline stat under the receipts */
 .slate-vs-opp {
   margin-top: 4px;
