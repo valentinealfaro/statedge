@@ -30,6 +30,8 @@ export function Slate() {
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
   const [hideOut, setHideOut] = useState(true);
+  const [teamFilter, setTeamFilter] = useState<string>('');
+  const [statFilter, setStatFilter] = useState<string>('');
 
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
@@ -134,8 +136,20 @@ export function Slate() {
 
   const lines = data?.lines ?? [];
   const outCount = lines.filter((l) => l.injury?.status === 'Out').length;
+
+  // Build the team/stat facets from the current slate. Sorted; null
+  // teams (rare) are dropped from the team dropdown.
+  const teams = Array.from(
+    new Set(lines.map((l) => l.team).filter((t): t is string => !!t)),
+  ).sort();
+  const stats = Array.from(
+    new Set(lines.map((l) => l.statLabel)),
+  ).sort();
+
   const filtered = lines.filter((l) => {
     if (hideOut && l.injury?.status === 'Out') return false;
+    if (teamFilter && l.team !== teamFilter) return false;
+    if (statFilter && l.statLabel !== statFilter) return false;
     if (filter === 'all') return true;
     const lean = l.hitProbability?.lean;
     if (filter === 'over') return lean === 'OVER';
@@ -196,21 +210,52 @@ export function Slate() {
       )}
 
       {lines.length > 0 && (
-        <div className="slate-filters">
-          <FilterTab v="all"    cur={filter} onSet={setFilter}>All</FilterTab>
-          <FilterTab v="strong" cur={filter} onSet={setFilter}>Strong (≥75%)</FilterTab>
-          <FilterTab v="over"   cur={filter} onSet={setFilter}>Over leans</FilterTab>
-          <FilterTab v="under"  cur={filter} onSet={setFilter}>Under leans</FilterTab>
-          {outCount > 0 && (
-            <button
-              className={hideOut ? 'pick-btn active' : 'pick-btn'}
-              onClick={() => setHideOut(!hideOut)}
-              title={hideOut ? 'Show OUT players' : 'Hide OUT players'}
+        <>
+          <div className="slate-filters">
+            <FilterTab v="all"    cur={filter} onSet={setFilter}>All</FilterTab>
+            <FilterTab v="strong" cur={filter} onSet={setFilter}>Strong (≥75%)</FilterTab>
+            <FilterTab v="over"   cur={filter} onSet={setFilter}>Over leans</FilterTab>
+            <FilterTab v="under"  cur={filter} onSet={setFilter}>Under leans</FilterTab>
+            {outCount > 0 && (
+              <button
+                className={hideOut ? 'pick-btn active' : 'pick-btn'}
+                onClick={() => setHideOut(!hideOut)}
+                title={hideOut ? 'Show OUT players' : 'Hide OUT players'}
+              >
+                {hideOut ? `Hiding ${outCount} OUT` : `Showing ${outCount} OUT`}
+              </button>
+            )}
+          </div>
+          <div className="slate-filters">
+            <select
+              className="slate-select"
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
             >
-              {hideOut ? `Hiding ${outCount} OUT` : `Showing ${outCount} OUT`}
-            </button>
-          )}
-        </div>
+              <option value="">All teams ({teams.length})</option>
+              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              className="slate-select"
+              value={statFilter}
+              onChange={(e) => setStatFilter(e.target.value)}
+            >
+              <option value="">All stats ({stats.length})</option>
+              {stats.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {(teamFilter || statFilter) && (
+              <button
+                className="pick-btn"
+                onClick={() => { setTeamFilter(''); setStatFilter(''); }}
+              >
+                Clear filters
+              </button>
+            )}
+            <span className="slate-result-count muted small">
+              {filtered.length} of {lines.length}
+            </span>
+          </div>
+        </>
       )}
 
       {isPro && savedParlays.length > 0 && (

@@ -1460,7 +1460,24 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.slate-select {
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid #2a2f3a;
+  background: #14171f;
+  color: #c8cfdc;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.slate-select:hover { border-color: #5b8def; }
+.slate-select:focus { outline: none; border-color: #5b8def; }
+.slate-result-count {
+  margin-left: auto;
+  padding: 4px 8px;
 }
 
 .slate-grid {
