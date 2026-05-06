@@ -1,16 +1,43 @@
 import { useEffect, useState } from 'react';
-import { searchPlayers, type Player } from './api';
+import {
+  getTrendingPlayers,
+  searchPlayers,
+  type Player,
+  type TrendingPlayer,
+} from './api';
+import { PlayerAvatar } from './Avatar';
 
 type Props = {
   selected: Player | null;
   onSelect: (p: Player | null) => void;
 };
 
+// Module-scoped cache: trending players don't change for the duration of a
+// session, and every PlayerSearch component on the page shares them.
+let trendingCache: TrendingPlayer[] | null = null;
+let trendingPromise: Promise<TrendingPlayer[]> | null = null;
+function loadTrending(): Promise<TrendingPlayer[]> {
+  if (trendingCache) return Promise.resolve(trendingCache);
+  if (trendingPromise) return trendingPromise;
+  trendingPromise = getTrendingPlayers(8)
+    .then((list) => { trendingCache = list; return list; })
+    .catch(() => []);
+  return trendingPromise;
+}
+
 export function PlayerSearch({ selected, onSelect }: Props) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<TrendingPlayer[]>([]);
+
+  // Prefetch trending suggestions once so the empty-input state has content
+  // ready by the time the user looks.
+  useEffect(() => {
+    if (selected) return;
+    loadTrending().then(setSuggestions);
+  }, [selected]);
 
   useEffect(() => {
     const q = query.trim();
@@ -42,6 +69,7 @@ export function PlayerSearch({ selected, onSelect }: Props) {
   if (selected) {
     return (
       <div className="picked">
+        <PlayerAvatar playerId={selected.id} name={selected.fullName} size="md" />
         <span className="label">Player</span>
         <span className="name">{selected.fullName}</span>
         <span className="team">{selected.teamAbbreviation ?? '—'}</span>
@@ -51,6 +79,8 @@ export function PlayerSearch({ selected, onSelect }: Props) {
       </div>
     );
   }
+
+  const showingResults = query.trim().length > 0;
 
   return (
     <div className="step">
@@ -63,16 +93,37 @@ export function PlayerSearch({ selected, onSelect }: Props) {
       />
       {loading && <p className="muted">Searching…</p>}
       {error && <p className="error">{error}</p>}
-      <div className="results">
-        {results.map((p) => (
-          <button key={p.id} className="result" onClick={() => onSelect(p)}>
-            <span>{p.fullName}</span>
-            <span className="team">
-              {p.teamAbbreviation ?? '—'} {p.isActive ? '' : '(retired)'}
-            </span>
-          </button>
-        ))}
-      </div>
+
+      {showingResults && (
+        <div className="results">
+          {results.map((p) => (
+            <button key={p.id} className="result" onClick={() => onSelect(p)}>
+              <PlayerAvatar playerId={p.id} name={p.fullName} size="md" />
+              <span className="result-name">{p.fullName}</span>
+              <span className="team">
+                {p.teamAbbreviation ?? '—'} {p.isActive ? '' : '(retired)'}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!showingResults && suggestions.length > 0 && (
+        <>
+          <p className="muted small suggest-label">Or pick a top scorer:</p>
+          <div className="results">
+            {suggestions.map((p) => (
+              <button key={p.id} className="result" onClick={() => onSelect(p)}>
+                <PlayerAvatar playerId={p.id} name={p.fullName} size="md" />
+                <span className="result-name">{p.fullName}</span>
+                <span className="team">
+                  {p.teamAbbreviation ?? '—'} · {p.ppg.toFixed(1)} PPG
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
