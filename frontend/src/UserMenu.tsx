@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isAdminEmail } from './admin';
 import { useAuth } from './auth';
 
 // Top-right of the navbar. Three states:
@@ -58,8 +59,14 @@ export function UserMenu() {
       </button>
       {open && (
         <div className="usermenu-dropdown">
-          <div className="usermenu-name">{user.displayName ?? 'Signed in'}</div>
+          <div className="usermenu-name">
+            {user.displayName ?? 'Signed in'}
+            {isAdminEmail(user.email) && <span className="usermenu-admin">ADMIN</span>}
+          </div>
           <div className="usermenu-email">{user.email}</div>
+          {isAdminEmail(user.email) && (
+            <div className="usermenu-perks">Pro access · no daily limit</div>
+          )}
           <button
             className="usermenu-signout"
             onClick={async () => {

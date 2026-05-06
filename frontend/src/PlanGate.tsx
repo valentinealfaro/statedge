@@ -6,7 +6,7 @@ import { downgradeToFree, FREE_DAILY_LIMIT, unlockPro, usePlan } from './plan';
 //  - Free with budget: count remaining + upgrade CTA
 //  - Free out of budget: blocking card with unlock code input
 export function PlanGate() {
-  const { plan, remaining, usageToday, refresh } = usePlan();
+  const { plan, isAdmin, remaining, usageToday, refresh } = usePlan();
   const [code, setCode] = useState('');
   const [codeErr, setCodeErr] = useState<string | null>(null);
 
@@ -19,6 +19,18 @@ export function PlanGate() {
     setCode('');
     setCodeErr(null);
     refresh();
+  }
+
+  if (isAdmin) {
+    // Owner / staff — clean banner, no downgrade option (the email
+    // override would re-elevate them anyway and the toggle would be
+    // confusing).
+    return (
+      <div className="plan-bar pro">
+        <span className="plan-tag">ADMIN</span>
+        <span className="plan-msg">Unlimited comparisons · AI summaries · all Pro features</span>
+      </div>
+    );
   }
 
   if (plan === 'pro') {

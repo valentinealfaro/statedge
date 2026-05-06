@@ -8,6 +8,8 @@
 // path is the temporary entitlement bridge until it is.
 
 import { useCallback, useEffect, useState } from 'react';
+import { isAdminEmail } from './admin';
+import { useAuth } from './auth';
 import { onUidChange, userKey } from './userKey';
 
 export type Plan = 'free' | 'pro';
@@ -64,7 +66,8 @@ export function downgradeToFree() {
 }
 
 export function usePlan() {
-  const [plan, setPlan] = useState<Plan>(() => readPlan());
+  const { user } = useAuth();
+  const [storedPlan, setStoredPlan] = useState<Plan>(() => readPlan());
   const [usage, setUsage] = useState<Usage>(() => readUsage());
 
   // Re-read from storage on mount so a tab that was open across midnight
@@ -72,7 +75,7 @@ export function usePlan() {
   // 'storage', AND uid changes (sign-in / sign-out) flip the namespace.
   useEffect(() => {
     const sync = () => {
-      setPlan(readPlan());
+      setStoredPlan(readPlan());
       setUsage(readUsage());
     };
     sync();
@@ -84,16 +87,23 @@ export function usePlan() {
     };
   }, []);
 
+  // Admins (matched by email against admin.ts allowlist) bypass the
+  // free gate entirely. The unlock-code Pro path still works for
+  // anyone — admin status is just the always-on version.
+  const isAdmin = !!user?.email && isAdminEmail(user.email);
+  const plan: Plan = isAdmin ? 'pro' : storedPlan;
+
   const recordComparison = useCallback(() => {
-    if (readPlan() === 'pro') return;
+    // Skip the counter for admin / Pro users entirely.
+    if (isAdmin || readPlan() === 'pro') return;
     const u = readUsage();
     const next: Usage = { date: u.date, count: u.count + 1 };
     writeUsage(next);
     setUsage(next);
-  }, []);
+  }, [isAdmin]);
 
   const refresh = useCallback(() => {
-    setPlan(readPlan());
+    setStoredPlan(readPlan());
     setUsage(readUsage());
   }, []);
 
@@ -103,6 +113,7 @@ export function usePlan() {
 
   return {
     plan,
+    isAdmin,
     usageToday: usage.count,
     remaining,
     canRunComparison: plan === 'pro' || remaining > 0,

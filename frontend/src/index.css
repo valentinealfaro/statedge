@@ -654,8 +654,28 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   z-index: 50;
   box-shadow: 0 8px 24px #00000080;
 }
-.usermenu-name { font-weight: 600; font-size: 14px; }
+.usermenu-name {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .usermenu-email { font-size: 12px; color: #8a93a6; margin-top: 2px; }
+.usermenu-admin {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  color: #0b0d12;
+}
+.usermenu-perks {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6ee7a4;
+}
 .usermenu-signout {
   margin-top: 12px;
   width: 100%;
