@@ -1637,6 +1637,37 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .slate-card.is-out { opacity: 0.6; }
 .slate-card.is-out:hover { opacity: 0.9; }
 
+/* Per-card AI insight (Pro) */
+.slate-why {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 8px 12px 12px;
+  padding: 6px 10px;
+  background: none;
+  border: 1px dashed #2a2f3a;
+  border-radius: 6px;
+  color: #5b8def;
+  font-size: 12px;
+  cursor: pointer;
+}
+.slate-why:hover { border-color: #5b8def; background: #14171f; }
+.slate-why.locked { color: #8a93a6; cursor: not-allowed; opacity: 0.7; }
+.slate-why.locked:hover { border-color: #2a2f3a; background: none; }
+.slate-why-icon { margin-left: 4px; }
+
+.slate-insight {
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  background: #0b0d12;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c8cfdc;
+}
+.slate-insight.loading { color: #8a93a6; font-style: italic; }
+.slate-insight.error { color: #ef6a6a; }
+
 /* Edge chip — top-center pill on slate card when 'Best edge' sort is active */
 .slate-edge {
   position: absolute;

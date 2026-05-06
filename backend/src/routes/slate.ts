@@ -147,6 +147,82 @@ NEVER:
 
 Output is the paragraph itself, no headers, no preamble.`;
 
+// Per-card insight — the "Why?" affordance on /slate. One ResolvedLine
+// in, one short sentence out. Frontend caches per-card so each card is
+// at most one Gemini call per page-load.
+const INSIGHT_SYSTEM = `You are a precise sports data analyst, not a tout.
+
+You receive a single NBA prop line with the player's recent context:
+their L10 average, hit count above the line, lean direction, vs-opp
+average if available, recent-form trend, and any injury status.
+
+Write ONE concise sentence that surfaces the most important thing
+about this line. Examples of the SHAPE we want:
+  "Maxey averaged 26.1 over his last 10 — well above the 22.5 line —
+   but the Knicks held him to 18 in their only meeting this season."
+  "Embiid is listed Day-To-Day, so the 25.5 line is exposed even
+   though his L10 avg sits at 28.3."
+
+Hard rules:
+  - One sentence, max ~30 words.
+  - Use only the supplied stats — no speculation.
+  - No betting language (no 'lock', 'guaranteed', 'free money', etc).
+  - No 'I think' / 'I'd take' / 'I recommend'.
+  - Just facts and the most relevant tension.`;
+
+slateRouter.post('/insight', async (req, res) => {
+  const ai = getGemini();
+  if (!ai) {
+    res.status(503).json({ error: 'AI insight unavailable: GEMINI_API_KEY not set' });
+    return;
+  }
+  const line = req.body?.line;
+  if (!line || typeof line !== 'object') {
+    res.status(400).json({ error: 'body.line required (a ResolvedLine)' });
+    return;
+  }
+
+  const r = line as ResolvedLine;
+  const trimmed = {
+    player: r.playerName,
+    team: r.team,
+    opp: r.vsOpponent?.opponentAbbr ?? null,
+    stat: r.statLabel,
+    line: r.line,
+    L10_avg: r.last10Avg,
+    hit_pct: r.hitProbability?.mightHitPct ?? null,
+    lean: r.hitProbability?.lean ?? null,
+    hit_over_count: r.hitProbability ? Math.round(r.hitProbability.hitOver * r.gamesAnalyzed) : null,
+    games_analyzed: r.gamesAnalyzed,
+    vs_opp_avg: r.vsOpponent?.avg ?? null,
+    vs_opp_games: r.vsOpponent?.gamesPlayed ?? null,
+    L5_avg: r.trend?.last5Avg ?? null,
+    trend_delta: r.trend?.deltaVsL10 ?? null,
+    injury: r.injury?.status ?? null,
+  };
+
+  try {
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'Write the one-sentence insight for this line:\n' + JSON.stringify(trimmed, null, 2) }],
+        },
+      ],
+      config: {
+        systemInstruction: INSIGHT_SYSTEM,
+        temperature: 0.3,
+      },
+    });
+    const insight = (response.text ?? '').trim();
+    res.json({ insight });
+  } catch (err) {
+    console.error('slate/insight failed', err);
+    res.status(502).json({ error: 'insight request failed' });
+  }
+});
+
 slateRouter.post('/analyze', async (req, res) => {
   const ai = getGemini();
   if (!ai) {

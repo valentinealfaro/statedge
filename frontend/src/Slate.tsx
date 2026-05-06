@@ -4,6 +4,7 @@ import {
   analyzeSlateLegs,
   getDataFreshness,
   getSlateAuto,
+  getSlateInsight,
   postSlateImage,
   type DataFreshness,
   type SlateResolvedLine,
@@ -325,6 +326,7 @@ export function Slate() {
                 inParlay={parlay.includes(k)}
                 onToggleParlay={() => toggleParlay(l)}
                 showEdge={sort === 'edge'}
+                canInsight={isPro}
               />
             );
           })}
@@ -407,12 +409,35 @@ function LineCard({
   inParlay,
   onToggleParlay,
   showEdge,
+  canInsight,
 }: {
   line: SlateResolvedLine;
   inParlay: boolean;
   onToggleParlay: () => void;
   showEdge?: boolean;
+  canInsight?: boolean;
 }) {
+  // Per-card AI insight — fetched lazily on click, cached locally so
+  // re-clicking doesn't re-bill. State lives in the card so multiple
+  // cards on screen don't share fetch state.
+  const [insight, setInsight] = useState<string | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightErr, setInsightErr] = useState<string | null>(null);
+  async function loadInsight(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (insight || insightLoading) return;
+    setInsightLoading(true);
+    setInsightErr(null);
+    try {
+      const r = await getSlateInsight(line);
+      setInsight(r.insight);
+    } catch (err) {
+      setInsightErr((err as Error).message);
+    } finally {
+      setInsightLoading(false);
+    }
+  }
   const hit = line.hitProbability;
   const pct = hit?.mightHitPct ?? 0;
   const lean = hit?.lean ?? 'OVER';
@@ -500,6 +525,26 @@ function LineCard({
           <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
         )}
       </Link>
+
+      {canInsight && !insight && !insightLoading && (
+        <button className="slate-why" onClick={loadInsight}>
+          Why? <span className="slate-why-icon" aria-hidden>✨</span>
+        </button>
+      )}
+      {!canInsight && (
+        <button className="slate-why locked" disabled title="AI insights are a Pro feature">
+          Why? <span className="lock-pill small">PRO</span>
+        </button>
+      )}
+      {canInsight && insightLoading && (
+        <div className="slate-insight loading">Analyzing…</div>
+      )}
+      {insight && (
+        <div className="slate-insight">{insight}</div>
+      )}
+      {insightErr && (
+        <div className="slate-insight error">{insightErr}</div>
+      )}
     </div>
   );
 }

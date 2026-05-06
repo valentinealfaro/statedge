@@ -533,6 +533,23 @@ export async function getSlateAuto(): Promise<SlateResponse> {
   return (await res.json()) as SlateResponse;
 }
 
+export async function getSlateInsight(line: SlateResolvedLine): Promise<{ insight: string }> {
+  const res = await fetch(`${API_BASE}/api/slate/insight`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ line }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { detail?: string; error?: string };
+      detail = body.detail ?? body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as { insight: string };
+}
+
 export async function analyzeSlateLegs(legs: SlateResolvedLine[]): Promise<{ summary: string }> {
   const res = await fetch(`${API_BASE}/api/slate/analyze`, {
     method: 'POST',
