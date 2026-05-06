@@ -409,6 +409,23 @@ export async function getBoxscore(gameId: string): Promise<Boxscore> {
   return data.boxscore;
 }
 
+export type StandingRow = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  conference: 'East' | 'West';
+  wins: number;
+  losses: number;
+  winPct: number;
+  ppg: number;
+};
+
+export async function getStandings(): Promise<{ east: StandingRow[]; west: StandingRow[] }> {
+  const res = await fetch(`${API_BASE}/api/standings`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { east: StandingRow[]; west: StandingRow[] };
+}
+
 export async function getTrendingTeams(limit = 8): Promise<TrendingTeam[]> {
   const res = await fetch(`${API_BASE}/api/trending/teams?limit=${limit}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

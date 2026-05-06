@@ -386,6 +386,82 @@ export async function getRecentGamesFromDb(
   });
 }
 
+export type StandingRow = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  conference: 'East' | 'West';
+  wins: number;
+  losses: number;
+  winPct: number;
+  ppg: number;
+  oppPpg: number;
+  pointDiff: number;
+};
+
+// Computes regular-season-style W-L records and PPG per team from the
+// JSONB team_game_logs cache, then attaches conference metadata from
+// the static teams list. Sorted by win-pct desc inside each conference.
+export async function getStandingsFromDb(season: string): Promise<{
+  east: StandingRow[];
+  west: StandingRow[];
+}> {
+  const { rows } = await getPool().query<{
+    team_id: number;
+    wins: number;
+    losses: number;
+    games: number;
+    ppg: number;
+    pts_for_total: number;
+  }>(
+    `SELECT
+        tgl.team_id,
+        COUNT(*) FILTER (WHERE g->>'result' = 'W')::int            AS wins,
+        COUNT(*) FILTER (WHERE g->>'result' = 'L')::int            AS losses,
+        COUNT(*)::int                                              AS games,
+        AVG((g->>'points')::numeric)                               AS ppg,
+        SUM((g->>'points')::numeric)                               AS pts_for_total
+       FROM team_game_logs tgl
+       , jsonb_array_elements(tgl.games) g
+      WHERE tgl.season = $1
+      GROUP BY tgl.team_id`,
+    [season],
+  );
+
+  // To compute opp PPG we'd need to look at the opposing team's row for
+  // each gameId, which is a separate query — for now skip and just emit
+  // PPG. Pts diff returns 0 placeholder; the standings UI can hide these.
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const standings: StandingRow[] = rows.flatMap((r) => {
+    const team = NBA_TEAMS.find((t) => t.id === r.team_id);
+    if (!team) return [];
+    const wins = Number(r.wins);
+    const losses = Number(r.losses);
+    const total = wins + losses;
+    return [{
+      teamId: team.id,
+      abbreviation: team.abbreviation,
+      fullName: team.fullName,
+      conference: team.conference,
+      wins,
+      losses,
+      winPct: total === 0 ? 0 : Math.round((wins / total) * 1000) / 1000,
+      ppg: round1(Number(r.ppg)),
+      oppPpg: 0,
+      pointDiff: 0,
+    }];
+  });
+
+  const cmp = (a: StandingRow, b: StandingRow) =>
+    b.winPct - a.winPct || b.wins - a.wins || a.fullName.localeCompare(b.fullName);
+
+  return {
+    east: standings.filter((s) => s.conference === 'East').sort(cmp),
+    west: standings.filter((s) => s.conference === 'West').sort(cmp),
+  };
+}
+
 export type TrendingTeam = {
   id: number;
   abbreviation: string;

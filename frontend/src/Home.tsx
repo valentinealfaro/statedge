@@ -96,6 +96,9 @@ export function Home() {
       </section>
 
       <footer className="footer">
+        <p>
+          <Link to="/standings" className="footer-link">League standings</Link>
+        </p>
         <p>Stats and analysis only. No odds, no gambling advice.</p>
       </footer>
     </div>

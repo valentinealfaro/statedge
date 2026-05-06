@@ -1022,6 +1022,53 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .bs-player-link:hover { color: #5b8def; }
 
+/* --- Standings --- */
+.standings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 24px;
+  margin-top: 16px;
+}
+.standings-col h2 { margin: 0 0 12px; font-size: 16px; }
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.standings-table th, .standings-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #1f2330;
+  text-align: right;
+}
+.standings-table th:nth-child(2), .standings-table td:nth-child(2) {
+  text-align: left;
+}
+.standings-table th {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.standings-rank {
+  color: #8a93a6;
+  width: 24px;
+}
+.standings-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.standings-team:hover { color: #5b8def; }
+.standings-team .avatar { width: 24px; height: 24px; padding: 2px; }
+
+.footer-link {
+  color: #5b8def;
+  text-decoration: none;
+}
+.footer-link:hover { text-decoration: underline; }
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }
