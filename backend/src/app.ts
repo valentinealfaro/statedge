@@ -15,7 +15,33 @@ import { slateRouter } from './routes/slate.js';
 
 export function createApp(): Express {
   const app = express();
-  app.use(cors());
+
+  // CORS — allow any origin (we have no auth secrets in responses
+  // and the API needs to be callable from the frontend's Vercel
+  // domain plus any preview aliases). Explicit origin: true reflects
+  // the request origin into the response header rather than '*',
+  // which avoids stale browser-cached '*' responses.
+  app.use(cors({
+    origin: true,
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'X-Admin-Secret'],
+  }));
+  // Catch-all for OPTIONS so preflights never bypass our CORS layer.
+  app.options('*', cors());
+
+  // Disable any caching of API responses — multiple users were seeing
+  // stale responses cached by the browser from earlier in the day,
+  // including 404s from before the backend was redeployed (which
+  // surfaced as confusing CORS errors). no-store prevents the browser
+  // and any intermediate CDN from holding on to API responses.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
+
   app.use(express.json());
 
   app.get('/', (_req, res) => {
