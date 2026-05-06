@@ -647,7 +647,12 @@ function BestPicksRail({
                 <span className="best-pick-label">{c.label}</span>
                 <span className="best-pick-size">{c.legs.length}-leg</span>
               </div>
-              <div className="best-pick-pct">{pct.toFixed(1)}%</div>
+              <div
+                className="best-pick-pct"
+                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card stacks the strongest model verdicts (edge × probability) instead of pure %, so combined % naturally lands lower → bigger payout if it hits.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
+              >
+                {pct.toFixed(1)}%
+              </div>
               <div className="best-pick-pct-label">combined hit</div>
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
@@ -669,6 +674,46 @@ function BestPicksRail({
       </div>
     </div>
   );
+}
+
+// Tooltip text helpers — when the user hovers a probability or edge
+// chip, explain what the number actually represents. Kept short so
+// the native title tooltip stays one or two readable lines.
+function pctTooltip({
+  pct,
+  dir,
+  isDD,
+  isOverridden,
+  statLabel,
+  line,
+}: {
+  pct: number;
+  dir: 'over' | 'under' | 'flat';
+  isDD: boolean;
+  isOverridden: boolean;
+  statLabel: string;
+  line: number;
+}): string {
+  if (isDD) {
+    return `Double-Double rate: this player has hit a DD in ${pct}% of their last 10 games. There's no Over/Under line on a DD prop — it's a binary outcome.`;
+  }
+  const side = dir === 'over' ? 'OVER' : dir === 'under' ? 'UNDER' : 'either side';
+  const dirText = dir === 'flat'
+    ? `Coin flip — model has no clear edge on this prop.`
+    : `Model says the ${side} side hits ${pct}% of the time.`;
+  const blend = `Probability blends two signals: (1) the player's historical hit rate against this line over their last 10 games + every game vs this opponent this season, and (2) a normal-distribution z-score using the same blended sample's mean and variance.`;
+  const override = isOverridden
+    ? `\n\nYou've overridden the line to ${line} for ${statLabel} — this % was recomputed locally against the player's L10 sample.`
+    : '';
+  return `${dirText} ${blend}${override}`;
+}
+
+function edgeTooltip(score: number, label: string | null): string {
+  const tier = score >= 75 ? 'Elite Edge'
+    : score >= 60 ? 'Strong Edge'
+    : score >= 40 ? 'Moderate Edge'
+    : 'Weak Edge';
+  return `${label ?? tier} (${score}/100). Composite score combining probability edge (35%), distance from the line vs variance (25%), historical hit rates (20%), confidence (15%), minus a risk penalty (5%). Score ≥ 60 = strong, ≥ 40 = moderate, < 40 = weak — likely a coin flip.`;
 }
 
 // Pinned-favorites section. Renders the user's starred players'
@@ -895,13 +940,22 @@ function GameSection({
           <h3>{teams[0]} @ {teams[1]}</h3>
         </div>
         <div className="game-section-stats">
-          <span><strong>{playerList.length}</strong> players</span>
+          <span title="Number of unique players in this game with at least one prop on the board">
+            <strong>{playerList.length}</strong> players
+          </span>
           <span className="dot">·</span>
-          <span><strong>{totalProps}</strong> props</span>
+          <span title="Total number of individual prop lines across all players in this game">
+            <strong>{totalProps}</strong> props
+          </span>
           {strongPlays > 0 && (
             <>
               <span className="dot">·</span>
-              <span className="hot"><strong>{strongPlays}</strong> strong edges</span>
+              <span
+                className="hot"
+                title="Props with an edge score ≥ 60 — the model considers these the highest-conviction plays in this game (strong probability lean + supporting confidence + manageable risk)"
+              >
+                <strong>{strongPlays}</strong> strong edges
+              </span>
             </>
           )}
         </div>
@@ -1009,7 +1063,17 @@ function PlayerCard({
         <div className="player-card-preview">
           <span className="muted small">Top play:</span>
           <span className="player-card-preview-stat">{top.statLabel} {top.line}</span>
-          <span className={`prop-row-pct ${topDir}`}>
+          <span
+            className={`prop-row-pct ${topDir}`}
+            title={pctTooltip({
+              pct: topPct,
+              dir: topDir as 'over' | 'under' | 'flat',
+              isDD: top.statKey === 'double_double',
+              isOverridden: false,
+              statLabel: top.statLabel,
+              line: top.line,
+            })}
+          >
             {topDir === 'over' ? '↑' : topDir === 'under' ? '↓' : '→'} {topPct}%
           </span>
           <span className="player-card-preview-more">
@@ -1162,11 +1226,17 @@ function PropRow({
           {isOverridden && <span className="prop-row-line-mark" aria-hidden>•</span>}
         </button>
       )}
-      <span className={`prop-row-pct ${dir}`}>
+      <span
+        className={`prop-row-pct ${dir}`}
+        title={pctTooltip({ pct, dir, isDD, isOverridden, statLabel: line.statLabel, line: activeLine })}
+      >
         {dir === 'over' ? '↑' : dir === 'under' ? '↓' : '→'} {pct}%
       </span>
       {edgeScoreVal !== null && (
-        <span className="prop-row-edge" title={edgeLabel ?? 'Edge'}>
+        <span
+          className="prop-row-edge"
+          title={edgeTooltip(edgeScoreVal, edgeLabel)}
+        >
           edge {Math.round(edgeScoreVal)}
         </span>
       )}
