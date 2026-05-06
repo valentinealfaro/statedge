@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Player, Team } from './api';
+import { onUidChange, userKey } from './userKey';
 
 export type SavedItem =
   | { id: string; type: 'pvt'; player: Player; team: Team; savedAt: number }
@@ -17,12 +18,12 @@ export type SavedItem =
 export type SavedDraft =
   SavedItem extends infer U ? U extends SavedItem ? Omit<U, 'id' | 'savedAt'> : never : never;
 
-const KEY = 'statedge.saved';
+const KEY_BASE = 'statedge.saved';
 const MAX_ITEMS = 50;
 
 function read(): SavedItem[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(userKey(KEY_BASE));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as SavedItem[];
     if (!Array.isArray(parsed)) return [];
@@ -33,7 +34,7 @@ function read(): SavedItem[] {
 }
 
 function write(items: SavedItem[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(items)); } catch { /* ignore */ }
+  try { localStorage.setItem(userKey(KEY_BASE), JSON.stringify(items)); } catch { /* ignore */ }
 }
 
 // Identity by content so re-saving the same matchup updates the timestamp
@@ -62,7 +63,11 @@ export function useSavedComparisons() {
   useEffect(() => {
     const sync = () => setItems(read());
     window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
+    const unsubUid = onUidChange(sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+      unsubUid();
+    };
   }, []);
 
   const save = useCallback((draft: SavedDraft) => {

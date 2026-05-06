@@ -9,8 +9,10 @@ type Props = {
 // Renders a "Save matchup" / "Saved ✓" toggle. Pro-only per spec — for free
 // users it shows a locked CTA instead of saving.
 export function SaveButton({ draft }: Props) {
+  // Hooks must be called unconditionally — early-return for free plan
+  // happens after both calls.
   const { plan } = usePlan();
-  const { save, remove, has } = useSavedComparisons();
+  const { items, save, remove, has } = useSavedComparisons();
 
   if (plan === 'free') {
     return (
@@ -27,18 +29,10 @@ export function SaveButton({ draft }: Props) {
       className={saved ? 'save-btn saved' : 'save-btn'}
       onClick={() => {
         if (saved) {
-          // The contentKey logic produces a stable id, so we can recompute it
-          // by saving once to read the id, then remove. Simpler: synthesize id.
-          // Rather than duplicate that logic here, just remove by content match.
-          // (We persist `id === contentKey`, so any saved entry with matching
-          //  content will share an id.)
-          // Find current id and remove.
-          // (Keeps this component agnostic about id encoding.)
-          // Note: useSavedComparisons.has read fresh from storage, so this is safe.
-          // We re-read to find the actual entry.
-          const raw = localStorage.getItem('statedge.saved');
-          const list: SavedItem[] = raw ? JSON.parse(raw) : [];
-          const found = list.find((i) => contentKeyMatches(i, draft));
+          // Use the hook's items array (uid-aware via storage namespace) —
+          // we used to reach into localStorage directly here, which leaked
+          // across users when sign-in is wired.
+          const found = items.find((i) => contentKeyMatches(i, draft));
           if (found) remove(found.id);
         } else {
           save(draft);

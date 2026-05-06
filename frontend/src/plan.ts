@@ -1,18 +1,19 @@
-// Local-only plan + daily-usage tracker.
+// Local plan + daily-usage tracker. Storage keys are now uid-namespaced
+// when the user is signed in (via userKey.ts) so two people sharing a
+// browser don't see each other's counter or plan flag. Falls back to
+// the device-shared key when signed out — that path stays a no-op
+// when auth isn't configured.
 //
-// Auth/Stripe aren't wired yet (external setup required), but the spec's
-// free-tier gate ("2 comparisons / day") still needs to exist so users see
-// a real Free → Pro surface. We key off localStorage and the local date.
-//
-// "Pro" can be unlocked offline via the secret code in unlockPro() — once
-// Stripe is in place this gets replaced by a real entitlement check.
+// Stripe still isn't wired (external setup required); the unlock code
+// path is the temporary entitlement bridge until it is.
 
 import { useCallback, useEffect, useState } from 'react';
+import { onUidChange, userKey } from './userKey';
 
 export type Plan = 'free' | 'pro';
 
-const PLAN_KEY = 'statedge.plan';
-const USAGE_KEY = 'statedge.usage';
+const PLAN_BASE = 'statedge.plan';
+const USAGE_BASE = 'statedge.usage';
 const PRO_UNLOCK_CODE = 'STATEDGE-EARLY';
 
 export const FREE_DAILY_LIMIT = 2;
@@ -30,7 +31,7 @@ type Usage = { date: string; count: number };
 
 function readUsage(): Usage {
   try {
-    const raw = localStorage.getItem(USAGE_KEY);
+    const raw = localStorage.getItem(userKey(USAGE_BASE));
     if (!raw) return { date: todayKey(), count: 0 };
     const parsed = JSON.parse(raw) as Usage;
     if (parsed.date !== todayKey()) return { date: todayKey(), count: 0 };
@@ -41,12 +42,12 @@ function readUsage(): Usage {
 }
 
 function writeUsage(u: Usage) {
-  try { localStorage.setItem(USAGE_KEY, JSON.stringify(u)); } catch { /* ignore */ }
+  try { localStorage.setItem(userKey(USAGE_BASE), JSON.stringify(u)); } catch { /* ignore */ }
 }
 
 function readPlan(): Plan {
   try {
-    return (localStorage.getItem(PLAN_KEY) as Plan) === 'pro' ? 'pro' : 'free';
+    return (localStorage.getItem(userKey(PLAN_BASE)) as Plan) === 'pro' ? 'pro' : 'free';
   } catch {
     return 'free';
   }
@@ -54,12 +55,12 @@ function readPlan(): Plan {
 
 export function unlockPro(code: string): boolean {
   if (code.trim().toUpperCase() !== PRO_UNLOCK_CODE) return false;
-  try { localStorage.setItem(PLAN_KEY, 'pro'); } catch { /* ignore */ }
+  try { localStorage.setItem(userKey(PLAN_BASE), 'pro'); } catch { /* ignore */ }
   return true;
 }
 
 export function downgradeToFree() {
-  try { localStorage.setItem(PLAN_KEY, 'free'); } catch { /* ignore */ }
+  try { localStorage.setItem(userKey(PLAN_BASE), 'free'); } catch { /* ignore */ }
 }
 
 export function usePlan() {
@@ -67,7 +68,8 @@ export function usePlan() {
   const [usage, setUsage] = useState<Usage>(() => readUsage());
 
   // Re-read from storage on mount so a tab that was open across midnight
-  // picks up the date rollover, and so plan changes from another tab sync.
+  // picks up the date rollover, plan changes from another tab sync via
+  // 'storage', AND uid changes (sign-in / sign-out) flip the namespace.
   useEffect(() => {
     const sync = () => {
       setPlan(readPlan());
@@ -75,7 +77,11 @@ export function usePlan() {
     };
     sync();
     window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
+    const unsubUid = onUidChange(sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+      unsubUid();
+    };
   }, []);
 
   const recordComparison = useCallback(() => {

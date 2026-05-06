@@ -9,6 +9,7 @@ import {
   signOutCurrent,
   subscribeAuth,
 } from './firebase';
+import { setUid } from './userKey';
 import type { User } from 'firebase/auth';
 
 export type AuthState = {
@@ -26,9 +27,16 @@ export function useAuth(): AuthState & {
   useEffect(() => {
     if (!isAuthConfigured()) {
       setUser(null);
+      setUid(null);
       return;
     }
-    const unsub = subscribeAuth(setUser);
+    const unsub = subscribeAuth((u) => {
+      setUser(u);
+      // Push the uid into the storage-namespace module so plan/saved/
+      // recents start reading the user's own keys instead of the
+      // shared device fallback.
+      setUid(u?.uid ?? null);
+    });
     return unsub;
   }, []);
 

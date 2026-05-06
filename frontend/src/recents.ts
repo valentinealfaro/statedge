@@ -8,13 +8,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SavedDraft, SavedItem } from './saved';
+import { onUidChange, userKey } from './userKey';
 
-const KEY = 'statedge.recents';
+const KEY_BASE = 'statedge.recents';
 const MAX = 10;
 
 function read(): SavedItem[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(userKey(KEY_BASE));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as SavedItem[];
     return Array.isArray(parsed) ? parsed : [];
@@ -24,7 +25,7 @@ function read(): SavedItem[] {
 }
 
 function write(items: SavedItem[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(items)); } catch { /* ignore */ }
+  try { localStorage.setItem(userKey(KEY_BASE), JSON.stringify(items)); } catch { /* ignore */ }
 }
 
 function contentKey(item: SavedDraft): string {
@@ -64,9 +65,11 @@ export function useRecents() {
     const sync = () => setItems(read());
     window.addEventListener('storage', sync);
     window.addEventListener('statedge:recents-changed', sync);
+    const unsubUid = onUidChange(sync);
     return () => {
       window.removeEventListener('storage', sync);
       window.removeEventListener('statedge:recents-changed', sync);
+      unsubUid();
     };
   }, []);
 
