@@ -417,10 +417,12 @@ export function Slate() {
         <UnresolvedSection unresolved={data.unresolved} />
       )}
 
-      {parlay.length === 0 && lines.length >= 3 && (
-        <SuggestedParlay
+      {lines.length >= 2 && (
+        <BestPicksRail
           lines={lines}
-          onAccept={(legs) => setParlay(legs)}
+          onLoad={(legs) => setParlay(legs)}
+          activeKeys={parlay}
+          cardKey={cardKey}
         />
       )}
 
@@ -611,6 +613,136 @@ function LineCard({
   );
 }
 
+// "Best Picks" rail — pre-computed parlay combos at sizes 2-6 plus a
+// "Wild Card" longshot. One tap loads the combo into the parlay tray.
+// Strict diversity rule: never two legs from the same player (variance
+// is correlated within a player, especially across PRA / PR / PA combo
+// stats), so each combo touches N distinct players.
+function BestPicksRail({
+  lines,
+  onLoad,
+  activeKeys,
+  cardKey,
+}: {
+  lines: SlateResolvedLine[];
+  onLoad: (legs: string[]) => void;
+  activeKeys: string[];
+  cardKey: (l: SlateResolvedLine) => string;
+}) {
+  type Candidate = {
+    line: SlateResolvedLine;
+    pct: number;
+    edge: number;
+    direction: 'OVER' | 'UNDER';
+  };
+
+  // Filter to lines with a clear directional lean (no coin-flips) and a
+  // resolved projection. OUT players are excluded — we never want a
+  // "best pick" parlay that includes someone who isn't playing.
+  const candidates: Candidate[] = lines
+    .filter((l) => l.injury?.status !== 'Out')
+    .map((l) => {
+      const p = l.projection;
+      if (!p || p.noProjection) return null;
+      const lean = p.edge.lean;
+      if (lean === 'No Clear Edge') return null;
+      const isOver = lean.includes('Over');
+      return {
+        line: l,
+        pct: isOver ? p.probability.over : p.probability.under,
+        edge: p.edge.score,
+        direction: (isOver ? 'OVER' : 'UNDER') as 'OVER' | 'UNDER',
+      };
+    })
+    .filter((x): x is Candidate => x !== null);
+
+  function pickDiverse(sorted: Candidate[], n: number): Candidate[] {
+    const seen = new Set<number>();
+    const out: Candidate[] = [];
+    for (const c of sorted) {
+      if (seen.has(c.line.playerId)) continue;
+      out.push(c);
+      seen.add(c.line.playerId);
+      if (out.length === n) break;
+    }
+    return out;
+  }
+
+  function combinedPct(picks: Candidate[]): number {
+    return picks.reduce((p, c) => p * (c.pct / 100), 1) * 100;
+  }
+
+  // Best N combos: top N by individual hit % (with the diversity rule)
+  const sortedByPct = [...candidates].sort((a, b) => b.pct - a.pct);
+  const combos: { label: string; legs: Candidate[]; tag?: 'wild' | 'safe' }[] = [];
+  for (const n of [2, 3, 4, 5, 6]) {
+    const legs = pickDiverse(sortedByPct, n);
+    if (legs.length === n) combos.push({ label: `Best ${n}`, legs });
+  }
+
+  // Wild Card: 6-leg parlay sorted by edge × probability (richer signal),
+  // picking the strongest model verdicts. The combined % naturally lands
+  // lower than a pure-pct top-6, so this is the longshot.
+  const sortedByEdgeProb = [...candidates].sort(
+    (a, b) => (b.edge * b.pct) - (a.edge * a.pct),
+  );
+  const wildLegs = pickDiverse(sortedByEdgeProb, 6);
+  if (wildLegs.length === 6) {
+    combos.push({ label: 'Wild Card', legs: wildLegs, tag: 'wild' });
+  }
+
+  if (combos.length === 0) return null;
+
+  return (
+    <div className="best-picks">
+      <div className="best-picks-head">
+        <h3>Pre-built parlays</h3>
+        <span className="muted small">
+          Tap any card to load it into your tray. All combos use distinct players.
+        </span>
+      </div>
+      <div className="best-picks-rail">
+        {combos.map((c) => {
+          const keys = c.legs.map((l) => cardKey(l.line));
+          const isActive = keys.length > 0
+            && keys.every((k) => activeKeys.includes(k))
+            && keys.length === activeKeys.length;
+          const pct = combinedPct(c.legs);
+          return (
+            <button
+              key={c.label}
+              className={`best-pick-card ${c.tag === 'wild' ? 'wild' : ''} ${isActive ? 'active' : ''}`}
+              onClick={() => onLoad(keys)}
+              title={`Load ${c.label} into your parlay tray`}
+            >
+              <div className="best-pick-head">
+                <span className="best-pick-label">{c.label}</span>
+                <span className="best-pick-size">{c.legs.length}-leg</span>
+              </div>
+              <div className="best-pick-pct">{pct.toFixed(1)}%</div>
+              <div className="best-pick-pct-label">combined hit</div>
+              <div className="best-pick-legs">
+                {c.legs.map((l, i) => (
+                  <div key={i} className="best-pick-leg">
+                    <span className="best-pick-leg-name">{l.line.playerName}</span>
+                    <span className="best-pick-leg-stat">{l.line.statLabel} {l.line.line}</span>
+                    <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                      {l.direction === 'OVER' ? '↑' : '↓'} {l.pct}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="best-pick-cta">
+                {isActive ? '✓ Loaded' : 'Load parlay →'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Game-grouped board: every line is bucketed by its matchup
 // (team + opponent, normalized so PHI/NYK and NYK/PHI are the same
 // game), and within each game players' props are merged into a
@@ -783,45 +915,106 @@ function PlayerCard({
   onToggleParlay: (l: SlateResolvedLine) => void;
   cardKey: (l: SlateResolvedLine) => string;
 }) {
+  // Collapsed by default — at scale a single game can have 17 players
+  // × 16 props = 270+ rows expanded all at once. Now the page loads
+  // with just the player headers + each player's strongest play as a
+  // preview. Click anywhere on the header to expand the full list.
+  const [expanded, setExpanded] = useState(false);
+
   const head = lines[0];
-  // Within each player's card, sort props by edge desc so the strongest
-  // play sits at the top — and the user can scan a player and see
-  // immediately if anything's worth tapping.
   const sorted = [...lines].sort(
     (a, b) => (b.projection?.edge.score ?? 0) - (a.projection?.edge.score ?? 0),
   );
   const inj = head.injury;
   const isOut = inj?.status === 'Out';
+  const propCount = sorted.length;
+
+  // The number of legs the user has already locked in for this player.
+  const lockedCount = sorted.filter((l) => parlay.includes(cardKey(l))).length;
+
+  // The strongest play to surface as a preview when collapsed.
+  const top = sorted[0];
+  const topProj = top?.projection;
+  const topPct = topProj && !topProj.noProjection
+    ? topProj.edge.lean.includes('Over')
+      ? topProj.probability.over
+      : topProj.edge.lean.includes('Under')
+      ? topProj.probability.under
+      : null
+    : null;
+  const topDir = topProj?.edge.lean.includes('Over') ? 'over'
+    : topProj?.edge.lean.includes('Under') ? 'under' : 'flat';
 
   return (
-    <div className={`player-card ${isOut ? 'is-out' : ''}`}>
-      <div className="player-card-head">
-        <Link
-          to={`/compare?m=last10&pid=${head.playerId}`}
-          className="player-card-identity"
-          title="Player last-10"
-        >
-          <PlayerAvatar playerId={head.playerId} name={head.playerName} size="lg" />
-          <div className="player-card-name-block">
-            <div className="player-card-name">{head.playerName}</div>
-            <div className="muted small">
-              {head.team ?? '—'}
-              {head.position && ` · ${head.position}`}
-            </div>
+    <div className={`player-card ${isOut ? 'is-out' : ''} ${expanded ? 'expanded' : ''}`}>
+      <button
+        type="button"
+        className="player-card-head player-card-head-button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+      >
+        <PlayerAvatar playerId={head.playerId} name={head.playerName} size="lg" />
+        <div className="player-card-name-block">
+          <div className="player-card-name">{head.playerName}</div>
+          <div className="muted small">
+            {head.team ?? '—'}
+            {head.position && ` · ${head.position}`}
           </div>
-        </Link>
+        </div>
         {inj && <InjuryChip injury={inj} />}
-      </div>
-      <div className="prop-row-list">
-        {sorted.map((l) => (
-          <PropRow
-            key={cardKey(l)}
-            line={l}
-            inParlay={parlay.includes(cardKey(l))}
-            onToggleParlay={() => onToggleParlay(l)}
-          />
-        ))}
-      </div>
+        {lockedCount > 0 && (
+          <span className="player-card-locked-pill" title={`${lockedCount} leg${lockedCount === 1 ? '' : 's'} from this player in your parlay`}>
+            {lockedCount} in parlay
+          </span>
+        )}
+        <span className="player-card-toggle">
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+
+      {!expanded && top && topPct !== null && (
+        <div className="player-card-preview">
+          <span className="muted small">Top play:</span>
+          <span className="player-card-preview-stat">{top.statLabel} {top.line}</span>
+          <span className={`prop-row-pct ${topDir}`}>
+            {topDir === 'over' ? '↑' : topDir === 'under' ? '↓' : '→'} {topPct}%
+          </span>
+          <span className="player-card-preview-more">
+            +{propCount - 1} more
+          </span>
+        </div>
+      )}
+
+      {expanded && (
+        <>
+          <div className="prop-row-list">
+            {sorted.map((l) => (
+              <PropRow
+                key={cardKey(l)}
+                line={l}
+                inParlay={parlay.includes(cardKey(l))}
+                onToggleParlay={() => onToggleParlay(l)}
+              />
+            ))}
+          </div>
+          <div className="player-card-foot">
+            <Link
+              to={`/compare?m=last10&pid=${head.playerId}`}
+              className="link"
+              title="See player's last 10 games"
+            >
+              View last 10 →
+            </Link>
+            <button
+              type="button"
+              className="link"
+              onClick={() => setExpanded(false)}
+            >
+              Collapse
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

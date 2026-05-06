@@ -2038,6 +2038,231 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border: 1px solid #5a2e36;
 }
 
+/* "Best Picks" rail — pre-built parlays (Best 2..6 + Wild Card) */
+.best-picks {
+  margin: 20px 0;
+}
+.best-picks-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.best-picks-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+.best-picks-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.best-pick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  background: linear-gradient(180deg, var(--surface-1) 0%, var(--surface-0) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  transition: transform var(--motion-fast), border-color var(--motion-fast),
+              box-shadow var(--motion-fast);
+}
+.best-pick-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--brand-blue);
+  box-shadow: var(--shadow-elevated);
+}
+.best-pick-card.active {
+  border-color: var(--brand-blue);
+  background:
+    linear-gradient(135deg, rgba(91,141,239,0.12), rgba(124,77,255,0.08)),
+    var(--surface-1);
+  box-shadow: var(--shadow-brand-glow);
+}
+.best-pick-card.wild {
+  border-color: rgba(255, 184, 107, 0.4);
+  background:
+    linear-gradient(135deg, rgba(255,184,107,0.08), rgba(124,77,255,0.06)),
+    var(--surface-1);
+}
+.best-pick-card.wild:hover {
+  border-color: var(--warn);
+  box-shadow: 0 4px 20px rgba(255, 184, 107, 0.25);
+}
+.best-pick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.best-pick-label {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-1);
+  letter-spacing: -0.2px;
+}
+.best-pick-card.wild .best-pick-label {
+  background: linear-gradient(90deg, var(--warn) 0%, var(--brand-purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.best-pick-size {
+  font-size: 10px;
+  color: var(--text-3);
+  font-weight: 700;
+  background: var(--surface-3);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.best-pick-pct {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -1.2px;
+  background: linear-gradient(135deg, var(--brand-blue) 0%, var(--hot) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+  margin-top: 2px;
+}
+.best-pick-card.wild .best-pick-pct {
+  background: linear-gradient(135deg, var(--warn) 0%, var(--brand-purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.best-pick-pct-label {
+  font-size: 10px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.best-pick-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.best-pick-leg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.best-pick-leg-name {
+  color: var(--text-2);
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.best-pick-leg-stat {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.best-pick-leg-dir {
+  font-weight: 700;
+  font-size: 10px;
+  margin-left: auto;
+}
+.best-pick-leg-dir.over { color: var(--hot); }
+.best-pick-leg-dir.under { color: var(--cold); }
+.best-pick-cta {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand-blue);
+  letter-spacing: 0.02em;
+}
+.best-pick-card.active .best-pick-cta {
+  color: var(--hot);
+}
+
+/* Player-card collapse states. Header is always visible; the props
+   list expands underneath. */
+.player-card-head-button {
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid transparent;
+  transition: border-bottom-color var(--motion-fast);
+}
+.player-card.expanded .player-card-head-button {
+  border-bottom-color: var(--border-subtle);
+}
+.player-card-head-button:hover .player-card-name {
+  color: var(--brand-blue);
+}
+.player-card-toggle {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 14px;
+  transition: color var(--motion-fast);
+}
+.player-card-head-button:hover .player-card-toggle {
+  color: var(--text-1);
+}
+.player-card-locked-pill {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--brand-blue);
+  background: rgba(91, 141, 239, 0.15);
+  border: 1px solid rgba(91, 141, 239, 0.4);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
+}
+.player-card-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  flex-wrap: wrap;
+}
+.player-card-preview-stat {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.player-card-preview-more {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.player-card-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 16px 12px;
+  font-size: 12px;
+}
+
 /* Game-grouped prop board — replaces the old flat slate-grid. Each
    game is its own section; each player is a single card with all
    their props as rows. */
@@ -2120,26 +2345,9 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .player-card.is-out {
   opacity: 0.55;
 }
-.player-card-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid #1f2330;
-  background: #0b0d12;
-}
-.player-card-identity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  text-decoration: none;
-  color: inherit;
-}
-.player-card-identity:hover .player-card-name {
-  color: #5b8def;
-}
+/* Legacy .player-card-head styles removed in favor of the
+   .player-card-head-button (collapse toggle). Identity link moved
+   into the foot when expanded. */
 .player-card-name-block {
   display: flex;
   flex-direction: column;
