@@ -16,17 +16,20 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { edgeScore } from './edgeScore';
+import { useFavorites, type FavoritesAPI } from './favorites';
 import { NavBar } from './NavBar';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { SlateManualEntry } from './SlateManualEntry';
+import { computeHitProbability } from './slateMath';
 import { useTitle } from './useTitle';
 
 export function Slate() {
   useTitle(['Slate']);
 
   const { plan } = usePlan();
+  const favorites = useFavorites();
   const isPro = plan === 'pro';
   const { items: savedParlays, save: saveParlay, remove: removeParlay } = useSavedParlays();
   const [data, setData] = useState<SlateResponse | null>(null);
@@ -249,6 +252,20 @@ export function Slate() {
         score the combined hit probability.
       </p>
 
+      {/* Pinned favorites — your starred players' props at the top
+          of the page so you don't have to scroll the full slate to
+          find the names you actually care about. Hidden if you
+          haven't favorited anyone. */}
+      {favorites.players.length > 0 && lines.length > 0 && (
+        <FavoritesSection
+          lines={lines}
+          favorites={favorites}
+          parlay={parlay}
+          onToggleParlay={toggleParlay}
+          cardKey={cardKey}
+        />
+      )}
+
       {/* Pre-built parlays sit at the top of the page when a slate
           is loaded — they're the highest-signal view of the slate
           and what most users come here for. */}
@@ -304,6 +321,7 @@ export function Slate() {
           parlay={parlay}
           onToggleParlay={toggleParlay}
           cardKey={cardKey}
+          favorites={favorites}
         />
       )}
 
@@ -653,6 +671,58 @@ function BestPicksRail({
   );
 }
 
+// Pinned-favorites section. Renders the user's starred players'
+// cards above the rest of the slate so they're always one scroll
+// away. Same PlayerCard component as the game sections — just
+// surfaced first.
+function FavoritesSection({
+  lines,
+  favorites,
+  parlay,
+  onToggleParlay,
+  cardKey,
+}: {
+  lines: SlateResolvedLine[];
+  favorites: FavoritesAPI;
+  parlay: string[];
+  onToggleParlay: (l: SlateResolvedLine) => void;
+  cardKey: (l: SlateResolvedLine) => string;
+}) {
+  // Group favorited players' lines by playerId.
+  const byPlayer = new Map<number, SlateResolvedLine[]>();
+  for (const l of lines) {
+    if (!favorites.isFavoritePlayer(l.playerId)) continue;
+    const arr = byPlayer.get(l.playerId) ?? [];
+    arr.push(l);
+    byPlayer.set(l.playerId, arr);
+  }
+  if (byPlayer.size === 0) return null;
+
+  return (
+    <section className="favorites-section">
+      <div className="favorites-section-head">
+        <span className="favorites-section-star" aria-hidden>★</span>
+        <h3>Your favorites</h3>
+        <span className="muted small">
+          {byPlayer.size} pinned player{byPlayer.size === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div className="player-card-grid">
+        {[...byPlayer.values()].map((plines) => (
+          <PlayerCard
+            key={plines[0].playerId}
+            lines={plines}
+            parlay={parlay}
+            onToggleParlay={onToggleParlay}
+            cardKey={cardKey}
+            favorites={favorites}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // Game-grouped board: every line is bucketed by its matchup
 // (team + opponent, normalized so PHI/NYK and NYK/PHI are the same
 // game), and within each game players' props are merged into a
@@ -664,11 +734,13 @@ function GameGroupedBoard({
   parlay,
   onToggleParlay,
   cardKey,
+  favorites,
 }: {
   lines: SlateResolvedLine[];
   parlay: string[];
   onToggleParlay: (l: SlateResolvedLine) => void;
   cardKey: (l: SlateResolvedLine) => string;
+  favorites: FavoritesAPI;
 }) {
   // Group: gameKey → { teams, players: Map<playerId, lines[]> }
   type Group = {
@@ -721,6 +793,7 @@ function GameGroupedBoard({
           parlay={parlay}
           onToggleParlay={onToggleParlay}
           cardKey={cardKey}
+          favorites={favorites}
         />
       ))}
       {ungrouped.length > 0 && (
@@ -730,7 +803,6 @@ function GameGroupedBoard({
             <span className="muted small">{ungrouped.length} lines without a matchup</span>
           </div>
           <div className="player-card-grid">
-            {/* Render each ungrouped player as its own card. */}
             {[...new Map(ungrouped.map((l) => [l.playerId, ungrouped.filter((x) => x.playerId === l.playerId)])).entries()].map(
               ([pid, plines]) => (
                 <PlayerCard
@@ -739,6 +811,7 @@ function GameGroupedBoard({
                   parlay={parlay}
                   onToggleParlay={onToggleParlay}
                   cardKey={cardKey}
+                  favorites={favorites}
                 />
               ),
             )}
@@ -755,36 +828,70 @@ function GameSection({
   parlay,
   onToggleParlay,
   cardKey,
+  favorites,
 }: {
   teams: [string, string];
   players: Map<number, SlateResolvedLine[]>;
   parlay: string[];
   onToggleParlay: (l: SlateResolvedLine) => void;
   cardKey: (l: SlateResolvedLine) => string;
+  favorites: FavoritesAPI;
 }) {
-  // Sort players by best edge across their props so the most-actionable
-  // names sit at the top of each game.
+  // Sort players by best edge across their props — but favorited
+  // players always rank above non-favorites within a game so your
+  // names sit at the top of their matchup section.
   const playerList = [...players.values()]
     .map((plines) => ({
       lines: plines,
       bestEdge: plines.reduce((m, l) => Math.max(m, l.projection?.edge.score ?? 0), 0),
+      isFav: favorites.isFavoritePlayer(plines[0].playerId),
     }))
-    .sort((a, b) => b.bestEdge - a.bestEdge);
+    .sort((a, b) => {
+      if (a.isFav !== b.isFav) return a.isFav ? -1 : 1;
+      return b.bestEdge - a.bestEdge;
+    });
 
-  // Aggregate game-level metrics for the header.
   const allLines = [...players.values()].flat();
   const totalProps = allLines.length;
   const strongPlays = allLines.filter(
     (l) => (l.projection?.edge.score ?? 0) >= 60,
   ).length;
 
+  // Either team in the matchup can be a favorite — we star whichever
+  // matches the user's saved abbr.
+  const favoriteTeam = favorites.isFavoriteTeam(teams[0])
+    ? teams[0]
+    : favorites.isFavoriteTeam(teams[1]) ? teams[1] : null;
+
+  function toggleTeamFav(abbr: string) {
+    favorites.setFavoriteTeam(favorites.isFavoriteTeam(abbr) ? null : abbr);
+  }
+
   return (
-    <section className="game-section">
+    <section className={`game-section ${favoriteTeam ? 'has-fav-team' : ''}`}>
       <div className="game-section-head">
         <div className="game-section-teams">
-          <TeamLogo abbr={teams[0]} name={teams[0]} size="lg" />
+          <button
+            type="button"
+            className={`team-fav-btn ${favorites.isFavoriteTeam(teams[0]) ? 'active' : ''}`}
+            onClick={() => toggleTeamFav(teams[0])}
+            title={favorites.isFavoriteTeam(teams[0]) ? `Unstar ${teams[0]}` : `Make ${teams[0]} your favorite team`}
+            aria-label={`Favorite ${teams[0]}`}
+          >
+            <TeamLogo abbr={teams[0]} name={teams[0]} size="lg" />
+            {favorites.isFavoriteTeam(teams[0]) && <span className="team-fav-star" aria-hidden>★</span>}
+          </button>
           <span className="game-section-vs">vs</span>
-          <TeamLogo abbr={teams[1]} name={teams[1]} size="lg" />
+          <button
+            type="button"
+            className={`team-fav-btn ${favorites.isFavoriteTeam(teams[1]) ? 'active' : ''}`}
+            onClick={() => toggleTeamFav(teams[1])}
+            title={favorites.isFavoriteTeam(teams[1]) ? `Unstar ${teams[1]}` : `Make ${teams[1]} your favorite team`}
+            aria-label={`Favorite ${teams[1]}`}
+          >
+            <TeamLogo abbr={teams[1]} name={teams[1]} size="lg" />
+            {favorites.isFavoriteTeam(teams[1]) && <span className="team-fav-star" aria-hidden>★</span>}
+          </button>
           <h3>{teams[0]} @ {teams[1]}</h3>
         </div>
         <div className="game-section-stats">
@@ -807,6 +914,7 @@ function GameSection({
             parlay={parlay}
             onToggleParlay={onToggleParlay}
             cardKey={cardKey}
+            favorites={favorites}
           />
         ))}
       </div>
@@ -819,11 +927,13 @@ function PlayerCard({
   parlay,
   onToggleParlay,
   cardKey,
+  favorites,
 }: {
   lines: SlateResolvedLine[];
   parlay: string[];
   onToggleParlay: (l: SlateResolvedLine) => void;
   cardKey: (l: SlateResolvedLine) => string;
+  favorites: FavoritesAPI;
 }) {
   // Collapsed by default — at scale a single game can have 17 players
   // × 16 props = 270+ rows expanded all at once. Now the page loads
@@ -855,32 +965,45 @@ function PlayerCard({
   const topDir = topProj?.edge.lean.includes('Over') ? 'over'
     : topProj?.edge.lean.includes('Under') ? 'under' : 'flat';
 
+  const isFav = favorites.isFavoritePlayer(head.playerId);
+
   return (
-    <div className={`player-card ${isOut ? 'is-out' : ''} ${expanded ? 'expanded' : ''}`}>
-      <button
-        type="button"
-        className="player-card-head player-card-head-button"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-      >
-        <PlayerAvatar playerId={head.playerId} name={head.playerName} size="lg" />
-        <div className="player-card-name-block">
-          <div className="player-card-name">{head.playerName}</div>
-          <div className="muted small">
-            {head.team ?? '—'}
-            {head.position && ` · ${head.position}`}
+    <div className={`player-card ${isOut ? 'is-out' : ''} ${expanded ? 'expanded' : ''} ${isFav ? 'is-fav' : ''}`}>
+      <div className="player-card-head-row">
+        <button
+          type="button"
+          className={`player-fav-btn ${isFav ? 'active' : ''}`}
+          onClick={(e) => { e.stopPropagation(); favorites.toggleFavoritePlayer(head.playerId); }}
+          title={isFav ? `Unstar ${head.playerName}` : `Star ${head.playerName} — pin to your favorites`}
+          aria-label={`Favorite ${head.playerName}`}
+        >
+          {isFav ? '★' : '☆'}
+        </button>
+        <button
+          type="button"
+          className="player-card-head player-card-head-button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+        >
+          <PlayerAvatar playerId={head.playerId} name={head.playerName} size="lg" />
+          <div className="player-card-name-block">
+            <div className="player-card-name">{head.playerName}</div>
+            <div className="muted small">
+              {head.team ?? '—'}
+              {head.position && ` · ${head.position}`}
+            </div>
           </div>
-        </div>
-        {inj && <InjuryChip injury={inj} />}
-        {lockedCount > 0 && (
-          <span className="player-card-locked-pill" title={`${lockedCount} leg${lockedCount === 1 ? '' : 's'} from this player in your parlay`}>
-            {lockedCount} in parlay
+          {inj && <InjuryChip injury={inj} />}
+          {lockedCount > 0 && (
+            <span className="player-card-locked-pill" title={`${lockedCount} leg${lockedCount === 1 ? '' : 's'} from this player in your parlay`}>
+              {lockedCount} in parlay
+            </span>
+          )}
+          <span className="player-card-toggle">
+            {expanded ? '▾' : '▸'}
           </span>
-        )}
-        <span className="player-card-toggle">
-          {expanded ? '▾' : '▸'}
-        </span>
-      </button>
+        </button>
+      </div>
 
       {!expanded && top && topPct !== null && (
         <div className="player-card-preview">
@@ -938,25 +1061,69 @@ function PropRow({
   inParlay: boolean;
   onToggleParlay: () => void;
 }) {
-  const p = line.projection;
+  // Local override for the line value. The published line comes from
+  // the admin's prop sheet; the user can override it in the UI when
+  // their sportsbook is showing a different number — we recompute
+  // probability locally using the player's L10 sample.
+  const [overrideLine, setOverrideLine] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(String(line.line));
+
   const isDD = line.statKey === 'double_double';
-  const lean = p?.edge.lean ?? '';
-  // For DD lines we don't have a projection — fall back to ddRate.
-  const pct = isDD
-    ? Math.round((line.ddRate ?? 0) * 100)
-    : lean.includes('Over')
-    ? p?.probability.over ?? 50
-    : lean.includes('Under')
-    ? p?.probability.under ?? 50
-    : 50;
-  const dir = lean.includes('Over') ? 'over' : lean.includes('Under') ? 'under' : 'flat';
-  const tone = (p?.edge.score ?? 0) >= 60
-    ? 'hot'
-    : (p?.edge.score ?? 0) >= 40
-    ? 'mid'
-    : 'cool';
+  const activeLine = overrideLine ?? line.line;
+  const isOverridden = overrideLine !== null && overrideLine !== line.line;
+
+  // If the user has set an override and we have last10Values, run the
+  // frontend recompute. Otherwise fall back to the backend's pre-baked
+  // projection. DD lines aren't recomputed (binary, not continuous).
+  let pct: number;
+  let dir: 'over' | 'under' | 'flat';
+  let edgeLabel: string | null = null;
+  let edgeScoreVal: number | null = null;
+
+  if (isDD) {
+    const ddPct = Math.round((line.ddRate ?? 0) * 100);
+    pct = ddPct;
+    dir = ddPct >= 50 ? 'over' : 'under';
+  } else if (isOverridden && line.last10Values && line.last10Values.length > 0) {
+    const hp = computeHitProbability(line.last10Values, activeLine);
+    pct = hp.mightHitPct;
+    dir = hp.lean === 'OVER' ? 'over' : 'under';
+    edgeScoreVal = Math.abs(pct - 50) * 2;
+    edgeLabel = pct >= 70 ? 'Strong' : pct >= 60 ? 'Slight' : 'Weak';
+  } else {
+    const p = line.projection;
+    const lean = p?.edge.lean ?? '';
+    pct = lean.includes('Over')
+      ? p?.probability.over ?? 50
+      : lean.includes('Under')
+      ? p?.probability.under ?? 50
+      : 50;
+    dir = lean.includes('Over') ? 'over' : lean.includes('Under') ? 'under' : 'flat';
+    edgeScoreVal = p?.edge.score ?? null;
+    edgeLabel = p?.edge.label ?? null;
+  }
+
+  const tone = (edgeScoreVal ?? 0) >= 60 ? 'hot' : (edgeScoreVal ?? 0) >= 40 ? 'mid' : 'cool';
+
+  function commitEdit() {
+    const v = parseFloat(editText);
+    if (!Number.isFinite(v) || v <= 0) {
+      setEditText(String(activeLine));
+      setEditing(false);
+      return;
+    }
+    setOverrideLine(v === line.line ? null : v);
+    setEditing(false);
+  }
+
+  function resetLine() {
+    setOverrideLine(null);
+    setEditText(String(line.line));
+  }
+
   return (
-    <div className={`prop-row ${inParlay ? 'in-parlay' : ''} ${tone}`}>
+    <div className={`prop-row ${inParlay ? 'in-parlay' : ''} ${tone} ${isOverridden ? 'overridden' : ''}`}>
       <button
         className={`prop-row-pin ${inParlay ? 'pinned' : ''}`}
         onClick={onToggleParlay}
@@ -966,14 +1133,53 @@ function PropRow({
         {inParlay ? '✓' : '+'}
       </button>
       <span className="prop-row-stat">{line.statLabel}</span>
-      <span className="prop-row-line">{line.line}</span>
+      {editing ? (
+        <input
+          type="number"
+          step="0.5"
+          inputMode="decimal"
+          className="prop-row-line-edit"
+          value={editText}
+          autoFocus
+          onChange={(e) => setEditText(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitEdit();
+            if (e.key === 'Escape') {
+              setEditText(String(activeLine));
+              setEditing(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className={`prop-row-line ${isOverridden ? 'overridden' : ''}`}
+          onClick={() => { setEditText(String(activeLine)); setEditing(true); }}
+          title="Click to override the line — we'll recompute probability against the player's last 10"
+        >
+          {activeLine}
+          {isOverridden && <span className="prop-row-line-mark" aria-hidden>•</span>}
+        </button>
+      )}
       <span className={`prop-row-pct ${dir}`}>
         {dir === 'over' ? '↑' : dir === 'under' ? '↓' : '→'} {pct}%
       </span>
-      {p && !p.noProjection && (
-        <span className="prop-row-edge" title={p.edge.label}>
-          edge {p.edge.score}
+      {edgeScoreVal !== null && (
+        <span className="prop-row-edge" title={edgeLabel ?? 'Edge'}>
+          edge {Math.round(edgeScoreVal)}
         </span>
+      )}
+      {isOverridden && (
+        <button
+          type="button"
+          className="prop-row-reset"
+          onClick={resetLine}
+          title={`Reset to published line (${line.line})`}
+          aria-label="Reset line to published value"
+        >
+          ↺
+        </button>
       )}
     </div>
   );
