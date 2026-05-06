@@ -226,6 +226,10 @@ export function Slate() {
       )}
 
       {lines.length > 0 && (
+        <SlateSummary lines={lines} />
+      )}
+
+      {lines.length > 0 && (
         <>
           <div className="slate-filters">
             <FilterTab v="all"    cur={filter} onSet={setFilter}>All</FilterTab>
@@ -471,6 +475,49 @@ function LineCard({
           <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
         )}
       </Link>
+    </div>
+  );
+}
+
+// Quick stats above the slate grid — totals, strong leans, OUT count,
+// and the highest edge score across the board. Just orientation, no
+// interactivity.
+function SlateSummary({ lines }: { lines: SlateResolvedLine[] }) {
+  const total = lines.length;
+  const strongOver = lines.filter((l) =>
+    (l.hitProbability?.mightHitPct ?? 0) >= 75 && l.hitProbability?.lean === 'OVER').length;
+  const strongUnder = lines.filter((l) =>
+    (l.hitProbability?.mightHitPct ?? 0) >= 75 && l.hitProbability?.lean === 'UNDER').length;
+  const outCount = lines.filter((l) => l.injury?.status === 'Out').length;
+  const bestEdge = lines.reduce(
+    (max, l) => Math.max(max, edgeScore(l)),
+    0,
+  );
+
+  return (
+    <div className="slate-summary">
+      <div className="slate-summary-cell">
+        <div className="slate-summary-v">{total}</div>
+        <div className="slate-summary-k">props</div>
+      </div>
+      <div className="slate-summary-cell pos">
+        <div className="slate-summary-v">{strongOver}</div>
+        <div className="slate-summary-k">strong over</div>
+      </div>
+      <div className="slate-summary-cell neg">
+        <div className="slate-summary-v">{strongUnder}</div>
+        <div className="slate-summary-k">strong under</div>
+      </div>
+      {outCount > 0 && (
+        <div className="slate-summary-cell out">
+          <div className="slate-summary-v">{outCount}</div>
+          <div className="slate-summary-k">OUT</div>
+        </div>
+      )}
+      <div className="slate-summary-cell edge">
+        <div className="slate-summary-v">⚡ {bestEdge}</div>
+        <div className="slate-summary-k">best edge</div>
+      </div>
     </div>
   );
 }

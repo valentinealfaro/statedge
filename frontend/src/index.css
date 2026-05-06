@@ -1877,6 +1877,46 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   color: #c8cfdc;
 }
 
+/* --- Slate summary bar (props / leans / OUT / best edge) --- */
+.slate-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.slate-summary-cell {
+  text-align: center;
+  padding: 10px 8px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 8px;
+}
+.slate-summary-cell.pos { border-color: #6ee7a4; }
+.slate-summary-cell.neg { border-color: #ef6a6a; }
+.slate-summary-cell.out { border-color: #ef6a6a; opacity: 0.85; }
+.slate-summary-cell.edge { border-color: #5b8def; }
+.slate-summary-v {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.slate-summary-cell.edge .slate-summary-v {
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.slate-summary-cell.pos .slate-summary-v { color: #6ee7a4; }
+.slate-summary-cell.neg .slate-summary-v,
+.slate-summary-cell.out .slate-summary-v { color: #ef6a6a; }
+.slate-summary-k {
+  font-size: 10px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
 /* --- Suggested 3-leg parlay banner --- */
 .suggested-parlay {
   display: flex;
