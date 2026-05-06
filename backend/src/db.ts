@@ -139,6 +139,102 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+export type RecentGameSide = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  points: number;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+};
+
+export type RecentGame = {
+  gameId: string;
+  date: string;       // YYYY-MM-DD
+  away: RecentGameSide;
+  home: RecentGameSide;
+};
+
+// Most recent N completed games. Each game appears in two team_game_logs
+// rows (one per team's POV); we group by gameId to pair them and emit a
+// home-vs-away record.
+export async function getRecentGamesFromDb(
+  season: string,
+  limit = 6,
+): Promise<RecentGame[]> {
+  const { rows } = await getPool().query<{
+    game_id: string;
+    date: string;
+    teams: Array<{ teamId: number; points: number; isHome: boolean; result: 'W' | 'L' | null }>;
+  }>(
+    `WITH unnested AS (
+       SELECT
+         tgl.team_id                                               AS team_id,
+         g->>'gameId'                                              AS game_id,
+         (g->>'date')::date                                        AS date,
+         (g->>'points')::int                                       AS points,
+         (g->>'isHome')::boolean                                   AS is_home,
+         NULLIF(g->>'result', '')                                  AS result
+       FROM team_game_logs tgl
+       , jsonb_array_elements(tgl.games) g
+       WHERE tgl.season = $1
+     )
+     SELECT
+       game_id,
+       MIN(date)::text                                             AS date,
+       JSON_AGG(
+         JSON_BUILD_OBJECT(
+           'teamId', team_id,
+           'points', points,
+           'isHome', is_home,
+           'result', result
+         )
+       )                                                           AS teams
+     FROM unnested
+     GROUP BY game_id
+     -- Only include games where both teams' perspectives are cached.
+     -- During the day-of-sync window stats.nba.com sometimes has one
+     -- side updated before the other, so half-cached games are real.
+   HAVING COUNT(*) = 2
+   ORDER BY MIN(date) DESC, game_id DESC
+     LIMIT $2`,
+    [season, limit],
+  );
+
+  const { NBA_TEAMS } = await import('./nba/teams.js');
+  const meta = (id: number) => NBA_TEAMS.find((t) => t.id === id);
+
+  return rows.flatMap((r) => {
+    if (r.teams.length !== 2) return [];          // half-cached game; skip
+    const homeRow = r.teams.find((t) => t.isHome);
+    const awayRow = r.teams.find((t) => !t.isHome);
+    if (!homeRow || !awayRow) return [];
+    const homeTeam = meta(homeRow.teamId);
+    const awayTeam = meta(awayRow.teamId);
+    if (!homeTeam || !awayTeam) return [];
+    return [{
+      gameId: r.game_id,
+      date: r.date,
+      home: {
+        teamId: homeTeam.id,
+        abbreviation: homeTeam.abbreviation,
+        fullName: homeTeam.fullName,
+        points: homeRow.points,
+        isHome: true,
+        result: homeRow.result,
+      },
+      away: {
+        teamId: awayTeam.id,
+        abbreviation: awayTeam.abbreviation,
+        fullName: awayTeam.fullName,
+        points: awayRow.points,
+        isHome: false,
+        result: awayRow.result,
+      },
+    }];
+  });
+}
+
 export type TrendingTeam = {
   id: number;
   abbreviation: string;

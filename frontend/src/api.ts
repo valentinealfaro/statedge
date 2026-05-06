@@ -343,6 +343,29 @@ export type TrendingTeam = {
   gamesPlayed: number;
 };
 
+export type RecentGameSide = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  points: number;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+};
+
+export type RecentGame = {
+  gameId: string;
+  date: string;
+  away: RecentGameSide;
+  home: RecentGameSide;
+};
+
+export async function getRecentGames(limit = 6): Promise<RecentGame[]> {
+  const res = await fetch(`${API_BASE}/api/games/recent?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { games: RecentGame[] };
+  return data.games;
+}
+
 export async function getTrendingTeams(limit = 8): Promise<TrendingTeam[]> {
   const res = await fetch(`${API_BASE}/api/trending/teams?limit=${limit}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -903,6 +903,54 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   padding: 0 24px;
 }
 
+/* --- Recent NBA games card --- */
+.recent-games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.recent-game {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.recent-game:hover { border-color: #5b8def; background: #1a1f2b; }
+.recent-game-date {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.recent-game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.recent-game-row.won .recent-game-name { color: #6ee7a4; font-weight: 600; }
+.recent-game-name {
+  flex: 1;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-game-pts {
+  font-size: 16px;
+  font-weight: 700;
+  min-width: 32px;
+  text-align: right;
+}
+.recent-game-row.won .recent-game-pts { color: #6ee7a4; }
+@media (max-width: 640px) {
+  .recent-games-grid { grid-template-columns: 1fr; }
+}
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }
