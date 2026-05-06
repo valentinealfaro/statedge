@@ -281,9 +281,15 @@ slateRouter.post('/analyze', async (req, res) => {
   }
 });
 
-// Override path: takes a JSON body of pre-extracted raw lines — used
-// when the user fixes an unresolved entry in the UI ("did you mean
-// Jalen Brunson?") and we want to re-resolve just that one line.
+// JSON-body parse path. Used by:
+//   - the unresolved-fix UI ("did you mean Jalen Brunson?") that
+//     re-resolves a corrected name
+//   - the new manual-entry mode (Build my own slate) that feeds in
+//     player+stat+line tuples a user typed in directly
+//
+// Optional body.source flips the response source label to 'manual'
+// when set; defaults to 'image_upload' for backwards compatibility
+// with the OCR-fallback callers.
 slateRouter.post('/parse', async (req, res) => {
   if (!isDbConfigured()) {
     res.status(503).json({ error: 'Slate requires DB' });
@@ -294,6 +300,8 @@ slateRouter.post('/parse', async (req, res) => {
     res.status(400).json({ error: 'body.raw must be an array of { playerName, statLabel, line }' });
     return;
   }
+  const requestedSource =
+    req.body?.source === 'manual' ? 'manual' : 'image_upload';
   // Minimal validation — we trust caller not to abuse, but reject
   // obviously malformed entries.
   const sanitized: RawLine[] = [];
@@ -307,11 +315,12 @@ slateRouter.post('/parse', async (req, res) => {
       line,
       team: typeof r.team === 'string' ? r.team : undefined,
       position: typeof r.position === 'string' ? r.position : undefined,
+      opponentAbbr: typeof r.opponentAbbr === 'string' ? r.opponentAbbr.toUpperCase() : null,
     });
   }
 
   try {
-    const out = await resolveSlate(sanitized, 'image_upload');
+    const out = await resolveSlate(sanitized, requestedSource);
     res.json(out);
   } catch (err) {
     console.error('slate/parse failed', err);

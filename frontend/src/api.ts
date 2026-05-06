@@ -516,9 +516,34 @@ export type SlateUnresolvedLine = {
 export type SlateResponse = {
   lines: SlateResolvedLine[];
   unresolved: SlateUnresolvedLine[];
-  source: 'prizepicks_auto' | 'image_upload';
+  source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
 };
+
+export type ManualSlateLine = {
+  playerName: string;
+  statLabel: string;            // canonical or any normalized form
+  line: number;
+  team?: string;                // optional, just for display
+  opponentAbbr?: string | null; // tonight's opponent (drives vs-opp computation)
+};
+
+export async function postManualSlate(raw: ManualSlateLine[]): Promise<SlateResponse> {
+  const res = await fetch(`${API_BASE}/api/slate/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw, source: 'manual' }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { detail?: string; error?: string };
+      detail = body.detail ?? body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as SlateResponse;
+}
 
 export async function getSlateAuto(): Promise<SlateResponse> {
   const res = await fetch(`${API_BASE}/api/slate/auto`);

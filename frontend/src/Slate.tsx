@@ -19,6 +19,7 @@ import { NavBar } from './NavBar';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
+import { SlateManualEntry } from './SlateManualEntry';
 import { useTitle } from './useTitle';
 
 export function Slate() {
@@ -39,6 +40,10 @@ export function Slate() {
   const [teamFilter, setTeamFilter] = useState<string>('');
   const [statFilter, setStatFilter] = useState<string>('');
   const [sort, setSort] = useState<'confidence' | 'edge' | 'tipoff'>('confidence');
+  // Default to 'build' since auto-pull is unreliable (PrizePicks Cloudflare)
+  // and OCR depends on env-config the user may not have. Manual entry just
+  // works with the data we always have.
+  const [mode, setMode] = useState<'build' | 'auto' | 'upload'>('build');
 
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
@@ -79,32 +84,24 @@ export function Slate() {
     );
   }, [parlay, setSearchParams]);
 
-  // First mount: kick off the auto-fetch from PrizePicks. If it fails
-  // (Cloudflare blocks our IP, schema changes, etc.) we fall back to
-  // showing only the upload prompt.
+  // We no longer auto-fire the PrizePicks pull on mount — it usually
+  // 403s because of their Cloudflare bot layer, and the manual-entry
+  // flow is now the primary path. Auto-pull only fires when the user
+  // explicitly clicks the button under the 'auto' mode.
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    setErrorSource(null);
-    getSlateAuto()
-      .then(setData)
-      .catch((e) => { setError((e as Error).message); setErrorSource('auto'); })
-      .finally(() => { setLoading(false); setAutoTried(true); });
-
     getDataFreshness().then(setFreshness).catch(() => {});
     getBackendVersion().then(setBackendVer).catch(() => {});
   }, []);
 
-  // Background refresh: PP lines move during the day, so we re-pull
-  // every 5 minutes while the tab is visible and immediately after the
-  // tab returns to focus. We DON'T set loading=true on these refreshes
-  // — silent updates keep the parlay tray and filters from flickering.
+  // Background refresh: only meaningful for the PrizePicks auto-pull
+  // path — manual-entry and uploaded slates are static by design. PP
+  // lines move during the day so we re-pull every 5 minutes while the
+  // tab is visible.
   useEffect(() => {
+    if (!data || data.source !== 'prizepicks_auto') return;
     let alive = true;
     const silentRefresh = () => {
       if (document.visibilityState !== 'visible') return;
-      // Only refresh the auto path — uploaded slates are static by design.
-      if (data && data.source === 'image_upload') return;
       getSlateAuto()
         .then((d) => { if (alive) setData(d); })
         .catch(() => { /* keep stale data on transient errors */ });
@@ -211,17 +208,64 @@ export function Slate() {
 
       <h1 style={{ marginTop: 8 }}>Slate</h1>
       <p className="tag">
-        Tonight's prop board — auto-pulled from PrizePicks when their API lets
-        us, with hit-probability badges from your last 10 games.
+        Build a prop slate — pick players, enter their lines, and we'll
+        compute hit probability against their last 10 games.
       </p>
 
-      {/* Source banner / actions */}
-      <div className="slate-actions">
-        <DropZone disabled={loading} onFile={handleFile} />
-        <button className="cta" onClick={retryAuto} disabled={loading}>
-          {loading ? 'Working…' : data?.source === 'prizepicks_auto' ? 'Refresh' : 'Try auto-pull again'}
+      <div className="slate-mode-tabs">
+        <button
+          className={mode === 'build' ? 'pick-btn active' : 'pick-btn'}
+          onClick={() => setMode('build')}
+        >
+          Build my own
+        </button>
+        <button
+          className={mode === 'auto' ? 'pick-btn active' : 'pick-btn'}
+          onClick={() => setMode('auto')}
+        >
+          PrizePicks auto-pull
+        </button>
+        <button
+          className={mode === 'upload' ? 'pick-btn active' : 'pick-btn'}
+          onClick={() => setMode('upload')}
+        >
+          Upload screenshot
         </button>
       </div>
+
+      {mode === 'build' && !data && (
+        <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
+      )}
+
+      {mode === 'auto' && (
+        <div className="slate-actions">
+          <p className="muted small" style={{ flex: 1 }}>
+            Pulls tonight's NBA prop board from PrizePicks's public API.
+            Their Cloudflare layer rate-limits non-browser traffic, so this
+            often returns 403 — fall back to "Build my own" if it does.
+          </p>
+          <button className="cta" onClick={retryAuto} disabled={loading}>
+            {loading ? 'Working…' : data?.source === 'prizepicks_auto' ? 'Refresh' : 'Try auto-pull'}
+          </button>
+        </div>
+      )}
+
+      {mode === 'upload' && (
+        <div className="slate-actions">
+          <DropZone disabled={loading} onFile={handleFile} />
+        </div>
+      )}
+
+      {data && (
+        <div className="slate-actions" style={{ marginTop: 12 }}>
+          <button
+            className="cta"
+            onClick={() => { setData(null); setError(null); }}
+          >
+            ← Build a different slate
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="slate-error">
@@ -273,6 +317,12 @@ export function Slate() {
         <p className="muted small slate-source">
           Source: your screenshot · {lines.length} resolved lines
           {data.unresolved.length > 0 && ` · ${data.unresolved.length} unmatched`}
+        </p>
+      )}
+      {data && data.source === 'manual' && (
+        <p className="muted small slate-source">
+          Source: your custom slate · {lines.length} {lines.length === 1 ? 'pick' : 'picks'} resolved
+          {data.unresolved.length > 0 && ` · ${data.unresolved.length} unresolved`}
         </p>
       )}
 

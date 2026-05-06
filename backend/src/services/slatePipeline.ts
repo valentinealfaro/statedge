@@ -87,7 +87,7 @@ export type UnresolvedLine = {
 export type SlateResponse = {
   lines: ResolvedLine[];
   unresolved: UnresolvedLine[];
-  source: 'prizepicks_auto' | 'image_upload';
+  source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
 };
 
