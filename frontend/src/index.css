@@ -1728,6 +1728,70 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 }
 .parlay-copy:hover { border-color: #5b8def; }
 .parlay-copy.copied { border-color: #6ee7a4; color: #6ee7a4; }
+.parlay-copy.locked { opacity: 0.6; cursor: not-allowed; }
+.parlay-copy:disabled { opacity: 0.6; cursor: not-allowed; }
+.parlay-save-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.parlay-save-input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #2a2f3a;
+  background: #0b0d12;
+  color: inherit;
+  font-size: 12px;
+  min-width: 140px;
+}
+.parlay-save-input:focus { outline: none; border-color: #5b8def; }
+
+/* --- Saved parlays section on /slate --- */
+.saved-parlays {
+  margin: 16px 0 24px;
+}
+.saved-parlays h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #c8cfdc;
+}
+.saved-parlays-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.saved-parlays-list li {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.saved-parlay-open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.saved-parlay-open:hover { border-color: #5b8def; background: #1a1f2b; }
+.saved-parlay-name { font-weight: 600; font-size: 14px; }
+.saved-parlay-meta { font-size: 11px; color: #8a93a6; }
+.saved-parlay-remove {
+  align-self: stretch;
+  padding: 0 12px;
+  color: #8a93a6;
+}
+.saved-parlay-remove:hover { color: #ef6a6a; }
 .parlay-legs {
   display: flex;
   gap: 6px;

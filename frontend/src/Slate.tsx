@@ -11,12 +11,17 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { NavBar } from './NavBar';
+import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
+import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { useTitle } from './useTitle';
 
 export function Slate() {
   useTitle(['Slate']);
 
+  const { plan } = usePlan();
+  const isPro = plan === 'pro';
+  const { items: savedParlays, save: saveParlay, remove: removeParlay } = useSavedParlays();
   const [data, setData] = useState<SlateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,6 +212,14 @@ export function Slate() {
         </div>
       )}
 
+      {isPro && savedParlays.length > 0 && (
+        <SavedParlaysSection
+          parlays={savedParlays}
+          onOpen={(p) => setParlay(p.legs)}
+          onRemove={removeParlay}
+        />
+      )}
+
       {loading && lines.length === 0 && (
         <div className="slate-grid">
           {Array.from({ length: 12 }).map((_, i) => (
@@ -250,6 +263,8 @@ export function Slate() {
           legs={lines.filter((l) => parlay.includes(cardKey(l)))}
           onRemove={(l) => removeFromParlay(cardKey(l))}
           onClear={clearParlay}
+          onSave={(name) => saveParlay(name, parlay)}
+          canSave={isPro}
         />
       )}
     </div>
@@ -372,6 +387,42 @@ function LineCard({
   );
 }
 
+function SavedParlaysSection({
+  parlays,
+  onOpen,
+  onRemove,
+}: {
+  parlays: SavedParlay[];
+  onOpen: (p: SavedParlay) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="saved-parlays">
+      <h3>Your saved parlays</h3>
+      <ul className="saved-parlays-list">
+        {parlays.map((p) => (
+          <li key={p.id}>
+            <button className="saved-parlay-open" onClick={() => onOpen(p)}>
+              <span className="saved-parlay-name">{p.name}</span>
+              <span className="saved-parlay-meta">
+                {p.legs.length} {p.legs.length === 1 ? 'leg' : 'legs'} ·
+                {' '}{new Date(p.savedAt).toLocaleDateString()}
+              </span>
+            </button>
+            <button
+              className="link saved-parlay-remove"
+              onClick={() => onRemove(p.id)}
+              title="Remove"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function VsOppRow({
   opp,
   line,
@@ -463,10 +514,14 @@ function ParlayTray({
   legs,
   onRemove,
   onClear,
+  onSave,
+  canSave,
 }: {
   legs: SlateResolvedLine[];
   onRemove: (line: SlateResolvedLine) => void;
   onClear: () => void;
+  onSave: (name: string) => void;
+  canSave: boolean;
 }) {
   const probs = legs.map((l) => (l.hitProbability?.mightHitPct ?? 50) / 100);
   const combined = probs.reduce((p, q) => p * q, 1);
@@ -475,6 +530,19 @@ function ParlayTray({
   const ppPayout = PRIZEPICKS_PAYOUTS[legs.length];
 
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  function startSave() { setSaving(true); }
+  function commitSave() {
+    onSave(saveName);
+    setSaving(false);
+    setSaveName('');
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
   async function copyLink() {
     const url = window.location.href;
     try { await navigator.clipboard.writeText(url); }
@@ -519,6 +587,36 @@ function ParlayTray({
           >
             {copied ? 'Link copied ✓' : 'Copy link'}
           </button>
+          {canSave ? (
+            saving ? (
+              <div className="parlay-save-row">
+                <input
+                  className="parlay-save-input"
+                  autoFocus
+                  placeholder="Slip name…"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitSave();
+                    if (e.key === 'Escape') setSaving(false);
+                  }}
+                />
+                <button className="parlay-copy" onClick={commitSave}>Save</button>
+              </div>
+            ) : (
+              <button
+                className={saved ? 'parlay-copy copied' : 'parlay-copy'}
+                onClick={startSave}
+                disabled={legs.length === 0}
+              >
+                {saved ? 'Saved ✓' : 'Save parlay'}
+              </button>
+            )
+          ) : (
+            <button className="parlay-copy locked" disabled title="Saving parlays is a Pro feature">
+              Save parlay <span className="lock-pill small">PRO</span>
+            </button>
+          )}
           <button className="link" onClick={onClear}>Clear</button>
         </div>
         <div className="parlay-legs">
