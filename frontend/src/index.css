@@ -1410,6 +1410,26 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   color: #0b0d12;
   border-color: #6ee7a4;
 }
+
+/* Injury chip — top-left badge on slate card */
+.slate-injury {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #2a2f3a;
+  color: #c8cfdc;
+  z-index: 2;
+}
+.slate-injury.out { background: #ef6a6a; color: #fff; }
+.slate-injury.d2d { background: #f0c14b; color: #0b0d12; }
+.slate-injury.q   { background: #f0c14b; color: #0b0d12; }
+.slate-card.is-out { opacity: 0.6; }
+.slate-card.is-out:hover { opacity: 0.9; }
 .slate-card-name {
   font-size: 14px;
   font-weight: 600;

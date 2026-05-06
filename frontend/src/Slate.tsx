@@ -23,6 +23,7 @@ export function Slate() {
   const [autoTried, setAutoTried] = useState(false);
   const [freshness, setFreshness] = useState<DataFreshness | null>(null);
   const [filter, setFilter] = useState<'all' | 'over' | 'under' | 'strong'>('all');
+  const [hideOut, setHideOut] = useState(true);
 
   // Parlay builder: selected card identifiers ("playerId-statKey-line").
   // Combined probability assumes leg independence — it's a model, not a
@@ -79,7 +80,9 @@ export function Slate() {
   }
 
   const lines = data?.lines ?? [];
+  const outCount = lines.filter((l) => l.injury?.status === 'Out').length;
   const filtered = lines.filter((l) => {
+    if (hideOut && l.injury?.status === 'Out') return false;
     if (filter === 'all') return true;
     const lean = l.hitProbability?.lean;
     if (filter === 'over') return lean === 'OVER';
@@ -145,6 +148,15 @@ export function Slate() {
           <FilterTab v="strong" cur={filter} onSet={setFilter}>Strong (≥75%)</FilterTab>
           <FilterTab v="over"   cur={filter} onSet={setFilter}>Over leans</FilterTab>
           <FilterTab v="under"  cur={filter} onSet={setFilter}>Under leans</FilterTab>
+          {outCount > 0 && (
+            <button
+              className={hideOut ? 'pick-btn active' : 'pick-btn'}
+              onClick={() => setHideOut(!hideOut)}
+              title={hideOut ? 'Show OUT players' : 'Hide OUT players'}
+            >
+              {hideOut ? `Hiding ${outCount} OUT` : `Showing ${outCount} OUT`}
+            </button>
+          )}
         </div>
       )}
 
@@ -240,8 +252,15 @@ function LineCard({
   const hitCount = ratio != null ? Math.round(ratio * line.gamesAnalyzed) : 0;
   const aboveOrBelow = lean === 'OVER' ? 'over' : 'under';
 
+  const inj = line.injury;
+  const cardCls = [
+    'slate-card',
+    inParlay ? 'in-parlay' : '',
+    inj?.status === 'Out' ? 'is-out' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={inParlay ? 'slate-card in-parlay' : 'slate-card'}>
+    <div className={cardCls}>
       <button
         className={inParlay ? 'slate-pin pinned' : 'slate-pin'}
         onClick={onToggleParlay}
@@ -250,6 +269,8 @@ function LineCard({
       >
         {inParlay ? '✓' : '+'}
       </button>
+
+      {inj && <InjuryChip injury={inj} />}
 
       <Link
         className="slate-card-body"
@@ -290,6 +311,23 @@ function LineCard({
           <div className="slate-receipts">No probability available.</div>
         )}
       </Link>
+    </div>
+  );
+}
+
+function InjuryChip({ injury }: { injury: { status: string; type?: string } }) {
+  const s = injury.status.toLowerCase();
+  const cls = s.includes('out')
+    ? 'slate-injury out'
+    : s.startsWith('day')
+    ? 'slate-injury d2d'
+    : s.includes('quest') || s.includes('doubt')
+    ? 'slate-injury q'
+    : 'slate-injury';
+  const label = injury.status.toUpperCase();
+  return (
+    <div className={cls} title={injury.type ?? injury.status}>
+      {label}
     </div>
   );
 }

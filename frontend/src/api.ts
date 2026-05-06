@@ -448,6 +448,12 @@ export async function getTopPerformers(limit = 6): Promise<TopPerformer[]> {
 
 export type SlateHitProbability = HitProbability;
 
+export type SlateInjury = {
+  status: string;        // "Out", "Day-To-Day", "Questionable", etc.
+  type?: string;
+  date?: string;
+};
+
 export type SlateResolvedLine = {
   ppId?: string;
   playerId: number;
@@ -468,6 +474,7 @@ export type SlateResolvedLine = {
 
   hitProbability?: SlateHitProbability;
   ddRate?: number;
+  injury?: SlateInjury;
 };
 
 export type SlateUnresolvedLine = {

@@ -9,6 +9,7 @@ import {
 import { currentSeason } from '../nba/client.js';
 import { computeHitProbability, type HitProbability } from './comparisonEngine.js';
 import { isDoubleDoubleGame, STAT_MAP, type Last10StatId } from './last10.js';
+import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
 import { normalizeStatLabel, statLabelFor } from './slateNormalize.js';
 import {
   resolvePlayerName,
@@ -50,6 +51,10 @@ export type ResolvedLine = {
   hitProbability?: HitProbability;
   // Double-double rate (0-1) only when statKey === 'double_double':
   ddRate?: number;
+
+  // ESPN-sourced injury status for tonight's slate, if applicable.
+  // Common values: 'Out', 'Day-To-Day', 'Questionable', 'Probable'.
+  injury?: InjuryEntry;
 };
 
 export type UnresolvedLine = {
@@ -122,8 +127,24 @@ export async function resolveSlate(
 
   // Pass 2: bulk-fetch every player's last-10. We pull current season;
   // playoffs+regular were merged into the same row by sync-games.
+  // Run the today-injuries lookup in parallel — it's cached and rarely
+  // refetches but the first slate request of the morning will pay it.
   const uniquePlayerIds = Array.from(new Set(pending.map((p) => p.playerId)));
-  const logs = await getPlayerGameLogsBulkFromDb(uniquePlayerIds, currentSeason());
+  const [logs, injuries] = await Promise.all([
+    getPlayerGameLogsBulkFromDb(uniquePlayerIds, currentSeason()),
+    getTodayInjuriesMap(),
+  ]);
+
+  function injuryFor(canonicalName: string): InjuryEntry | undefined {
+    const key = canonicalName
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return injuries.get(key);
+  }
 
   const resolved: ResolvedLine[] = [];
   for (const p of pending) {
@@ -158,6 +179,7 @@ export async function resolveSlate(
         last10Avg: round2(dd / last10.length),
         last10Values: last10.map((g) => (isDoubleDoubleGame(g) ? 1 : 0)),
         ddRate: dd / last10.length,
+        injury: injuryFor(p.canonicalName),
       });
       continue;
     }
@@ -184,6 +206,7 @@ export async function resolveSlate(
       last10Avg: round2(avg),
       last10Values: values,
       hitProbability: hit,
+      injury: injuryFor(p.canonicalName),
     });
   }
 
