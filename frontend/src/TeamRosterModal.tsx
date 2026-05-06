@@ -134,23 +134,29 @@ function RosterColumn({
         </p>
       ) : (
         <div className="roster-list">
-          {players.map((p) => (
+          {players.map((p, i) => (
             <button
               key={p.id}
-              className="roster-row"
+              className={`roster-row ${i < 5 ? 'starter' : ''}`}
               onClick={() => { onPick(p, opponent); onClose(); }}
             >
-              <PlayerAvatar playerId={p.id} name={p.fullName} size="md" />
+              <PlayerAvatar playerId={p.id} name={p.fullName} size="lg" />
               <div className="roster-row-body">
                 <div className="roster-row-name">{p.fullName}</div>
                 {p.gamesPlayed > 0 ? (
-                  <div className="muted small">
-                    {p.ppg.toFixed(1)} · {p.rpg.toFixed(1)} · {p.apg.toFixed(1)}
+                  <div className="roster-row-stats">
+                    <span><strong>{p.ppg.toFixed(1)}</strong> ppg</span>
+                    <span className="dot">·</span>
+                    <span><strong>{p.rpg.toFixed(1)}</strong> reb</span>
+                    <span className="dot">·</span>
+                    <span><strong>{p.apg.toFixed(1)}</strong> ast</span>
+                    <span className="roster-row-gp">{p.gamesPlayed}g</span>
                   </div>
                 ) : (
-                  <div className="muted small">no cached games</div>
+                  <div className="roster-row-stats muted">no cached games this season</div>
                 )}
               </div>
+              <span className="roster-row-pick" aria-hidden>→</span>
             </button>
           ))}
         </div>
