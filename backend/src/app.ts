@@ -11,6 +11,7 @@ import { trendingRouter } from './routes/trending.js';
 import { gamesRouter } from './routes/games.js';
 import { standingsRouter } from './routes/standings.js';
 import { performersRouter } from './routes/performers.js';
+import { slateRouter } from './routes/slate.js';
 
 export function createApp(): Express {
   const app = express();
@@ -36,6 +37,8 @@ export function createApp(): Express {
         '/api/games/recent?limit=6',
         '/api/games/:gameId/boxscore',
         '/api/standings',
+        '/api/slate/auto',
+        '/api/slate/parse (POST)',
       ],
     });
   });
@@ -55,6 +58,7 @@ export function createApp(): Express {
   app.use('/api/games', gamesRouter);
   app.use('/api/standings', standingsRouter);
   app.use('/api/performers', performersRouter);
+  app.use('/api/slate', slateRouter);
 
   // Explicit JSON 404 — avoids Express's default HTML response, which
   // can trip the Vercel serverless adapter on unmatched paths.

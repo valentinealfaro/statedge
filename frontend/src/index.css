@@ -1315,6 +1315,193 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   margin-left: 6px;
 }
 
+/* --- Slate page --- */
+.slate-actions {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin: 16px 0;
+}
+.slate-drop {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 16px;
+  border: 2px dashed #2a2f3a;
+  border-radius: 12px;
+  background: #14171f;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+.slate-drop:hover { border-color: #5b8def; background: #1a1f2b; }
+.slate-drop.over { border-color: #6ee7a4; background: #122a1f; }
+.slate-drop-icon { font-size: 28px; }
+.slate-drop-text { font-size: 14px; }
+
+.slate-error {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 8px;
+  background: #2a1a1a;
+  border: 1px solid #ef6a6a;
+  color: #f5b9b9;
+}
+
+.slate-source {
+  margin: 4px 0 16px;
+}
+
+.slate-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.slate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.slate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 14px;
+  background: #14171f;
+  border: 1px solid #1f2330;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 120ms;
+}
+.slate-card:hover { border-color: #5b8def; background: #1a1f2b; }
+.slate-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.slate-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8a93a6;
+}
+.slate-card-meta .avatar { width: 18px; height: 18px; padding: 1px; }
+
+.slate-line {
+  margin: 10px 0 8px;
+  text-align: center;
+}
+.slate-line-num {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+.slate-line-stat {
+  display: block;
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.slate-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.slate-badge.green {
+  background: #122a1f;
+  border-color: #6ee7a4;
+  color: #6ee7a4;
+}
+.slate-badge.red {
+  background: #2a1a1a;
+  border-color: #ef6a6a;
+  color: #ef6a6a;
+}
+.slate-badge.gray {
+  background: #0b0d12;
+  border-color: #2a2f3a;
+  color: #c8cfdc;
+}
+.slate-pct { font-size: 18px; }
+.slate-lean { font-size: 11px; letter-spacing: 0.5px; }
+
+.slate-receipts {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #8a93a6;
+  text-align: center;
+}
+.slate-receipts strong { color: #c8cfdc; }
+
+.slate-unresolved {
+  margin: 32px 0 0;
+  padding: 16px;
+  border-radius: 10px;
+  background: #14171f;
+  border: 1px dashed #2a2f3a;
+}
+.slate-unresolved h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.slate-unresolved-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.slate-unresolved-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #1f2330;
+  font-size: 13px;
+}
+.slate-unresolved-list li:last-child { border-bottom: none; }
+.slate-unresolved-text { flex: 1; font-weight: 500; }
+.slate-unresolved-stat { color: #c8cfdc; }
+.slate-unresolved-reason {
+  font-size: 11px;
+  color: #8a93a6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 640px) {
+  .slate-actions { flex-direction: column; }
+  .slate-grid { grid-template-columns: repeat(2, 1fr); }
+  .slate-card { padding: 12px 8px; }
+  .slate-line-num { font-size: 22px; }
+}
+
 /* --- Skeleton (loading placeholder) --- */
 @keyframes skeleton-shimmer {
   0%   { background-position: -100% 0; }

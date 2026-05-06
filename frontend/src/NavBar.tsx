@@ -16,6 +16,7 @@ export function NavBar() {
       <Link to="/" className="brand">StatEdge</Link>
       <div className="nav-links">
         <Link to="/compare" className={active('/compare')}>Compare</Link>
+        <Link to="/slate" className={active('/slate')}>Slate</Link>
         <Link to="/standings" className={active('/standings')}>Standings</Link>
       </div>
       <NavSearch />

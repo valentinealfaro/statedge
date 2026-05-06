@@ -4,6 +4,7 @@ import { Compare } from './Compare';
 import { ErrorBoundary } from './ErrorBoundary';
 import { EspnGameDetail } from './EspnGameDetail';
 import { GameDetail } from './GameDetail';
+import { Slate } from './Slate';
 import { Standings } from './Standings';
 
 export function App() {
@@ -16,6 +17,7 @@ export function App() {
           <Route path="/game/:gameId" element={<GameDetail />} />
           <Route path="/espn-game/:eventId" element={<EspnGameDetail />} />
           <Route path="/standings" element={<Standings />} />
+          <Route path="/slate" element={<Slate />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>

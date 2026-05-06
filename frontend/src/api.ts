@@ -444,6 +444,77 @@ export async function getTopPerformers(limit = 6): Promise<TopPerformer[]> {
   return data.performers;
 }
 
+// --- Slate (PrizePicks-style prop board with hit probabilities) ---
+
+export type SlateHitProbability = HitProbability;
+
+export type SlateResolvedLine = {
+  ppId?: string;
+  playerId: number;
+  playerName: string;
+  ppPlayerName: string;
+  team: string | null;
+  position: string | null;
+  imageUrl: string | null;
+  statKey: Last10StatId;
+  statLabel: string;
+  line: number;
+  startTime?: string | null;
+  description?: string | null;
+
+  gamesAnalyzed: number;
+  last10Avg: number;
+  last10Values: number[];
+
+  hitProbability?: SlateHitProbability;
+  ddRate?: number;
+};
+
+export type SlateUnresolvedLine = {
+  rawText: string;
+  rawStatLabel: string;
+  line: number;
+  reason: 'no_player_match' | 'unknown_stat' | 'no_recent_games';
+};
+
+export type SlateResponse = {
+  lines: SlateResolvedLine[];
+  unresolved: SlateUnresolvedLine[];
+  source: 'prizepicks_auto' | 'image_upload';
+  fetchedAt: string;
+};
+
+export async function getSlateAuto(): Promise<SlateResponse> {
+  const res = await fetch(`${API_BASE}/api/slate/auto`);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { detail?: string; error?: string };
+      detail = body.detail ?? body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as SlateResponse;
+}
+
+export async function postSlateImage(file: File): Promise<SlateResponse> {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/slate/parse-image`, {
+    method: 'POST',
+    body: fd,
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { detail?: string; error?: string };
+      detail = body.detail ?? body.error ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
+  return (await res.json()) as SlateResponse;
+}
+
 // --- ESPN today's games + game summary ---
 
 export type EspnGameTeam = {

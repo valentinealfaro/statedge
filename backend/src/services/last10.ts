@@ -77,7 +77,7 @@ export const LAST10_LABELS: Record<Last10StatId, string> = {
 // `n` coerces undefined → 0 so we never emit null/NaN to the client.
 const n = (v: number | undefined | null): number => (typeof v === 'number' ? v : 0);
 
-const STAT_MAP: Record<Exclude<Last10StatId, 'double_double'>, (g: PlayerGame) => number> = {
+export const STAT_MAP: Record<Exclude<Last10StatId, 'double_double'>, (g: PlayerGame) => number> = {
   points: (g) => g.points,
   rebounds: (g) => g.rebounds,
   assists: (g) => g.assists,

@@ -605,6 +605,47 @@ export async function getTrendingTeamsFromDb(
   });
 }
 
+// Bulk version of getPlayerGameLogFromDb — used by /api/slate/auto so a
+// 16-line slate doesn't fan out to 16 separate round-trips.
+export async function getPlayerGameLogsBulkFromDb(
+  playerIds: number[],
+  season: string,
+): Promise<Map<number, PlayerGame[]>> {
+  const out = new Map<number, PlayerGame[]>();
+  if (playerIds.length === 0) return out;
+  const { rows } = await getPool().query<{ player_id: number; games: PlayerGame[] }>(
+    `SELECT player_id, games FROM player_game_logs
+      WHERE season = $1 AND player_id = ANY($2::int[])`,
+    [season, playerIds],
+  );
+  for (const r of rows) out.set(r.player_id, r.games);
+  return out;
+}
+
+// Lightweight player metadata for the slate resolver. We pull every row
+// once per request, since slate parsing fan-outs to ~20 players.
+export async function listAllPlayerCandidatesFromDb(): Promise<{
+  id: number;
+  fullName: string;
+  isActive: boolean;
+  teamId: number | null;
+}[]> {
+  const { rows } = await getPool().query<{
+    id: number;
+    full_name: string;
+    is_active: boolean;
+    team_id: number | null;
+  }>(
+    `SELECT id, full_name, is_active, team_id FROM players`,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.full_name,
+    isActive: r.is_active,
+    teamId: r.team_id,
+  }));
+}
+
 export async function getPlayerByIdFromDb(playerId: number): Promise<NbaPlayer | null> {
   const { rows } = await getPool().query<{
     id: number;
