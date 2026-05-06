@@ -11,7 +11,7 @@ export function Home() {
   return (
     <div className="home">
       <header className="hero">
-        <h1>StatEdge</h1>
+        <img src="/statedge-logo.png" alt="StatEdge" className="hero-logo" />
         <p className="hero-tag">
           The sports stats comparison engine. <br />
           Player vs Team. Player vs Player. Team vs Team.

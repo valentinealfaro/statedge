@@ -507,13 +507,19 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
 .home { max-width: 980px; margin: 0 auto; padding: 32px 24px 64px; }
 
 .brand {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.5px;
   color: inherit;
   text-decoration: none;
   margin-bottom: 4px;
+}
+.brand-logo {
+  height: 32px;
+  width: auto;
+  display: block;
 }
 
 /* --- Top nav (Compare / Standings / Game pages) --- */
@@ -702,6 +708,18 @@ h3 { font-size: 16px; margin: 28px 0 12px; color: #c8cfdc; }
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+.hero-logo {
+  display: block;
+  margin: 0 auto 20px;
+  max-width: 380px;
+  width: 80%;
+  height: auto;
+}
+@media (max-width: 640px) {
+  .hero { padding: 40px 0 32px; }
+  .hero-logo { max-width: 260px; }
+  .brand-logo { height: 24px; }
 }
 .hero-tag {
   font-size: 20px;
