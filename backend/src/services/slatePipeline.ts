@@ -15,6 +15,7 @@ import {
   type InjuryStatus,
   type ProjectionResult,
 } from './projectionEngine.js';
+import { classifyArchetype, type ArchetypeReport } from './playerArchetype.js';
 import { buildCombos, type Combo } from './slateCombos.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
 import { normalizeStatLabel, statLabelFor } from './slateNormalize.js';
@@ -104,6 +105,12 @@ export type ResolvedLine = {
   // risk, edge, and human-readable model notes the UI surfaces in the
   // "Projection details" panel.
   projection?: ProjectionResult;
+
+  // Volatility archetype derived from the player's recent game log
+  // (Stable Producer / Boom-Bust / Minutes Sensitive / etc). Surfaced
+  // as a chip on the card so the user can read the variance profile
+  // alongside the projection.
+  archetype?: ArchetypeReport;
 };
 
 export type UnresolvedLine = {
@@ -295,6 +302,12 @@ export async function resolveSlate(
       };
     }
 
+    // Volatility archetype — computed from the player's full season
+    // log (not just L10) so we have enough data for the CV math to
+    // mean something. Cheap (one pass + sort), so we run it for every
+    // resolved line including DD.
+    const archetype = classifyArchetype(games, p.statKey);
+
     if (p.statKey === 'double_double') {
       const dd = last10.filter(isDoubleDoubleGame).length;
       resolved.push({
@@ -318,6 +331,7 @@ export async function resolveSlate(
         injury: injuryFor(p.canonicalName),
         vsOpponent,
         trend,
+        archetype,
       });
       continue;
     }
@@ -395,6 +409,7 @@ export async function resolveSlate(
       vsOpponent,
       trend,
       projection,
+      archetype,
     });
   }
 

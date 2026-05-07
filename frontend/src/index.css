@@ -3526,6 +3526,26 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .slate-trend.hot { color: #6ee7a4; }
 .slate-trend.cold { color: #ef6a6a; }
 .slate-trend strong { color: inherit; }
+
+/* Archetype chip — small variance-profile tag. Colors mirror the
+   trend chip vocabulary so the card stays visually consistent. */
+.slate-archetype {
+  margin-top: 4px;
+  font-size: 10px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  align-self: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.slate-archetype.tone-hot { background: var(--hot-bg); color: var(--hot); }
+.slate-archetype.tone-cold { background: var(--cold-bg); color: var(--cold); }
+.slate-archetype.tone-warn { background: rgba(255, 184, 107, 0.12); color: var(--warn); }
+.slate-archetype.tone-info { background: rgba(91, 141, 239, 0.15); color: var(--brand-blue); }
 .slate-card-name {
   font-size: 14px;
   font-weight: 600;

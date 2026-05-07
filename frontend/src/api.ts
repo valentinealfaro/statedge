@@ -532,6 +532,27 @@ export type SlateResolvedLine = {
   // Layered projection-engine output (numeric stats only; double_double
   // stays on hitProbability/ddRate). Mirrors backend ProjectionResult.
   projection?: SlateProjection;
+
+  // Volatility archetype derived from the player's recent game log —
+  // surfaces alongside the projection so users can see whether the
+  // line sits on a steady producer or a coin-flip distribution.
+  archetype?: SlatePlayerArchetype;
+};
+
+export type SlatePlayerArchetype = {
+  archetype:
+    | 'Stable Producer'
+    | 'Moderately Volatile'
+    | 'High Variance'
+    | 'Boom/Bust'
+    | 'Minutes Sensitive'
+    | 'Insufficient Data';
+  statCV: number;
+  minutesCV: number;
+  boomRate: number;
+  bustRate: number;
+  sampleSize: number;
+  reason: string;
 };
 
 export type SlateProjection = {

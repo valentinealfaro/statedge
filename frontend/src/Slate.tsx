@@ -673,6 +673,9 @@ function LineCard({
         {line.trend && line.last10Avg > 0 && (
           <TrendChip trend={line.trend} l10Avg={line.last10Avg} />
         )}
+        {line.archetype && line.archetype.archetype !== 'Insufficient Data' && (
+          <ArchetypeChip archetype={line.archetype} />
+        )}
         {line.projection && !line.projection.noProjection && (
           <ProjectionLeanBadge projection={line.projection} />
         )}
@@ -1640,6 +1643,31 @@ function TrendChip({
   return (
     <div className={cls}>
       L5 <strong>{trend.last5Avg.toFixed(1)}</strong> {arrow} {label}
+    </div>
+  );
+}
+
+// Volatility archetype chip — surfaces "Boom/Bust", "Stable Producer",
+// etc next to the projection so users can read the variance profile
+// at a glance. Backend classifies based on stat CV, minutes CV, and
+// boom/bust tail rates over the player's last 20 games.
+function ArchetypeChip({
+  archetype,
+}: {
+  archetype: NonNullable<SlateResolvedLine['archetype']>;
+}) {
+  const a = archetype.archetype;
+  // Tone: green for stable, neutral for moderate, warning for high
+  // variance / boom-bust, blue for minutes-sensitive (different cause).
+  const tone =
+    a === 'Stable Producer' ? 'hot'
+    : a === 'Boom/Bust' ? 'cold'
+    : a === 'High Variance' ? 'warn'
+    : a === 'Minutes Sensitive' ? 'info'
+    : 'flat';
+  return (
+    <div className={`slate-archetype tone-${tone}`} title={archetype.reason}>
+      {a}
     </div>
   );
 }
