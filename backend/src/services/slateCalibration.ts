@@ -62,6 +62,29 @@ export type CalibrationBucket = {
   status: CalibrationStatus;
 };
 
+// One point on the rolling-accuracy chart. Represents the day's
+// dedup'd legs aggregated into a single calibration sample.
+export type DailyCalibrationPoint = {
+  date: string;                  // YYYY-MM-DD
+  sampleSize: number;
+  predictedAvg: number;
+  actualHitRate: number;         // raw %
+  smoothedHitRate: number;       // Bayesian-smoothed %
+  calibrationError: number;      // predicted − smoothed
+};
+
+// Window summaries (spec §"Rolling Accuracy Trends"). Day-window
+// (last7Days/last30Days) bounds by calendar; pick-count window
+// (last100Picks/last500Picks) bounds by leg count regardless of
+// span. Both are useful — picks-count is what matters for model
+// recency; days is what matters for "is the meta shifting?".
+export type RollingWindows = {
+  last7Days: CalibrationBucket;
+  last30Days: CalibrationBucket;
+  last100Picks: CalibrationBucket;
+  last500Picks: CalibrationBucket;
+};
+
 // Projection-error summary (spec §"Projection Error Distribution"):
 // per-leg miss = actual − projected. Surfaces whether the model
 // systematically over- or under-projects, separate from whether it's
@@ -99,6 +122,11 @@ export type CalibrationReport = {
   // Projection-error distribution. Null when the dataset has no legs
   // carrying a projected stat value (very early days / legacy only).
   projectionError: ProjectionErrorSummary | null;
+  // Daily series (oldest → newest) for the rolling-accuracy chart.
+  // One point per slate date that produced graded legs.
+  series: DailyCalibrationPoint[];
+  // Rolling windows — quick at-a-glance tiles above the chart.
+  windows: RollingWindows;
   daysAnalyzed: number;
   legsAnalyzed: number;          // distinct legs after dedupe
   rangeStart: string | null;
@@ -123,6 +151,9 @@ const PROBABILITY_BUCKETS: Array<{ label: string; min: number; max: number }> = 
 const CONFIDENCE_TIERS = ['Elite', 'Strong', 'Medium', 'Low'] as const;
 
 type DedupedLeg = {
+  // Slate date the leg belongs to. Carried through dedup so the
+  // rolling-window aggregation can sort + slice by recency.
+  date: string;
   probability: number;
   statKey: Last10StatId;
   confidenceLabel: string | null;
@@ -241,6 +272,7 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
         seen.add(key);
 
         legs.push({
+          date: snap.date,
           probability,
           statKey: leg.statKey,
           confidenceLabel: leg.confidenceLabel ?? null,
@@ -388,6 +420,33 @@ export function computeCalibration(snapshots: CalibrationInput[]): CalibrationRe
   );
   const projectionError = computeProjectionError(projErrorLegs);
 
+  // Daily series — one point per date, oldest first so the chart
+  // reads left-to-right chronologically.
+  const byDate = new Map<string, DedupedLeg[]>();
+  for (const l of legs) {
+    const arr = byDate.get(l.date) ?? [];
+    arr.push(l);
+    byDate.set(l.date, arr);
+  }
+  const series: DailyCalibrationPoint[] = Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, dayLegs]) => {
+      const b = aggregateBucket(date, dayLegs);
+      return {
+        date,
+        sampleSize: b.sampleSize,
+        predictedAvg: b.predictedAvg,
+        actualHitRate: b.actualHitRate,
+        smoothedHitRate: b.smoothedHitRate,
+        calibrationError: b.calibrationError,
+      };
+    });
+
+  // Rolling windows. Day-windows pull legs whose date falls within
+  // the last N days from `rangeEnd` (most recent day with data).
+  // Pick-windows take the most recent N legs by date.
+  const windows = computeRollingWindows(legs, rangeEnd);
+
   return {
     overall,
     byProbability,
@@ -396,10 +455,56 @@ export function computeCalibration(snapshots: CalibrationInput[]): CalibrationRe
     byRisk,
     byArchetype,
     projectionError,
+    series,
+    windows,
     daysAnalyzed,
     legsAnalyzed: legs.length,
     rangeStart,
     rangeEnd,
+  };
+}
+
+function computeRollingWindows(
+  legs: DedupedLeg[],
+  rangeEnd: string | null,
+): RollingWindows {
+  const empty = (): CalibrationBucket => aggregateBucket('', []);
+  if (legs.length === 0 || rangeEnd === null) {
+    return {
+      last7Days: empty(),
+      last30Days: empty(),
+      last100Picks: empty(),
+      last500Picks: empty(),
+    };
+  }
+
+  // Day windows — string compare works because dates are YYYY-MM-DD.
+  const cutoff = (days: number): string => {
+    const [y, m, d] = rangeEnd.split('-').map(Number);
+    const dt = new Date(Date.UTC(y!, m! - 1, d!));
+    dt.setUTCDate(dt.getUTCDate() - days + 1);
+    return dt.toISOString().slice(0, 10);
+  };
+  const last7Cutoff = cutoff(7);
+  const last30Cutoff = cutoff(30);
+  const last7DaysLegs = legs.filter((l) => l.date >= last7Cutoff);
+  const last30DaysLegs = legs.filter((l) => l.date >= last30Cutoff);
+
+  // Pick windows — sort newest first, take top N. ID-stable sort
+  // by date+statKey+playerId means same-day legs are ordered
+  // deterministically so this is reproducible across calls.
+  const sortedRecent = [...legs].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return b.statKey.localeCompare(a.statKey);
+  });
+  const last100PicksLegs = sortedRecent.slice(0, 100);
+  const last500PicksLegs = sortedRecent.slice(0, 500);
+
+  return {
+    last7Days: aggregateBucket('Last 7 days', last7DaysLegs),
+    last30Days: aggregateBucket('Last 30 days', last30DaysLegs),
+    last100Picks: aggregateBucket('Last 100 picks', last100PicksLegs),
+    last500Picks: aggregateBucket('Last 500 picks', last500PicksLegs),
   };
 }
 

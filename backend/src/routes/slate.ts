@@ -773,6 +773,7 @@ slateRouter.get('/calibration', async (_req, res) => {
       gap: 0,
       status: 'Excellent Calibration' as const,
     };
+    const emptyTile = { ...emptyBucket, label: '' };
     res.json({
       overall: emptyBucket,
       byProbability: [],
@@ -781,6 +782,13 @@ slateRouter.get('/calibration', async (_req, res) => {
       byRisk: [],
       byArchetype: [],
       projectionError: null,
+      series: [],
+      windows: {
+        last7Days: emptyTile,
+        last30Days: emptyTile,
+        last100Picks: emptyTile,
+        last500Picks: emptyTile,
+      },
       daysAnalyzed: 0,
       legsAnalyzed: 0,
       rangeStart: null,

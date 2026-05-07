@@ -924,6 +924,22 @@ export type ProjectionErrorSummary = {
   overProjectionRate: number;
 };
 
+export type DailyCalibrationPoint = {
+  date: string;
+  sampleSize: number;
+  predictedAvg: number;
+  actualHitRate: number;
+  smoothedHitRate: number;
+  calibrationError: number;
+};
+
+export type RollingWindows = {
+  last7Days: CalibrationBucket;
+  last30Days: CalibrationBucket;
+  last100Picks: CalibrationBucket;
+  last500Picks: CalibrationBucket;
+};
+
 export type CalibrationReport = {
   overall: CalibrationBucket;
   byProbability: CalibrationBucket[];
@@ -932,6 +948,8 @@ export type CalibrationReport = {
   byRisk?: CalibrationBucket[];
   byArchetype?: CalibrationBucket[];
   projectionError?: ProjectionErrorSummary | null;
+  series?: DailyCalibrationPoint[];
+  windows?: RollingWindows;
   daysAnalyzed: number;
   legsAnalyzed: number;
   rangeStart: string | null;

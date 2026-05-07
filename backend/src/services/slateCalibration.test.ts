@@ -277,6 +277,55 @@ describe('computeCalibration', () => {
     expect(r.projectionError).toBeNull();
   });
 
+  test('series emits one point per slate date, oldest first', () => {
+    const r = computeCalibration([
+      snap('2026-05-03', [leg({ probability: 70, outcome: 'hit', playerId: 1 })]),
+      snap('2026-05-01', [leg({ probability: 70, outcome: 'miss', playerId: 2 })]),
+      snap('2026-05-02', [leg({ probability: 70, outcome: 'hit', playerId: 3 })]),
+    ]);
+    expect(r.series.map((p) => p.date)).toEqual(['2026-05-01', '2026-05-02', '2026-05-03']);
+    expect(r.series.every((p) => Number.isFinite(p.smoothedHitRate))).toBe(true);
+  });
+
+  test('series is empty when no legs are graded', () => {
+    const r = computeCalibration([]);
+    expect(r.series).toEqual([]);
+  });
+
+  test('windows.last7Days only includes legs within 7 calendar days of rangeEnd', () => {
+    const days = (n: number, outcome: 'hit' | 'miss') => snap(`2026-05-${String(n).padStart(2, '0')}`, [
+      leg({ probability: 70, outcome, playerId: n + 100 }),
+    ]);
+    // 10 legs across 10 days (May 1-10). With rangeEnd = 2026-05-10
+    // and a 7-day window, we expect the legs from 2026-05-04 → 10
+    // (7 days inclusive).
+    const r = computeCalibration([
+      days(1, 'miss'), days(2, 'miss'), days(3, 'miss'),
+      days(4, 'hit'), days(5, 'hit'), days(6, 'hit'),
+      days(7, 'hit'), days(8, 'hit'), days(9, 'hit'),
+      days(10, 'hit'),
+    ]);
+    expect(r.rangeEnd).toBe('2026-05-10');
+    expect(r.windows.last7Days.sampleSize).toBe(7);
+    // Last 7 days legs are all 'hit' (May 4-10) → raw 100%, smoothed
+    // toward the prior. Earlier days (May 1-3) outside the window.
+    expect(r.windows.last7Days.actualHitRate).toBe(100);
+  });
+
+  test('windows.last100Picks bounds by leg count not days', () => {
+    // 150 graded legs across many days → last100Picks should have
+    // exactly 100, last500Picks should have all 150.
+    const legs150 = Array.from({ length: 150 }, (_, i) =>
+      snap(
+        `2026-${String(Math.floor(i / 30) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+        [leg({ probability: 70, outcome: 'hit', playerId: i + 1 })],
+      ),
+    );
+    const r = computeCalibration(legs150);
+    expect(r.windows.last100Picks.sampleSize).toBe(100);
+    expect(r.windows.last500Picks.sampleSize).toBe(150);
+  });
+
   test('range start/end track first and last graded date', () => {
     const r = computeCalibration([
       snap('2026-05-01', [leg({ playerId: 1 })]),

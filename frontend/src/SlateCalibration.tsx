@@ -11,11 +11,23 @@
 
 import { useEffect, useState } from 'react';
 import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
   getSlateCalibration,
   type CalibrationBucket,
   type CalibrationReport,
   type CalibrationStatus,
+  type DailyCalibrationPoint,
   type ProjectionErrorSummary,
+  type RollingWindows,
   type SampleConfidence,
 } from './api';
 import { Skeleton } from './Skeleton';
@@ -153,6 +165,14 @@ export function SlateCalibration() {
 
       <OverallBanner b={report.overall} />
 
+      {report.windows && (
+        <RollingTiles windows={report.windows} />
+      )}
+
+      {report.series && report.series.length > 0 && (
+        <DailySeriesChart series={report.series} />
+      )}
+
       <BucketTable
         title="By probability bucket"
         buckets={report.byProbability}
@@ -289,6 +309,150 @@ function OverallBanner({ b }: { b: CalibrationBucket }) {
         {status === 'Underconfident' && (
           <>The model is under-selling — picks delivered noticeably better than claimed.</>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Four "at-a-glance" tiles above the daily chart — last 7/30 days
+// (calendar-bounded) and last 100/500 picks (count-bounded). Empty
+// tiles render greyed out so the layout doesn't shift before data
+// accrues.
+function RollingTiles({ windows }: { windows: RollingWindows }) {
+  const tiles: Array<{ key: string; label: string; b: CalibrationBucket }> = [
+    { key: 'last7Days', label: 'Last 7 days', b: windows.last7Days },
+    { key: 'last30Days', label: 'Last 30 days', b: windows.last30Days },
+    { key: 'last100Picks', label: 'Last 100 picks', b: windows.last100Picks },
+    { key: 'last500Picks', label: 'Last 500 picks', b: windows.last500Picks },
+  ];
+  return (
+    <div className="slate-calibration-section">
+      <h3>Rolling accuracy</h3>
+      <div className="rolling-tiles">
+        {tiles.map(({ key, label, b }) => {
+          const empty = b.sampleSize === 0;
+          const pred = n(b.predictedAvg);
+          const actual = smoothed(b);
+          const error = calError(b);
+          return (
+            <div key={key} className={`rolling-tile ${empty ? 'empty' : ''}`}>
+              <div className="rolling-tile-label">{label}</div>
+              {empty ? (
+                <div className="rolling-tile-empty muted small">No data yet</div>
+              ) : (
+                <>
+                  <div className="rolling-tile-numbers">
+                    <span>
+                      <span className="muted small">predicted</span>{' '}
+                      <strong>{pred.toFixed(1)}%</strong>
+                    </span>
+                    <span>
+                      <span className="muted small">actual</span>{' '}
+                      <strong>{actual.toFixed(1)}%</strong>
+                    </span>
+                  </div>
+                  <div className={statusClass(b.status)}>
+                    {fmtError(error)} · {b.status ?? 'Calibrated'}
+                  </div>
+                  <div className="muted small rolling-tile-meta">
+                    n={b.sampleSize} · {b.sampleConfidence ?? '—'}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Line chart of predicted % vs actual smoothed % per slate date.
+// Shows model improvement, decay, and meta shifts the way no
+// summary table can. Uses Recharts (already in the bundle from the
+// Last10View / ComparisonView pages).
+function DailySeriesChart({ series }: { series: DailyCalibrationPoint[] }) {
+  // Format dates short ("May 6") for x-axis tick labels.
+  const data = series.map((p) => {
+    const [y, m, d] = p.date.split('-').map(Number);
+    const dt = new Date(Date.UTC(y!, m! - 1, d!));
+    const short = dt.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    return {
+      ...p,
+      shortDate: short,
+      // Recharts gets confused if smoothedHitRate is 0 for an empty
+      // bucket — replace with null so the line breaks gracefully.
+      predictedAvg: p.sampleSize > 0 ? p.predictedAvg : null,
+      smoothedHitRate: p.sampleSize > 0 ? p.smoothedHitRate : null,
+    };
+  });
+  return (
+    <div className="slate-calibration-section">
+      <h3>Predicted vs actual over time</h3>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        Daily predicted hit % (blue) plotted against the Bayesian-smoothed
+        actual hit rate (green). Tight tracking = well-calibrated; large
+        persistent gap = systematic over- or underconfidence.
+      </p>
+      <div className="rolling-chart">
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={data} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
+            <CartesianGrid stroke="#1f2330" strokeDasharray="3 3" />
+            <XAxis
+              dataKey="shortDate"
+              stroke="#5a6378"
+              tick={{ fontSize: 11 }}
+              minTickGap={20}
+            />
+            <YAxis
+              stroke="#5a6378"
+              tick={{ fontSize: 11 }}
+              domain={[40, 100]}
+              tickFormatter={(v: number) => `${v}%`}
+            />
+            <Tooltip
+              contentStyle={{
+                background: '#14171f',
+                border: '1px solid #1f2330',
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              // Recharts' typed Formatter narrows ValueType to a union of
+              // number | string | (number | string)[]. Coerce defensively
+              // so the tooltip works for either shape.
+              formatter={((v: unknown, name: unknown) => {
+                if (v === null || v === undefined) return ['—', String(name)];
+                if (typeof v === 'number') return [`${v.toFixed(1)}%`, String(name)];
+                return [String(v), String(name)];
+              }) as never}
+              labelStyle={{ color: '#c8cfdc' }}
+            />
+            {/* 50% line as a reference — calibration error bands either side */}
+            <ReferenceLine y={50} stroke="#2a2f3a" strokeDasharray="2 4" />
+            <Line
+              type="monotone"
+              dataKey="predictedAvg"
+              name="Predicted"
+              stroke="#5b8def"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="smoothedHitRate"
+              name="Actual (smoothed)"
+              stroke="#6dd07a"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

@@ -2690,6 +2690,61 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   letter-spacing: -0.5px;
 }
 
+/* Rolling accuracy tiles — four at-a-glance windows above the chart. */
+.rolling-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.rolling-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.rolling-tile.empty { opacity: 0.55; }
+.rolling-tile-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-3);
+}
+.rolling-tile-empty {
+  padding: 8px 0 4px;
+  font-style: italic;
+}
+.rolling-tile-numbers {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.rolling-tile-numbers strong {
+  color: var(--text-1);
+  font-size: 16px;
+  margin-left: 4px;
+  font-weight: 800;
+}
+.rolling-tile .cal-status { padding: 3px 10px; align-self: flex-start; }
+.rolling-tile-meta {
+  font-size: 11px;
+}
+
+/* Recharts line chart container */
+.rolling-chart {
+  margin-top: 10px;
+  padding: 12px 4px 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
 @media (max-width: 720px) {
   .slate-calibration-row {
     grid-template-columns: 1.4fr 36px 80px 70px 70px 90px;
