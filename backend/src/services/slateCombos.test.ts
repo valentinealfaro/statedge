@@ -361,13 +361,15 @@ describe('buildCombos EV engine', () => {
     }
   });
 
-  test('Best 6 payout matches PrizePicks Power Play boosted rate (8.4x)', () => {
-    // Regression: was 25x (older / wrong). Real Power Play 6-pick
-    // pays 7x base / 8.4x with the standard "Payout Boost" promo.
-    // Using 8.4x because that's what users actually see; if
-    // PrizePicks restructures payouts again, update PRIZEPICKS_PAYOUTS.
+  test('Power Play payouts match what users see in the app', () => {
+    // Regressions: 5-pick was 20x (wrong, actually 7x); 6-pick was
+    // 25x (wrong, actually 8.4x). PrizePicks restructured Power Play
+    // payouts and we have to match what the app shows the user.
+    // If PrizePicks changes again, update PRIZEPICKS_PAYOUTS.
     const { combos } = buildCombos(strongSlate(20, 80));
+    const best5 = combos.find((c) => c.label === 'Best 5');
     const best6 = combos.find((c) => c.label === 'Best 6');
+    expect(best5?.payoutMultiplier).toBe(7);
     expect(best6?.payoutMultiplier).toBe(8.4);
   });
 
