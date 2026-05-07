@@ -722,8 +722,9 @@ function BestPicksRail({
       <div className="best-picks-head">
         <h3>Pre-built parlays</h3>
         <span className="muted small">
-          Server-built using the StatEdge projection. Best 6 is the max
-          slate; Best 5/4/3/2 are progressive subsets.
+          Each card is independent — different picks where the slate
+          allows, so one bad leg only sinks the cards using it. Best 6
+          anchors the safest picks; smaller cards draw fresh ones.
         </span>
       </div>
       <div className="best-picks-rail">

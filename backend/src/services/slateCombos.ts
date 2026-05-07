@@ -383,17 +383,34 @@ function pickByCaps(
   return out;
 }
 
-// Top-down derivation. Best N (for N < 6) = the top N legs of Best 6
-// by slateScore that ALSO satisfy the tighter caps for that card
-// size (Best 2/3 use CAPS_TIGHT; Best 4/5 reuse CAPS_LARGE since
-// they're already inside the Best 6 envelope).
-function deriveSubset(
-  best6: ComboCandidate[],
+// Diversity-aware picker. Sorts candidates by (usage ASC, slateScore
+// DESC) so picks not yet used on a bigger card always come first;
+// within the same usage tier, slateScore breaks the tie. Updates the
+// shared usage map after the card is built so the next card prefers
+// fresh picks.
+//
+// This replaces the earlier "subset of Best 6" derivation. The user
+// explicitly opted into independent cards: when one pick flops, only
+// the cards using it lose — not all of them. When the slate has
+// fewer eligible picks than the cards need (6+5+4+3+2 = 20 leg
+// slots), this gracefully degrades to allowing reuse.
+function pickWithDiversity(
+  pool: ComboCandidate[],
   target: number,
   caps: Caps,
+  usage: Map<string, number>,
 ): ComboCandidate[] {
-  const sorted = [...best6].sort((a, b) => b.slateScore - a.slateScore);
-  return pickByCaps(sorted, target, caps);
+  const sorted = [...pool].sort((a, b) => {
+    const ua = usage.get(comboKey(a)) ?? 0;
+    const ub = usage.get(comboKey(b)) ?? 0;
+    if (ua !== ub) return ua - ub;
+    return b.slateScore - a.slateScore;
+  });
+  const picked = pickByCaps(sorted, target, caps);
+  for (const c of picked) {
+    usage.set(comboKey(c), (usage.get(comboKey(c)) ?? 0) + 1);
+  }
+  return picked;
 }
 
 // -----------------------------------------------------------------
@@ -449,12 +466,17 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+// Card subtitles. Cards are now built independently (no shared picks
+// when the slate has enough candidates), so the safest picks anchor
+// Best 6 and smaller cards use different picks. Subtitles emphasize
+// that each card is its own ticket — submit them in parallel and one
+// bad leg only knocks out the cards that included it.
 const SUBTITLES: Record<Combo['label'], string> = {
-  'Best 2': 'Safest Core',
-  'Best 3': 'Balanced Core',
-  'Best 4': 'Strong Slate',
-  'Best 5': 'Full Slate',
-  'Best 6': 'Max Slate',
+  'Best 2': 'Compact Ticket',
+  'Best 3': 'Balanced Ticket',
+  'Best 4': 'Mid Ticket',
+  'Best 5': 'Wide Ticket',
+  'Best 6': 'Max Ticket — anchors the safest picks',
   'Wild Card': 'Higher Risk',
 };
 
@@ -501,25 +523,24 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
     .filter((c) => passesEligibility(c, ELIGIBLE))
     .sort((a, b) => b.slateScore - a.slateScore);
 
-  // Build Best 6 first (spec §"Building Best 6"). Greedy by
-  // slateScore with full exposure caps + correlation block.
-  const best6 = pickByCaps(eligible, 6, CAPS_LARGE);
+  // Build cards LARGEST → SMALLEST so the safest 6 picks land on
+  // Best 6 first. Each subsequent card prefers picks not yet used on
+  // a bigger card (diversity-first); when the slate is too small for
+  // full independence, the shared `usage` map drives graceful sharing.
+  const usage = new Map<string, number>();
+  const best6 = pickWithDiversity(eligible, 6, CAPS_LARGE, usage);
+  const best5 = pickWithDiversity(eligible, 5, CAPS_LARGE, usage);
+  const best4 = pickWithDiversity(eligible, 4, CAPS_LARGE, usage);
+  const best3 = pickWithDiversity(eligible, 3, CAPS_TIGHT, usage);
+  const best2 = pickWithDiversity(eligible, 2, CAPS_TIGHT, usage);
 
   const combos: Combo[] = [];
-  if (best6.length >= 2) {
-    // Top-down derivations from Best 6 (spec §"Building Best 5/4/3/2"):
-    const best5 = deriveSubset(best6, 5, CAPS_LARGE);
-    const best4 = deriveSubset(best6, 4, CAPS_LARGE);
-    const best3 = deriveSubset(best6, 3, CAPS_TIGHT);
-    const best2 = deriveSubset(best6, 2, CAPS_TIGHT);
-
-    // Order matches what the rail renders left-to-right.
-    if (best2.length === 2) combos.push(makeCombo('Best 2', best2, 'safe'));
-    if (best3.length === 3) combos.push(makeCombo('Best 3', best3, 'safe'));
-    if (best4.length === 4) combos.push(makeCombo('Best 4', best4, 'safe'));
-    if (best5.length === 5) combos.push(makeCombo('Best 5', best5, 'safe'));
-    if (best6.length >= 2) combos.push(makeCombo('Best 6', best6, 'safe'));
-  }
+  // Order matches what the rail renders left-to-right (Best 2 → 6).
+  if (best2.length === 2) combos.push(makeCombo('Best 2', best2, 'safe'));
+  if (best3.length === 3) combos.push(makeCombo('Best 3', best3, 'safe'));
+  if (best4.length === 4) combos.push(makeCombo('Best 4', best4, 'safe'));
+  if (best5.length === 5) combos.push(makeCombo('Best 5', best5, 'safe'));
+  if (best6.length >= 2) combos.push(makeCombo('Best 6', best6, 'safe'));
 
   // Wild Card — riskier but still data-supported (spec §"Wild Card
   // Logic" + "Wild Card Historical Requirement"). Two hard gates:
@@ -529,8 +550,15 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
   // Plus: must clear the looser WILD probability/confidence/risk/edge
   // floors AND must not be a duplicate of any Best 2-6 pick. Same
   // player as a Best 2-6 leg is allowed only with a different stat.
-  const best2 = combos.find((c) => c.label === 'Best 2');
-  const usedKeys = new Set(best6.map(comboKey));
+  //
+  // With independent cards, "used on a safe card" is the union of
+  // every Best 2-6 pick (not just Best 6's), so the Wild Card can't
+  // duplicate any of them.
+  const best2Combo = combos.find((c) => c.label === 'Best 2');
+  const usedKeys = new Set<string>();
+  for (const combo of combos) {
+    for (const leg of combo.legs) usedKeys.add(comboKey(leg));
+  }
 
   function passesWildHistorical(c: ComboCandidate): boolean {
     return c.last10HitCount >= 3 && c.vsOpponentHitCount >= 1;
@@ -609,8 +637,8 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
       tags.push('volatile stat');
     }
     // -5 if correlated with a Best 2 leg (same player, correlated stat).
-    if (best2) {
-      const correlatedWithBest2 = best2.legs.some(
+    if (best2Combo) {
+      const correlatedWithBest2 = best2Combo.legs.some(
         (b) => b.playerId === c.playerId && statsCorrelated(b.statKey, c.statKey),
       );
       if (correlatedWithBest2) {

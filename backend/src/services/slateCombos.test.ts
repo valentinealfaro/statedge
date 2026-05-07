@@ -89,27 +89,48 @@ function strongSlate(n: number, baseProb = 75): ResolvedLine[] {
   });
 }
 
-describe('buildCombos top-down progressive', () => {
-  test('Best 5 is a strict subset of Best 6', () => {
-    const { combos } = buildCombos(strongSlate(8));
+describe('buildCombos diversity-first build', () => {
+  test('Best 6 holds the safest 6 picks (top by slateScore)', () => {
+    const { combos } = buildCombos(strongSlate(20));
     const best6 = combos.find((c) => c.label === 'Best 6');
-    const best5 = combos.find((c) => c.label === 'Best 5');
     expect(best6?.legs.length).toBe(6);
-    expect(best5?.legs.length).toBe(5);
-    const six = new Set(best6!.legs.map((l) => l.playerId));
-    for (const l of best5!.legs) expect(six.has(l.playerId)).toBe(true);
+    // Top picks by slateScore should land here. With 20 candidates,
+    // Best 5/4/3/2 don't pull from this set, so Best 6 keeps the
+    // strongest picks.
+    const playerIds = best6!.legs.map((l) => l.playerId).sort((a, b) => a - b);
+    // Top 6 by playerId in our fixture happen to also be the highest
+    // slateScore (we generate with decreasing probability per index).
+    expect(playerIds).toEqual([100, 101, 102, 103, 104, 105]);
   });
 
-  test('Best 4/3/2 are subsets of the next-larger card', () => {
-    const { combos } = buildCombos(strongSlate(8));
-    const best5 = combos.find((c) => c.label === 'Best 5')!;
-    const best4 = combos.find((c) => c.label === 'Best 4')!;
-    const best3 = combos.find((c) => c.label === 'Best 3')!;
-    const best2 = combos.find((c) => c.label === 'Best 2')!;
-    const idsIn = (c: Combo) => new Set(c.legs.map((l) => l.playerId));
-    for (const l of best4.legs) expect(idsIn(best5).has(l.playerId)).toBe(true);
-    for (const l of best3.legs) expect(idsIn(best4).has(l.playerId)).toBe(true);
-    for (const l of best2.legs) expect(idsIn(best3).has(l.playerId)).toBe(true);
+  test('Cards do NOT share picks when the slate has enough candidates', () => {
+    const { combos } = buildCombos(strongSlate(20));
+    const best6Ids = new Set(combos.find((c) => c.label === 'Best 6')!.legs.map((l) => l.playerId));
+    const best5Ids = new Set(combos.find((c) => c.label === 'Best 5')!.legs.map((l) => l.playerId));
+    const best4Ids = new Set(combos.find((c) => c.label === 'Best 4')!.legs.map((l) => l.playerId));
+    const best3Ids = new Set(combos.find((c) => c.label === 'Best 3')!.legs.map((l) => l.playerId));
+    const best2Ids = new Set(combos.find((c) => c.label === 'Best 2')!.legs.map((l) => l.playerId));
+
+    // Pairwise: no leg should appear on two different cards when the
+    // slate is large enough (20 candidates → 6+5+4+3+2 = 20 slots).
+    function disjoint(a: Set<number>, b: Set<number>): boolean {
+      for (const v of a) if (b.has(v)) return false;
+      return true;
+    }
+    expect(disjoint(best6Ids, best5Ids)).toBe(true);
+    expect(disjoint(best5Ids, best4Ids)).toBe(true);
+    expect(disjoint(best4Ids, best3Ids)).toBe(true);
+    expect(disjoint(best3Ids, best2Ids)).toBe(true);
+  });
+
+  test('Small slate falls back to sharing picks across cards', () => {
+    // 6 picks total — not enough for full independence. The build
+    // should still emit each card with whatever degree of sharing
+    // is necessary, rather than dropping the smaller cards.
+    const { combos } = buildCombos(strongSlate(6));
+    const labels = combos.map((c) => c.label);
+    expect(labels).toContain('Best 6');
+    expect(labels).toContain('Best 2');
   });
 });
 
