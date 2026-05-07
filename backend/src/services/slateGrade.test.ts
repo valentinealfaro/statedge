@@ -52,6 +52,12 @@ const baseLeg = {
   l10Avg: 26,
   vsOppAvg: null,
   injuryStatus: null,
+  last10HitCount: 6,
+  last10HitRate: 60,
+  vsOpponentGames: 2,
+  vsOpponentHitCount: 1,
+  vsOpponentHitRate: 50,
+  statVolatility: 0.2,
 };
 
 describe('gradeLeg', () => {

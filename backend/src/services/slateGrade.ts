@@ -40,6 +40,11 @@ export type GradedLeg = {
   confidence?: number;
   confidenceLabel?: string;
 
+  // Wild Card evidence (only set on legs from the Wild Card combo):
+  last10HitCount?: number;
+  vsOpponentHitCount?: number;
+  wildCardReason?: string;
+
   // Actual outcome:
   actual: number | null;     // null when we couldn't find a game
   outcome: LegOutcome;
@@ -87,6 +92,28 @@ function legConfidenceLabel(leg: ComboLeg): string | undefined {
   return typeof lp.confidenceLabel === 'string' ? lp.confidenceLabel : undefined;
 }
 
+// Wild Card snapshot fields. Optional because:
+//   - They were added in a later iteration; pre-existing snapshots
+//     don't carry them.
+//   - Only Wild Card legs have wildCardReason; safe legs leave it
+//     undefined.
+function legWildCardFields(leg: ComboLeg): {
+  last10HitCount?: number;
+  vsOpponentHitCount?: number;
+  wildCardReason?: string;
+} {
+  const lp = leg as {
+    last10HitCount?: number;
+    vsOpponentHitCount?: number;
+    wildCardReason?: string;
+  };
+  return {
+    last10HitCount: typeof lp.last10HitCount === 'number' ? lp.last10HitCount : undefined,
+    vsOpponentHitCount: typeof lp.vsOpponentHitCount === 'number' ? lp.vsOpponentHitCount : undefined,
+    wildCardReason: typeof lp.wildCardReason === 'string' ? lp.wildCardReason : undefined,
+  };
+}
+
 export function gradeLeg(
   leg: ComboLeg,
   gamesByDate: PlayerGame[],
@@ -100,6 +127,7 @@ export function gradeLeg(
   const probability = legProbability(leg);
   const confidence = legConfidence(leg);
   const confidenceLabel = legConfidenceLabel(leg);
+  const wild = legWildCardFields(leg);
 
   if (!game) {
     return {
@@ -114,6 +142,7 @@ export function gradeLeg(
       probability,
       confidence,
       confidenceLabel,
+      ...wild,
       actual: null,
       outcome: 'no_game',
     };
@@ -146,6 +175,7 @@ export function gradeLeg(
     probability,
     confidence,
     confidenceLabel,
+    ...wild,
     actual,
     outcome,
   };

@@ -74,6 +74,11 @@ export type ResolvedLine = {
     opponentAbbr: string;
     gamesPlayed: number;
     avg: number;       // for double_double stat, this is the rate (0-1)
+    // Per-game values vs the opponent. For DD, each entry is 0/1.
+    // Used by the Wild Card builder to compute "hit N of last X vs
+    // opponent" — the spec requires ≥1 historical hit vs the current
+    // opponent for a pick to qualify as Wild Card.
+    values: number[];
   };
 
   // Last-5 average and the delta vs the last-10 baseline. Positive →
@@ -247,11 +252,13 @@ export async function resolveSlate(
       const vsGames = games.filter((g) => g.opponentAbbr === oppAbbr);
       if (vsGames.length > 0) {
         if (p.statKey === 'double_double') {
-          const dd = vsGames.filter(isDoubleDoubleGame).length;
+          const ddValues: number[] = vsGames.map((g) => (isDoubleDoubleGame(g) ? 1 : 0));
+          const dd = ddValues.reduce((a, b) => a + b, 0);
           vsOpponent = {
             opponentAbbr: oppAbbr,
             gamesPlayed: vsGames.length,
             avg: round2(dd / vsGames.length),
+            values: ddValues,
           };
         } else {
           const get = STAT_MAP[p.statKey];
@@ -261,6 +268,7 @@ export async function resolveSlate(
             opponentAbbr: oppAbbr,
             gamesPlayed: vsGames.length,
             avg: round2(vsAvg),
+            values: vsValues,
           };
         }
       }

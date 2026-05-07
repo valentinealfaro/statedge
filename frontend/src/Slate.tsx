@@ -732,10 +732,32 @@ function BestPicksRail({
           const isActive = keys.length > 0
             && keys.every((k) => activeKeys.includes(k))
             && keys.length === activeKeys.length;
+          const isWild = c.tag === 'wild';
+          // Wild Card with no legs = "no qualifying picks" placeholder.
+          // Spec §"If No Wild Card Qualifies" — render an explanatory
+          // tile instead of forcing a weak pick onto the rail.
+          if (isWild && c.legs.length === 0) {
+            return (
+              <div key={c.label} className="best-pick-card wild empty-wild" aria-disabled="true">
+                <div className="best-pick-head">
+                  <div className="best-pick-titles">
+                    <span className="best-pick-label">{c.label}</span>
+                    <span className="best-pick-subtitle">Higher Risk / Higher Upside</span>
+                  </div>
+                </div>
+                <div className="empty-wild-body">
+                  <p>No Wild Card available tonight</p>
+                  <p className="muted small">
+                    Not enough historical support — needs ≥3 of last 10 + ≥1 vs current opponent.
+                  </p>
+                </div>
+              </div>
+            );
+          }
           return (
             <button
               key={c.label}
-              className={`best-pick-card ${c.tag === 'wild' ? 'wild' : ''} ${isActive ? 'active' : ''}`}
+              className={`best-pick-card ${isWild ? 'wild' : ''} ${isActive ? 'active' : ''}`}
               onClick={() => onLoad(keys)}
               title={`Load ${c.label} (${c.subtitle}) into your parlay tray`}
             >
@@ -757,17 +779,27 @@ function BestPicksRail({
               </div>
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
-                  <div key={i} className="best-pick-leg">
-                    <span className="best-pick-leg-name">{l.playerName}</span>
-                    <span className="best-pick-leg-stat">
-                      {l.statLabel} {l.line}
-                    </span>
-                    <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
-                      {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
-                    </span>
-                    <span className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}>
-                      {l.confidenceLabel}
-                    </span>
+                  <div key={i} className="best-pick-leg-block">
+                    <div className="best-pick-leg">
+                      <span className="best-pick-leg-name">{l.playerName}</span>
+                      <span className="best-pick-leg-stat">
+                        {l.statLabel} {l.line}
+                      </span>
+                      <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                        {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+                      </span>
+                      <span className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}>
+                        {l.confidenceLabel}
+                      </span>
+                    </div>
+                    {/* Wild Card legs surface their historical evidence
+                        + a one-line "why this is a Wild Card" narrative
+                        so the user can read the support, not just the %. */}
+                    {isWild && l.wildCardReason && (
+                      <div className="best-pick-wild-evidence">
+                        {l.wildCardReason}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

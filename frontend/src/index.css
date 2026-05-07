@@ -2430,6 +2430,65 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 600;
 }
 
+.best-pick-leg-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.best-pick-wild-evidence {
+  font-size: 10px;
+  color: var(--text-3);
+  font-style: italic;
+  padding-left: 2px;
+  margin-top: -1px;
+}
+
+/* Empty Wild Card tile — surfaces "no qualifying picks" copy without
+   pretending to be a clickable card. */
+.best-pick-card.empty-wild {
+  cursor: default;
+  opacity: 0.7;
+  border-style: dashed;
+}
+.best-pick-card.empty-wild:hover {
+  transform: none;
+  box-shadow: none;
+}
+.empty-wild-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  text-align: center;
+  padding: 8px 4px;
+}
+.empty-wild-body p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.empty-wild-body p.muted {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+/* History view: wild-card evidence under the leg row. */
+.slate-history-leg-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.slate-history-leg-evidence {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  padding-left: 36px;
+}
+@media (max-width: 720px) {
+  .slate-history-leg-evidence { padding-left: 32px; }
+}
+
 /* Player-card collapse states. Header is always visible; the props
    list expands underneath. */
 .player-card-head-button {

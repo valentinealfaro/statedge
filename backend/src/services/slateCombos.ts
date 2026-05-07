@@ -117,6 +117,24 @@ export type ComboCandidate = {
   l10Avg: number;
   vsOppAvg: number | null;
   injuryStatus: string | null;
+
+  // Historical hit metrics (vs the leg's own line + direction). Used
+  // by the Wild Card eligibility gate (≥3 of L10, ≥1 vs opp) and by
+  // the wildCardScore formula. Computed for every candidate so the
+  // History UI can also show "hit X of last Y" for safe legs.
+  last10HitCount: number;       // count of L10 games that beat the line
+  last10HitRate: number;        // 0-100 — last10HitCount / 10 * 100
+  vsOpponentGames: number;      // sample size vs current opponent
+  vsOpponentHitCount: number;   // count of vs-opp games that beat the line
+  vsOpponentHitRate: number;    // 0-100, or 0 if no vs-opp data
+  // Coefficient of variation on last10Values — used by the Wild Card
+  // volatility penalty (spec §"-6 if stat is highly volatile").
+  statVolatility: number;       // stddev / mean (0+ — higher = more volatile)
+
+  // Set only on legs picked for the Wild Card combo. Frontend reads
+  // this to render the spec'd "Hit X of last 10 and has hit this line
+  // against the current opponent" copy underneath the leg.
+  wildCardReason?: string;
 };
 
 // Public combo shape. Card label drives both the row key in the UI
@@ -187,6 +205,34 @@ function computeSlateScore(c: {
   return score;
 }
 
+// Count how many values in `vals` "beat" the `line` for the given
+// direction. For DD (binary 0/1 values), OVER hits when value === 1
+// and UNDER hits when value === 0; line is ignored.
+function countHits(
+  vals: number[],
+  line: number,
+  direction: 'OVER' | 'UNDER',
+  statKey: Last10StatId,
+): number {
+  if (statKey === 'double_double') {
+    return vals.filter((v) => (direction === 'OVER' ? v === 1 : v === 0)).length;
+  }
+  if (direction === 'OVER') return vals.filter((v) => v > line).length;
+  return vals.filter((v) => v < line).length;
+}
+
+// Coefficient of variation — stddev / mean. Used as a volatility
+// proxy in the Wild Card penalty (spec §"-6 if stat is highly
+// volatile"). Returns 0 if mean is 0 or sample is too small to mean
+// anything.
+function cv(vals: number[]): number {
+  if (vals.length < 3) return 0;
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  if (mean === 0) return 0;
+  const variance = vals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / vals.length;
+  return Math.sqrt(variance) / Math.abs(mean);
+}
+
 // -----------------------------------------------------------------
 // Build candidate list from resolved lines. One candidate per line
 // (whose projection has a clear directional lean). OUT players are
@@ -217,6 +263,18 @@ function buildCandidates(lines: ResolvedLine[]): ComboCandidate[] {
         : null;
 
     const injStatus = l.injury?.status ?? null;
+
+    // Hit counts vs THIS leg's line + direction. historicalHitRates on
+    // the projection is always over-side; for UNDER picks the same
+    // values give us under-side counts via direction-aware tally.
+    const last10HitCount = countHits(l.last10Values, l.line, direction, l.statKey);
+    const last10HitRate = (last10HitCount / Math.max(1, l.last10Values.length)) * 100;
+    const vsOppValues = l.vsOpponent?.values ?? [];
+    const vsOpponentHitCount = countHits(vsOppValues, l.line, direction, l.statKey);
+    const vsOpponentHitRate =
+      vsOppValues.length > 0 ? (vsOpponentHitCount / vsOppValues.length) * 100 : 0;
+    const statVolatility = cv(l.last10Values);
+
     const slateScore = computeSlateScore({
       probability,
       confidence: p.confidence.score,
@@ -252,6 +310,12 @@ function buildCandidates(lines: ResolvedLine[]): ComboCandidate[] {
       l10Avg: l.last10Avg,
       vsOppAvg: l.vsOpponent?.avg ?? null,
       injuryStatus: injStatus,
+      last10HitCount,
+      last10HitRate: Math.round(last10HitRate),
+      vsOpponentGames: vsOppValues.length,
+      vsOpponentHitCount,
+      vsOpponentHitRate: Math.round(vsOpponentHitRate),
+      statVolatility,
     });
   }
   return out;
@@ -457,25 +521,162 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
     if (best6.length >= 2) combos.push(makeCombo('Best 6', best6, 'safe'));
   }
 
-  // Wild Card: bigger, riskier, still data-supported. Pulls from the
-  // looser eligibility pool but explicitly skips picks already on
-  // Best 6 (so the wild slate is a different angle, not a re-shuffle).
+  // Wild Card — riskier but still data-supported (spec §"Wild Card
+  // Logic" + "Wild Card Historical Requirement"). Two hard gates:
+  //   1) Hit ≥ 3 of the player's last 10 games at this line/direction
+  //   2) Hit ≥ 1 vs the current opponent (which also requires at
+  //      least 1 game vs that opponent in the cache)
+  // Plus: must clear the looser WILD probability/confidence/risk/edge
+  // floors AND must not be a duplicate of any Best 2-6 pick. Same
+  // player as a Best 2-6 leg is allowed only with a different stat.
+  const best2 = combos.find((c) => c.label === 'Best 2');
   const usedKeys = new Set(best6.map(comboKey));
-  const wildPool = allCandidates
+
+  function passesWildHistorical(c: ComboCandidate): boolean {
+    return c.last10HitCount >= 3 && c.vsOpponentHitCount >= 1;
+  }
+
+  // Score each Wild Card candidate per spec formula, with boosts and
+  // penalties. Returns score + the boost/penalty tags so the reason
+  // text can mention them.
+  function scoreWild(c: ComboCandidate): {
+    score: number;
+    tags: string[];
+  } {
+    const tags: string[] = [];
+    let score =
+      c.probability * 0.25 +
+      c.confidence * 0.15 +
+      c.edgeScore * 0.20 +
+      c.last10HitRate * 0.20 +
+      c.vsOpponentHitRate * 0.10 -
+      c.risk * 0.10;
+
+    // --- Boosts -----------------------------------------------------
+    if (c.last10HitCount >= 5) {
+      score += 8;
+      tags.push(`hit ${c.last10HitCount} of last 10`);
+    }
+    if (c.vsOpponentHitCount >= 2) {
+      score += 6;
+      tags.push(`${c.vsOpponentHitCount}× vs opponent`);
+    }
+    // Projection ≥ 1 stddev above (or below for UNDER) the line.
+    // We approximate stddev from the last10Values CV * mean — close
+    // enough for ranking purposes.
+    const stddev = c.statVolatility * Math.max(1, c.l10Avg);
+    if (stddev > 0) {
+      const distance =
+        c.direction === 'OVER' ? c.projection - c.line : c.line - c.projection;
+      if (distance / stddev >= 1) {
+        score += 5;
+        tags.push('projection ≥ 1σ above line');
+      }
+    }
+    // +4 line raised — stub: line raising is staged for a follow-up,
+    // so this never fires today. Reason tag preserved for future work.
+    // +3 minutes trending up — stub: minutes time series not yet
+    // exposed on ResolvedLine. Skip.
+    // +3 role increased due to teammate injury — stub: teammate-injury
+    // context not yet plumbed. Skip.
+    if (
+      c.last10HitRate >= 50 &&
+      c.vsOpponentHitRate >= 50 &&
+      c.vsOpponentGames >= 2
+    ) {
+      // Use this as a proxy for "home/away supports" since we don't
+      // currently disambiguate H/A on ResolvedLine — the historical
+      // hit rates already factor in venue mix.
+      score += 2;
+    }
+
+    // --- Penalties --------------------------------------------------
+    if (c.last10HitCount === 3) {
+      score -= 10;
+      tags.push('borderline L10 sample');
+    }
+    if (c.vsOpponentGames === 1) {
+      score -= 8;
+      tags.push('only 1 vs-opponent game');
+    }
+    if (c.injuryStatus === 'Questionable' || c.injuryStatus === 'Day-To-Day') {
+      score -= 8;
+      tags.push('injury uncertain');
+    }
+    // -6 blowout risk — stub: pace/spread data not on ResolvedLine.
+    if (c.statVolatility >= 0.5) {
+      score -= 6;
+      tags.push('volatile stat');
+    }
+    // -5 if correlated with a Best 2 leg (same player, correlated stat).
+    if (best2) {
+      const correlatedWithBest2 = best2.legs.some(
+        (b) => b.playerId === c.playerId && statsCorrelated(b.statKey, c.statKey),
+      );
+      if (correlatedWithBest2) {
+        score -= 5;
+        tags.push('overlaps Best 2 core');
+      }
+    }
+
+    return { score, tags };
+  }
+
+  // Build the Wild Card pool with all the hard gates, then sort by
+  // wildCardScore (with boosts/penalties) and pick legs honoring the
+  // existing exposure caps.
+  const wildScored = allCandidates
     .filter((c) => passesEligibility(c, WILD))
-    .filter((c) => !passesEligibility(c, ELIGIBLE) || !usedKeys.has(comboKey(c)))
-    // Wild Card prioritizes upside: highest edge × volatility above
-    // 50% probability. We re-rank by a "longshot" score that favors
-    // strong-edge picks that aren't already locks.
-    .map((c) => ({ c, longshot: c.edgeScore * Math.max(20, 105 - c.probability) }))
-    .sort((a, b) => b.longshot - a.longshot)
-    .map((x) => x.c);
-  const wildLegs = pickByCaps(wildPool, 6, CAPS_LARGE);
+    .filter(passesWildHistorical)
+    .filter((c) => !usedKeys.has(comboKey(c)))
+    .map((c) => ({ c, ...scoreWild(c) }))
+    .sort((a, b) => b.score - a.score);
+
+  // Run pickByCaps on the score-ordered pool. Because the candidate
+  // shape is the same, we can reuse the standard exposure logic.
+  const wildPool = wildScored.map((x) => x.c);
+  const wildLegs = pickByCaps(wildPool, 6, CAPS_LARGE).map((c) => ({
+    ...c,
+    wildCardReason: buildWildCardReason(c, wildScored.find((s) => s.c === c)?.tags ?? []),
+  }));
+
+  // Spec §"If No Wild Card Qualifies": always emit the Wild Card slot
+  // so the UI has a stable card to render. Empty legs + warning tells
+  // the renderer to show the "No Wild Card available tonight" copy.
   if (wildLegs.length >= 4) {
     combos.push(makeCombo('Wild Card', wildLegs, 'wild'));
+  } else {
+    const empty = makeCombo('Wild Card', wildLegs, 'wild');
+    empty.warnings.push('No Wild Card available tonight — not enough historical support.');
+    combos.push(empty);
   }
 
   return { combos };
+}
+
+// Compose a one-sentence "why this is a Wild Card" line. Drawn from
+// the boost/penalty tags collected during scoring so each leg's copy
+// reflects the actual reasoning ("hit 5 of last 10 and 2× vs opp").
+function buildWildCardReason(c: ComboCandidate, tags: string[]): string {
+  const parts: string[] = [];
+  parts.push(`Hit ${c.last10HitCount} of last 10`);
+  if (c.vsOpponentHitCount >= 1) {
+    parts.push(
+      c.vsOpponentHitCount > 1
+        ? `${c.vsOpponentHitCount}× vs ${c.opponentAbbr ?? 'this opponent'}`
+        : `hit this line vs ${c.opponentAbbr ?? 'this opponent'}`,
+    );
+  }
+  let sentence = parts.join(' · ');
+  // Append the most consequential caveat if any penalty fired.
+  const caveat = tags.find((t) =>
+    t === 'borderline L10 sample'
+    || t === 'only 1 vs-opponent game'
+    || t === 'injury uncertain'
+    || t === 'volatile stat',
+  );
+  if (caveat) sentence += ` (${caveat})`;
+  return sentence;
 }
 
 function comboKey(c: ComboCandidate): string {

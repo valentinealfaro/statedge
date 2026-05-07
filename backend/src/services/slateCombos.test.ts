@@ -22,7 +22,7 @@ function makeLine(over: Partial<ResolvedLine> & { projection: ProjectionResult }
     last10Values: [25, 26, 27, 28, 24, 26, 27, 25, 28, 24],
     hitProbability: undefined,
     injury: undefined,
-    vsOpponent: { opponentAbbr: 'PHI', gamesPlayed: 3, avg: 27 },
+    vsOpponent: { opponentAbbr: 'PHI', gamesPlayed: 3, avg: 27, values: [26, 27, 28] },
     trend: undefined,
     ...over,
   };
@@ -76,7 +76,7 @@ function strongSlate(n: number, baseProb = 75): ResolvedLine[] {
       playerId: 100 + i,
       playerName: `Player ${i}`,
       team,
-      vsOpponent: { opponentAbbr: opp, gamesPlayed: 2, avg: 26 },
+      vsOpponent: { opponentAbbr: opp, gamesPlayed: 2, avg: 26, values: [26, 27] },
       statKey: STATS_NONCORRELATED[i % STATS_NONCORRELATED.length]!,
       statLabel: 'Points',
       line: 20 + i,
@@ -214,6 +214,106 @@ describe('buildCombos correlation block', () => {
     const hasPoints = starStats.includes('points');
     const hasPra = starStats.includes('pra');
     expect(hasPoints && hasPra).toBe(false);
+  });
+});
+
+describe('buildCombos Wild Card historical gate', () => {
+  // Build a slate where the strong picks have rich L10 + vsOpp history,
+  // plus one extra "wild" pick that tries different evidence levels.
+  function withWildCandidate(opts: {
+    last10Values: number[];
+    vsOppValues: number[];
+    line: number;
+    probability?: number;
+    confidence?: number;
+    risk?: number;
+    edgeScore?: number;
+  }): ResolvedLine[] {
+    const safe = strongSlate(8, 75); // top picks for Best 6
+    // Push a separate candidate at a probability juuust below the
+    // ELIGIBLE floor (so it can't sneak onto Best 6) but inside the
+    // looser WILD bar.
+    safe.push(
+      makeLine({
+        playerId: 999,
+        playerName: 'Wild Candidate',
+        team: 'BKN',
+        vsOpponent: { opponentAbbr: 'TOR', gamesPlayed: opts.vsOppValues.length, avg: 0, values: opts.vsOppValues },
+        statKey: 'rebounds',
+        statLabel: 'Rebounds',
+        line: opts.line,
+        last10Values: opts.last10Values,
+        last10Avg: opts.last10Values.reduce((a, b) => a + b, 0) / Math.max(1, opts.last10Values.length),
+        projection: makeProjection({
+          probability: { over: opts.probability ?? 56, under: 100 - (opts.probability ?? 56) },
+          confidence: { score: opts.confidence ?? 50, label: 'Medium Confidence' },
+          risk: { score: opts.risk ?? 70, label: 'High Risk' },
+          edge: { score: opts.edgeScore ?? 40, label: 'Slight Edge', lean: 'Slight Over Lean' },
+        }),
+      }),
+    );
+    return safe;
+  }
+
+  test('candidate with 4 of L10 + 1 vs-opp hit qualifies for Wild Card', () => {
+    const lines = withWildCandidate({
+      // 4 over the line=4.5 (5,6,7,8)
+      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4],
+      // 1 of 3 vs-opp games over 4.5 (5)
+      vsOppValues: [5, 3, 4],
+      line: 4.5,
+    });
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    expect(wild).toBeDefined();
+    expect(wild!.legs.some((l) => l.playerId === 999)).toBe(true);
+  });
+
+  test('candidate with only 2 of L10 (below ≥3 floor) is rejected', () => {
+    const lines = withWildCandidate({
+      // 2 over line=4.5
+      last10Values: [5, 5, 3, 3, 3, 3, 3, 3, 3, 3],
+      vsOppValues: [5, 3, 4],
+      line: 4.5,
+    });
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    expect(wild?.legs.some((l) => l.playerId === 999)).toBeFalsy();
+  });
+
+  test('candidate with no vs-opp hit (0 hits) is rejected', () => {
+    const lines = withWildCandidate({
+      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4], // 4 hits L10
+      vsOppValues: [3, 3, 3], // 0 hits at line=4.5
+      line: 4.5,
+    });
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    expect(wild?.legs.some((l) => l.playerId === 999)).toBeFalsy();
+  });
+
+  test('Wild Card legs carry a wildCardReason', () => {
+    const lines = withWildCandidate({
+      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4],
+      vsOppValues: [5, 3, 4],
+      line: 4.5,
+    });
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    const wildCandidate = wild?.legs.find((l) => l.playerId === 999);
+    expect(wildCandidate?.wildCardReason).toBeDefined();
+    expect(wildCandidate?.wildCardReason).toContain('Hit');
+  });
+
+  test('emits empty Wild Card with warning when nothing qualifies', () => {
+    // Slate where every candidate fails the historical gate (no
+    // vs-opp data on any pick).
+    const lines = strongSlate(8).map((l) => ({ ...l, vsOpponent: undefined }));
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    expect(wild).toBeDefined();
+    expect(wild!.legs.length).toBe(0);
+    expect(wild!.warnings.some((w) => w.includes('No Wild Card'))).toBe(true);
   });
 });
 

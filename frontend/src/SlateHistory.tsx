@@ -175,17 +175,24 @@ function ComboRow({ combo }: { combo: SlateHistoryCombo }) {
                 ? leg.actual === 1 ? 'DD' : 'No DD'
                 : String(leg.actual);
           return (
-            <div key={i} className="slate-history-leg">
-              <span className={`slate-history-leg-badge ${lb.cls}`}>{lb.label}</span>
-              <span className="slate-history-leg-name">{leg.playerName}</span>
-              <span className="slate-history-leg-stat">{leg.statLabel} {lineLabel}</span>
-              <span className="slate-history-leg-actual">
-                Actual <strong>{actualLabel}</strong>
-              </span>
-              <span className="slate-history-leg-pct">
-                {legProb(leg).toFixed(0)}% predicted
-                {leg.confidenceLabel ? ` · ${leg.confidenceLabel}` : ''}
-              </span>
+            <div key={i} className="slate-history-leg-block">
+              <div className="slate-history-leg">
+                <span className={`slate-history-leg-badge ${lb.cls}`}>{lb.label}</span>
+                <span className="slate-history-leg-name">{leg.playerName}</span>
+                <span className="slate-history-leg-stat">{leg.statLabel} {lineLabel}</span>
+                <span className="slate-history-leg-actual">
+                  Actual <strong>{actualLabel}</strong>
+                </span>
+                <span className="slate-history-leg-pct">
+                  {legProb(leg).toFixed(0)}% predicted
+                  {leg.confidenceLabel ? ` · ${leg.confidenceLabel}` : ''}
+                </span>
+              </div>
+              {leg.wildCardReason && (
+                <div className="slate-history-leg-evidence">
+                  {leg.wildCardReason}
+                </div>
+              )}
             </div>
           );
         })}

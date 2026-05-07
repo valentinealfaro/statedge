@@ -607,6 +607,21 @@ export type SlateComboLeg = {
   l10Avg: number;
   vsOppAvg: number | null;
   injuryStatus: string | null;
+
+  // Hit metrics vs the leg's own line + direction. Drives the Wild
+  // Card historical-evidence display ("Hit X of last 10", "Hit Y vs
+  // opponent") and is also surfaced on safe legs so the user can see
+  // recent form context at a glance. Optional only for backwards
+  // compatibility with old snapshots that pre-date these fields.
+  last10HitCount?: number;
+  last10HitRate?: number;
+  vsOpponentGames?: number;
+  vsOpponentHitCount?: number;
+  vsOpponentHitRate?: number;
+
+  // Set only on Wild Card legs — one-sentence "why this is a Wild
+  // Card" narrative composed from hit counts + caveats.
+  wildCardReason?: string;
 };
 
 export type SlateCombo = {
@@ -783,6 +798,10 @@ export type SlateHistoryLeg = {
   confidence?: number;
   confidenceLabel?: string;
   pct?: number;     // legacy alias — only present on pre-rewrite snapshots
+  // Wild Card evidence (only set on legs from the Wild Card combo):
+  last10HitCount?: number;
+  vsOpponentHitCount?: number;
+  wildCardReason?: string;
   // Only present once the day has been graded:
   actual?: number | null;
   outcome?: 'hit' | 'miss' | 'push' | 'no_game' | 'unknown_stat';
