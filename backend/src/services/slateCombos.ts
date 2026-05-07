@@ -70,53 +70,46 @@ function confidenceLabel(score: number): string {
 // -----------------------------------------------------------------
 // EV Engine — per the StatEdge EV / market-inefficiency spec.
 //
-// PrizePicks Power Play payouts. Implied per-leg probability is the
-// `n`-th root of (1 / payout): if all legs are equally probable and
-// independent, this is the per-leg break-even rate at which a card's
-// EV is zero. Anything above this is positive expected value.
+// PrizePicks payout tables — sourced directly from the in-app FAQ
+// ("How to Play" / "What are the standard payout multipliers?").
+// Implied per-leg probability is the `n`-th root of (1 / payout):
+// if all legs are equally probable and independent, this is the
+// per-leg break-even rate at which a card's EV is zero. Anything
+// above this is positive expected value.
 //
-// Numbers tuned to match what users actually see in the PrizePicks
-// app. PrizePicks restructured Power Play payouts and currently
-// runs a "Payout Boost" promo on most accounts; we use the boosted
-// rates because that's what shows up in the user's flow. If the
-// boost is removed, base rates would be lower (e.g. 6-pick 7× base
-// vs 8.4× boosted) — adjust this table when payouts change again.
+// FLEX PLAY (partial wins allowed — what users see by default on
+// the standard PrizePicks card). 6/6 pays 25×; smaller hits pay
+// fractional refunds (5/6 = 2×, 4/6 = 0.4×, etc). We only model the
+// all-correct rate here since that's the headline / EV ceiling.
 //
-// 2-leg payout=3x   → implied per-leg ≈ 57.7%   break-even ≈ 33.3% combined
-// 3-leg payout=5x   → implied per-leg ≈ 58.5%   break-even ≈ 20%   combined
-// 4-leg payout=10x  → implied per-leg ≈ 56.2%   break-even ≈ 10%   combined
-// 5-leg payout=7x   → implied per-leg ≈ 72.6%   break-even ≈ 14.3% combined
-// 6-leg payout=8.4x → implied per-leg ≈ 74.6%   break-even ≈ 11.9% combined
-//
-// The 5-leg and 6-leg implied per-leg rates are much higher than
-// the others because the payouts are structurally worse —
-// PrizePicks restructured Power Play to make larger cards much
-// less profitable. This is exactly why the spec pushed for
-// "Aggressive Edge" identity on Best 5/6: those cards need genuine
-// market mispricing to be +EV, not safe consensus props.
+// 2-leg payout = 3×    → implied per-leg ≈ 57.7%   break-even ≈ 33.3% combined
+// 3-leg payout = 3×    → implied per-leg ≈ 69.3%   break-even ≈ 33.3% combined
+// 4-leg payout = 6×    → implied per-leg ≈ 63.9%   break-even ≈ 16.7% combined
+// 5-leg payout = 10×   → implied per-leg ≈ 63.1%   break-even ≈ 10.0% combined
+// 6-leg payout = 25×   → implied per-leg ≈ 58.6%   break-even ≈ 4.0%  combined
 // -----------------------------------------------------------------
 export const PRIZEPICKS_PAYOUTS: Record<number, number> = {
   2: 3,
-  3: 5,
-  4: 10,
-  5: 7,
-  6: 8.4,
+  3: 3,
+  4: 6,
+  5: 10,
+  6: 25,
 };
 
-// PrizePicks Power Play (all-or-nothing) payouts. Higher max than Flex
-// Play because there's no partial-win refund. Insane mode targets
-// these — the user explicitly accepts losing in exchange for a real
-// shot at a 100×+ payout.
+// POWER PLAY (all-or-nothing — higher payouts, no partial refund).
+// Insane mode targets these because the 6/6 ceiling is meaningfully
+// higher than Flex.
 //
 // 2-leg power = 3×    (parity with Flex)
-// 3-leg power = 6×    (vs 5× Flex)
-// 4-leg power = 10×   (parity)
-// 5-leg power = 20×   (vs 7× Flex)
-// 6-leg power = 37.5× (vs 8.4× Flex — the big difference)
+// 3-leg power = 6×    (vs 3× Flex)
+// 4-leg power = 10×   (vs 6× Flex)
+// 5-leg power = 20×   (vs 10× Flex)
+// 6-leg power = 37.5× (vs 25× Flex)
 //
-// With six Demons stacked at 1.25× per leg the 6-leg estimate becomes
-// 37.5 × 1.25^6 ≈ 143×, which is the "$1 → $143" lottery target the
-// Insane spec is built around.
+// With six Demons stacked at 1.05× per leg (the FAQ scoring weight)
+// the 6-leg estimate becomes 37.5 × 1.05^6 ≈ 50×, which is the
+// realistic Insane-mode payout ceiling. Bigger numbers like 100×+
+// aren't structurally available on a single PrizePicks card.
 export const PRIZEPICKS_POWER_PLAY_PAYOUTS: Record<number, number> = {
   2: 3,
   3: 6,
@@ -125,15 +118,15 @@ export const PRIZEPICKS_POWER_PLAY_PAYOUTS: Record<number, number> = {
   6: 37.5,
 };
 
-// Per-leg payout multiplier applied when the leg is a PrizePicks
-// Demon (over-only, harder line). Industry standard ranges 1.25×–2×;
-// we use 1.25× as a conservative estimate so the displayed lottery
-// payout doesn't overstate what the user will actually see in-app.
-const DEMON_LEG_MULTIPLIER = 1.25;
-// Goblin legs (under-only, easier line) pay LESS — we don't surface
-// these on Insane cards but if one slips in, factor in the discount
-// so the estimated payout stays honest.
-const GOBLIN_LEG_MULTIPLIER = 0.85;
+// Per-leg payout multiplier for PrizePicks Demon (over-only, harder
+// line) and Goblin (under-only, easier line). Sourced from the FAQ
+// scoring weights: "Each correct Demon pick is worth 1.05 points"
+// and "Each correct Goblin pick is worth 0.95 points." This is the
+// canonical PrizePicks weight; previous versions used 1.25 / 0.85
+// based on misread industry estimates. Conservative numbers here
+// prevent the UI from overstating the lottery ceiling.
+const DEMON_LEG_MULTIPLIER = 1.05;
+const GOBLIN_LEG_MULTIPLIER = 0.95;
 
 // Estimate a card's PrizePicks payout, factoring in Demon/Goblin
 // per-leg multipliers and the user's chosen play type. Insane uses
@@ -1449,14 +1442,16 @@ const SUBTITLES: Record<Combo['label'], string> = {
 };
 
 // Insane-mode override copy. Lottery-ticket framing: low hit rate,
-// huge upside. The numbers reference Power Play + Demon-stacked
-// payouts (~143× target on a 6-leg, ~38× on a 5-leg).
+// max upside available on PrizePicks. Numbers reference Power Play
+// + Demon-stacked payouts (FAQ weights: 1.05× per Demon).
+//   5-leg Power Play, 5 Demons: 20 × 1.05^5 ≈ 25.5×
+//   6-leg Power Play, 6 Demons: 37.5 × 1.05^6 ≈ 50×
 const INSANE_SUBTITLES: Record<Combo['label'], string> = {
   'Best 2': 'Lottery · 2-leg Power Play',
   'Best 3': 'Lottery · 3-leg Power Play',
   'Best 4': 'Lottery · 4-leg Power Play',
-  'Best 5': 'Lottery · ~38× target with Demon stack',
-  'Best 6': 'Lottery · ~143× target with Demon stack',
+  'Best 5': 'Lottery · ~25× target with Demon stack',
+  'Best 6': 'Lottery · ~50× target with Demon stack',
   'Wild Card': 'Lottery · maximum-upside fallback',
 };
 

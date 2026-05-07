@@ -1907,7 +1907,7 @@ function SlateModeSelector({
     { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
     { id: 'balanced',   label: 'Balanced',   hint: 'Recommended for most users · all card sizes',       meter: 2 },
     { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
-    { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~100×+ target · Power Play + Demons',   meter: 5 },
+    { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~50× target · Power Play + Demons',   meter: 5 },
     { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
   ];
   const showAutoBadge = mode === 'auto' && resolvedMode !== undefined;
@@ -1941,10 +1941,11 @@ function SlateModeSelector({
       )}
       {mode === 'insane' && (
         <div className="slate-mode-insane-warn">
-          🎟 Lottery-ticket mode. Cards target <strong>~38×</strong> (5-leg)
-          and <strong>~143×</strong> (6-leg) using PrizePicks Power Play +
-          Demon-stacked legs. Hit rate is intentionally low — most cards
-          will miss. Pick this only if a $1 → $143 ticket is what you want.
+          🎟 Lottery-ticket mode. Cards target <strong>~25×</strong> (5-leg)
+          and <strong>~50×</strong> (6-leg) using PrizePicks Power Play +
+          Demon-stacked legs (FAQ scoring weights). Hit rate is intentionally
+          low — most cards will miss. ~50× is the realistic ceiling on a
+          single PrizePicks card.
         </div>
       )}
     </div>

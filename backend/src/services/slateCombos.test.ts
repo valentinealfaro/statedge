@@ -361,16 +361,15 @@ describe('buildCombos EV engine', () => {
     }
   });
 
-  test('Power Play payouts match what users see in the app', () => {
-    // Regressions: 5-pick was 20x (wrong, actually 7x); 6-pick was
-    // 25x (wrong, actually 8.4x). PrizePicks restructured Power Play
-    // payouts and we have to match what the app shows the user.
-    // If PrizePicks changes again, update PRIZEPICKS_PAYOUTS.
+  test('Flex Play payouts match the in-app FAQ rates', () => {
+    // Sourced from the PrizePicks FAQ ("standard payout multipliers"):
+    // Flex Play 6/6 = 25x, 5/5 = 10x, 4/4 = 6x, 3/3 = 3x, 2/2 = 3x.
+    // Anything else means the table drifted from PrizePicks reality.
     const { combos } = buildCombos(strongSlate(20, 80));
     const best5 = combos.find((c) => c.label === 'Best 5');
     const best6 = combos.find((c) => c.label === 'Best 6');
-    expect(best5?.payoutMultiplier).toBe(7);
-    expect(best6?.payoutMultiplier).toBe(8.4);
+    expect(best5?.payoutMultiplier).toBe(10);
+    expect(best6?.payoutMultiplier).toBe(25);
   });
 
   test('Best 2 with 90% legs at 3x payout reads as Positive EV', () => {
