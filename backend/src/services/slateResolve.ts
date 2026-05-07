@@ -15,14 +15,26 @@ export type ResolveResult =
   | { ok: true; playerId: number; fullName: string; matchType: 'exact' | 'last_name' | 'fuzzy' }
   | { ok: false; reason: 'no_player_match' | 'ambiguous' };
 
+// Trailing generation suffixes the NBA roster uses ("Ron Holland II",
+// "Larry Nance Jr", "Marcus Morris Sr") that PrizePicks usually drops.
+// We strip them on both sides of the match so "Ronald Holland" can
+// resolve to "Ron Holland II" via the last-name path.
+const NAME_SUFFIXES = new Set(['ii', 'iii', 'iv', 'v', 'jr', 'sr']);
+
 function fold(s: string): string {
-  return s
+  const base = s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z\s]/g, '')   // strip punctuation + apostrophes
     .replace(/\s+/g, ' ')
     .trim();
+  // Drop trailing generation suffixes: "ron holland ii" → "ron holland"
+  const parts = base.split(' ');
+  while (parts.length > 1 && NAME_SUFFIXES.has(parts[parts.length - 1]!)) {
+    parts.pop();
+  }
+  return parts.join(' ');
 }
 
 // Iterative O(m*n) Levenshtein. Players have short names so this is fine
