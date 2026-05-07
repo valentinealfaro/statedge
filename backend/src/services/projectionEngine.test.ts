@@ -217,3 +217,82 @@ describe('projectionEngine.isProjectable', () => {
     expect(isProjectable('stocks')).toBe(true);
   });
 });
+
+// Bayesian shrinkage + robust stats — verify the new behavior pulls
+// hot/cold L5 streaks back toward longer baselines, and that outlier
+// games don't drive the projection as hard as before.
+describe('projectionEngine — Bayesian shrinkage + robust stats', () => {
+  // Builds a 20-game season where the L10 has been steady (~25) but
+  // the L5 (newest 5 games at the front of the array) is on a 35-PPG
+  // hot streak. Without shrinkage, the projection would lean heavily
+  // toward 30+; with shrinkage, it should be pulled back toward L10.
+  function hotStreakSeason(): PlayerGame[] {
+    // Newest first (slatePipeline sorts that way). L5 = first 5 games
+    // at 35; the rest of the season (15 games) at ~25.
+    const recent = [35, 36, 34, 35, 35];
+    const earlier = [25, 24, 26, 25, 27, 24, 26, 25, 23, 26, 25, 27, 24, 25, 26];
+    const pts = [...recent, ...earlier];
+    return pts.map((p, i) =>
+      game({ gameId: `g${i}`, points: p, rebounds: 7, assists: 6, minutes: 36 }),
+    );
+  }
+
+  it('pulls a hot L5 streak back toward the L10 baseline', () => {
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 28.5,
+      seasonGames: hotStreakSeason(),
+    });
+    // L5 mean ≈ 35, L10 mean ≈ 30, season ≈ 27. Without shrinkage the
+    // projection would land ≥ 30. With shrinkage we expect < 30 —
+    // closer to the L10 baseline.
+    expect(r.projection.final).toBeLessThan(30);
+    expect(r.projection.final).toBeGreaterThan(26);
+    expect(r.modelNotes.some((n) => n.toLowerCase().includes('shrunk') || n.toLowerCase().includes('shrinkage'))).toBe(true);
+  });
+
+  it('vs-opp single-game outlier gets pulled back toward season', () => {
+    // Steady ~25 PPG season with a single 50-point explosion vs SAC.
+    // Without shrinkage, the vs-opp window weight would push the
+    // projection up sharply; with shrinkage on a 1-game vs-opp sample
+    // (priorStrength=6), the outlier loses most of its leverage.
+    const points = [25, 24, 26, 25, 27, 24, 26, 25, 23, 26, 25, 27, 24, 25, 26, 50];
+    const oppAbbrs = ['LAL', 'BOS', 'BOS', 'BOS', 'BOS', 'LAL', 'BOS', 'BOS',
+                      'BOS', 'BOS', 'BOS', 'LAL', 'BOS', 'BOS', 'BOS', 'SAC'];
+    const games: PlayerGame[] = points.map((p, i) =>
+      game({ gameId: `g${i}`, points: p, opponentAbbr: oppAbbrs[i], minutes: 36 }),
+    );
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 28.5,
+      seasonGames: games,
+      opponentAbbr: 'SAC',     // single-game vs-opp sample
+    });
+    // The 50-point outlier vs SAC shouldn't drag the projection above
+    // the season mean by more than a few points — shrinkage caps it.
+    expect(r.projection.final).toBeLessThan(31);
+  });
+
+  it('outlier game has muted impact thanks to trimmed mean', () => {
+    // Same steady distribution but one extreme outlier game. With the
+    // old pure-arithmetic-mean blend, this outlier would pull the
+    // baseline up; with the trimmed mean weighted at 30%, its impact
+    // is reduced.
+    const baseline = Array(19).fill(25) as number[];
+    baseline.unshift(60);  // one extreme game at the top
+    const games: PlayerGame[] = baseline.map((p, i) =>
+      game({ gameId: `g${i}`, points: p, minutes: 36 }),
+    );
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 27,
+      seasonGames: games,
+    });
+    // With the outlier dropped by trimmed mean, the season-window
+    // score reflects ~25 not ~27, so the projection lands closer to
+    // 25 than to a non-trimmed blend would.
+    expect(r.factorBreakdown.seasonAvg).toBeCloseTo(26.75, 1);  // arithmetic still includes the 60
+    // Final projection should be closer to 25-27 than to 30.
+    expect(r.projection.final).toBeLessThan(30);
+  });
+});

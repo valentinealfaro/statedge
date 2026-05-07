@@ -158,6 +158,37 @@ function median(xs: number[]): number {
   return m % 2 === 1 ? sorted[(m - 1) / 2] : (sorted[m / 2 - 1] + sorted[m / 2]) / 2;
 }
 
+// Robust mean — drop the most extreme values from each tail before
+// averaging. Reduces the influence of outlier games (a 50-point
+// explosion or a 4-minute foul-out) on the projection. For samples
+// too small to trim (<5), falls back to the arithmetic mean.
+function trimmedMean(xs: number[], trimFraction = 0.1): number {
+  if (xs.length === 0) return 0;
+  if (xs.length < 5) return mean(xs);
+  const sorted = [...xs].sort((a, b) => a - b);
+  const trim = Math.floor(sorted.length * trimFraction);
+  const window = trim > 0 ? sorted.slice(trim, sorted.length - trim) : sorted;
+  return mean(window);
+}
+
+// Bayesian shrinkage — pull an observed mean toward a stronger-signal
+// prior. `priorStrength` represents "as if I had observed this many
+// games of the prior estimate". When the observed sample (n) is small
+// relative to priorStrength, the prior dominates; as n grows, the
+// observation takes over.
+//
+// Used to keep small windows (L5, single-game vs-opp samples) from
+// pushing the projection too far when their evidence is thin.
+function bayesianShrink(
+  observed: number,
+  observedN: number,
+  prior: number,
+  priorStrength: number,
+): number {
+  if (observedN <= 0) return prior;
+  return (observed * observedN + prior * priorStrength) / (observedN + priorStrength);
+}
+
 function popStdDev(xs: number[]): number {
   if (xs.length === 0) return 0;
   const m = mean(xs);
@@ -195,21 +226,45 @@ function valuesFor(games: PlayerGame[], stat: Exclude<Last10StatId, 'double_doub
   return games.map(get);
 }
 
-// Per the spec's "windowScore" formula — blend avg, median, hit-rate-
-// adjusted value. Returns null when the window is empty.
+// Robust window score — blends arithmetic mean, trimmed mean, median,
+// and a hit-rate-adjusted value. Trimmed mean reduces outlier
+// distortion (one 50-point explosion or a 4-minute foul-out can swing
+// a small sample); arithmetic mean keeps directional sensitivity;
+// median anchors central tendency; hit-rate adjustment shifts the
+// estimate toward the side of the line the player has historically
+// landed on.
+//
+// Returns null when the window is empty.
 function windowScore(
   values: number[],
   line: number,
-): { score: number; avg: number; med: number; hitRate: number; n: number } | null {
+): {
+  score: number;
+  avg: number;
+  med: number;
+  trimmed: number;
+  hitRate: number;
+  n: number;
+} | null {
   if (values.length === 0) return null;
   const avg = mean(values);
   const med = median(values);
+  const trimmed = trimmedMean(values);
   const hitRate = values.filter((v) => v > line).length / values.length;
   const hitRateEdge = hitRate - 0.5;
   const hitRateAdjustment = line * hitRateEdge * 0.10;
   const hitRateAdjustedValue = avg + hitRateAdjustment;
-  const score = avg * 0.6 + med * 0.25 + hitRateAdjustedValue * 0.15;
-  return { score, avg, med, hitRate, n: values.length };
+  // Weights total 1.0. Trimmed mean and median together (0.55) carry
+  // the bulk of the central-tendency signal so outliers don't drive
+  // the score; mean (0.30) keeps the trend-direction weight up; the
+  // hit-rate adjustment (0.15) pulls toward whichever side of the
+  // line the values have historically landed on.
+  const score =
+    trimmed * 0.30 +
+    avg * 0.30 +
+    med * 0.25 +
+    hitRateAdjustedValue * 0.15;
+  return { score, avg, med, trimmed, hitRate, n: values.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -329,13 +384,57 @@ export function project(inp: ProjectionInputs): ProjectionResult {
   }
 
   // -------------------------------------------------------------------------
+  // Bayesian shrinkage on small-sample windows
+  // -------------------------------------------------------------------------
+  // Last-5 and vs-opponent are the noisiest windows in the blend
+  // (n=5 always for L5; vs-opp can be 1-4 games). Without shrinkage,
+  // a single hot streak or a freak matchup game can push the
+  // projection by an unrealistic amount. We pull these scores back
+  // toward a longer-baseline prior — L5 → L10 (or season fallback),
+  // vs-opp → season — using sample-size-aware shrinkage. Larger
+  // priorStrength = more pull toward the prior.
+  // Helper — true when the shrinkage moves the estimate by enough to
+  // be worth telling the user about. Either ≥1.0 in stat units (a
+  // single point of points or rebound) OR ≥5% relative — whichever
+  // fires first. Below that, the shrinkage is just noise damping.
+  const meaningfulShrink = (before: number, after: number): boolean => {
+    const abs = Math.abs(after - before);
+    return abs >= 1.0 || abs / Math.max(1, Math.abs(before)) >= 0.05;
+  };
+
+  let last5Score = last5W?.score ?? null;
+  if (last5W) {
+    const prior = last10W?.score ?? seasonW?.score ?? null;
+    if (prior !== null) {
+      const shrunk = bayesianShrink(last5W.score, last5W.n, prior, 8);
+      if (meaningfulShrink(last5W.score, shrunk)) {
+        notes.push('L5 estimate pulled toward longer-baseline (Bayesian shrinkage).');
+      }
+      last5Score = shrunk;
+    }
+  }
+
+  let oppScore = oppW?.score ?? null;
+  if (oppW && seasonW) {
+    const shrunk = bayesianShrink(oppW.score, oppW.n, seasonW.score, 6);
+    if (meaningfulShrink(oppW.score, shrunk)) {
+      notes.push(
+        oppW.n <= 2
+          ? `Vs-opp estimate (only ${oppW.n} game${oppW.n === 1 ? '' : 's'}) shrunk toward season baseline.`
+          : 'Vs-opp estimate shrunk toward season baseline.',
+      );
+    }
+    oppScore = shrunk;
+  }
+
+  // -------------------------------------------------------------------------
   // Layer 1 — Baseline projection
   // -------------------------------------------------------------------------
   const baselineProjection =
     (seasonW?.score ?? seasonAvg) * wSeason +
     (last10W?.score ?? last10Avg) * wL10 +
-    (last5W?.score ?? last10Avg) * wL5 +
-    (oppW?.score ?? 0) * wOpp +
+    (last5Score ?? last10Avg) * wL5 +
+    (oppScore ?? 0) * wOpp +
     (homeAwayW?.score ?? 0) * wHA +
     usageMinutesScore * wUsage;
 
