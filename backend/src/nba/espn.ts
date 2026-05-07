@@ -31,12 +31,27 @@ export type EspnScoreboardGame = {
   home: EspnGameTeam;
 };
 
+// US Eastern calendar date, YYYY-MM-DD. ESPN's "no-date" scoreboard
+// lags behind by a day at certain hours (returns yesterday's slate
+// even after midnight ET), so we always pass today's ET date
+// explicitly when the caller didn't specify one.
+function todayEt(): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date());
+}
+
 export async function fetchScoreboard(date?: string): Promise<{
   date: string | null;
   games: EspnScoreboardGame[];
 }> {
-  // ESPN's `dates` param is YYYYMMDD with no separators. Omit to get today.
-  const url = date ? `${ESPN}/scoreboard?dates=${date.replace(/-/g, '')}` : `${ESPN}/scoreboard`;
+  // ESPN's `dates` param is YYYYMMDD with no separators. Always pass
+  // a date — the no-arg form returns yesterday's slate at certain
+  // hours, which is exactly the bug we hit.
+  const effectiveDate = date ?? todayEt();
+  const url = `${ESPN}/scoreboard?dates=${effectiveDate.replace(/-/g, '')}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`ESPN scoreboard ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
