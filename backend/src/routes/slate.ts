@@ -760,11 +760,25 @@ slateRouter.get('/history/:date', async (req, res) => {
 // land in the report automatically once their lazy-grade pass runs.
 slateRouter.get('/calibration', async (_req, res) => {
   if (!isDbConfigured()) {
+    // Empty-state response — same shape as a real report so the
+    // frontend can render its empty placeholder without branching.
+    const emptyBucket = {
+      label: 'Overall',
+      sampleSize: 0,
+      sampleConfidence: 'Experimental' as const,
+      predictedAvg: 0,
+      actualHitRate: 0,
+      smoothedHitRate: 0,
+      calibrationError: 0,
+      gap: 0,
+      status: 'Excellent Calibration' as const,
+    };
     res.json({
-      overall: { label: 'Overall', sampleSize: 0, predictedAvg: 0, actualHitRate: 0, gap: 0 },
+      overall: emptyBucket,
       byProbability: [],
       byStat: [],
       byConfidence: [],
+      byRisk: [],
       daysAnalyzed: 0,
       legsAnalyzed: 0,
       rangeStart: null,

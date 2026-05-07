@@ -16,19 +16,50 @@ import type { Last10StatId } from './last10.js';
 import type { GradedCombo, GradedLeg } from './slateGrade.js';
 import { LAST10_LABELS } from './last10.js';
 
+// Sample-size confidence tier (spec §"Sample Size Confidence"). Tells
+// the UI whether a bucket's calibration number is statistically
+// meaningful or experimental noise.
+export type SampleConfidence =
+  | 'Experimental'        // 0-24 samples
+  | 'Low Confidence'      // 25-99
+  | 'Stabilizing'         // 100-499
+  | 'Strong'              // 500-1999
+  | 'Highly Stable';      // 2000+
+
+// Calibration status label (spec §"Calibration Status Labels" +
+// "Overconfidence Labels"). Combines magnitude of error with sign:
+// positive = overconfident, negative = underconfident.
+export type CalibrationStatus =
+  | 'Excellent Calibration'        // ±0-3
+  | 'Good Calibration'             // ±4-7
+  | 'Moderate Drift'               // ±8-12
+  | 'Poor Calibration'             // ±13-20
+  | 'Dangerously Overconfident'    // > 20 (positive only)
+  | 'Underconfident';              // ≤ -8 (model under-sold)
+
 export type CalibrationBucket = {
   label: string;
   // Sample size — how many distinct (date, player, stat, line, dir)
-  // legs landed in this bucket. Buckets with n < 10 should be read
-  // with caution; the UI surfaces an indicator.
+  // legs landed in this bucket.
   sampleSize: number;
+  sampleConfidence: SampleConfidence;
   // Average probability we predicted across legs in this bucket.
   predictedAvg: number;
-  // Actual hit rate (push counts as hit, mirroring the parlay grader).
+  // Raw actual hit rate (push counts as hit, mirroring the parlay
+  // grader). Useful for honesty but unstable on tiny samples.
   actualHitRate: number;
-  // predictedAvg − actualHitRate. Positive means we were overconfident
-  // (claimed more than we delivered); negative means we under-sold.
+  // Bayesian-smoothed actual hit rate (spec §"Bayesian Calibration
+  // Smoothing"). Default prior: 11 hits over 20 samples (≈55%).
+  // Pulls 0/1 → 52.4% and 1/1 → 57.1% rather than the 0%/100%
+  // raw values that crash a calibration view. This is the figure
+  // we use for the gap calculation and the status label.
+  smoothedHitRate: number;
+  // predictedAvg − smoothedHitRate. Positive = overconfident,
+  // negative = underconfident. Renamed from `gap` per spec.
+  calibrationError: number;
+  // Backward-compat alias; some old frontends still read `gap`.
   gap: number;
+  status: CalibrationStatus;
 };
 
 export type CalibrationReport = {
@@ -36,10 +67,12 @@ export type CalibrationReport = {
   byProbability: CalibrationBucket[];
   byStat: CalibrationBucket[];
   byConfidence: CalibrationBucket[];
+  // Risk-tier calibration (spec §"Risk Tier Calibration") — verifies
+  // the risk engine is actually predicting risk. Picks tagged "High
+  // Risk" should hit less often than "Low Risk" picks.
+  byRisk: CalibrationBucket[];
   daysAnalyzed: number;
   legsAnalyzed: number;          // distinct legs after dedupe
-  // First and last slate dates contributing to the report. Useful for
-  // the UI to render a date range.
   rangeStart: string | null;
   rangeEnd: string | null;
 };
@@ -65,8 +98,51 @@ type DedupedLeg = {
   probability: number;
   statKey: Last10StatId;
   confidenceLabel: string | null;
+  riskScore: number | null;        // 0-100; null when missing on legacy snapshots
   outcome: 'hit' | 'miss' | 'push';
 };
+
+// Bayesian smoothing prior (spec §"Prior Settings"). 11 hits over 20
+// samples encodes a baseline expectation of ~55% — close to the
+// long-run hit rate of NBA props at typical PrizePicks lines. With
+// these priors:
+//   - 0/1 hits  → smoothed 11/21 = 52.4%
+//   - 1/1 hits  → smoothed 12/21 = 57.1%
+//   - 30/50 hits→ smoothed 41/70 = 58.6%
+//   - 300/500   → smoothed 311/520 = 59.8% (prior fading)
+const PRIOR_HITS = 11;
+const PRIOR_SAMPLES = 20;
+
+function sampleConfidence(n: number): SampleConfidence {
+  if (n >= 2000) return 'Highly Stable';
+  if (n >= 500) return 'Strong';
+  if (n >= 100) return 'Stabilizing';
+  if (n >= 25) return 'Low Confidence';
+  return 'Experimental';
+}
+
+// Map a calibration error (predicted − actual smoothed) to a status
+// label. Magnitude bands match the spec; sign decides over- vs
+// under-confidence.
+function calibrationStatus(error: number): CalibrationStatus {
+  const abs = Math.abs(error);
+  if (error > 20) return 'Dangerously Overconfident';
+  if (error <= -8) return 'Underconfident';
+  if (abs <= 3) return 'Excellent Calibration';
+  if (abs <= 7) return 'Good Calibration';
+  if (abs <= 12) return 'Moderate Drift';
+  return 'Poor Calibration';
+}
+
+// Risk-tier bucketing matches the projection engine's risk-score
+// labels. Ranges chosen to align with the spec's tier ladder.
+function riskTier(score: number): 'Low Risk' | 'Medium Risk' | 'High Risk' | 'Extreme Risk' {
+  if (score < 40) return 'Low Risk';
+  if (score < 60) return 'Medium Risk';
+  if (score < 80) return 'High Risk';
+  return 'Extreme Risk';
+}
+const RISK_TIERS = ['Low Risk', 'Medium Risk', 'High Risk', 'Extreme Risk'] as const;
 
 // Outcome → 0/1 for hit-rate accumulation. Push counts as 1 to mirror
 // the parlay grader's "survival" semantics. no_game / unknown_stat
@@ -113,7 +189,7 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
           leg.outcome !== 'miss' &&
           leg.outcome !== 'push'
         ) continue;
-        const lp = leg as { probability?: number; pct?: number };
+        const lp = leg as { probability?: number; pct?: number; risk?: number };
         const probability =
           typeof lp.probability === 'number' ? lp.probability
           : typeof lp.pct === 'number' ? lp.pct
@@ -128,6 +204,8 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
           probability,
           statKey: leg.statKey,
           confidenceLabel: leg.confidenceLabel ?? null,
+          riskScore:
+            typeof lp.risk === 'number' && Number.isFinite(lp.risk) ? lp.risk : null,
           outcome: leg.outcome,
         });
       }
@@ -144,18 +222,40 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
 
 function aggregateBucket(label: string, legs: DedupedLeg[]): CalibrationBucket {
   if (legs.length === 0) {
-    return { label, sampleSize: 0, predictedAvg: 0, actualHitRate: 0, gap: 0 };
+    // Empty bucket — render an honest zero rather than NaN. Status is
+    // "Excellent" by default so empty rows don't paint everything red.
+    return {
+      label,
+      sampleSize: 0,
+      sampleConfidence: sampleConfidence(0),
+      predictedAvg: 0,
+      actualHitRate: 0,
+      smoothedHitRate: 0,
+      calibrationError: 0,
+      gap: 0,
+      status: 'Excellent Calibration',
+    };
   }
   const predictedSum = legs.reduce((s, l) => s + l.probability, 0);
   const hitSum = legs.reduce((s, l) => s + outcomeAsHit(l.outcome), 0);
   const predictedAvg = predictedSum / legs.length;
   const actualHitRate = (hitSum / legs.length) * 100;
+  // Bayesian-smoothed hit rate — pulls tiny samples toward the prior
+  // (≈55%) so 0/1 ≠ 0% and 1/1 ≠ 100%. As `legs.length` grows, the
+  // prior fades and smoothed → raw.
+  const smoothedHitRate =
+    ((hitSum + PRIOR_HITS) / (legs.length + PRIOR_SAMPLES)) * 100;
+  const calibrationError = predictedAvg - smoothedHitRate;
   return {
     label,
     sampleSize: legs.length,
+    sampleConfidence: sampleConfidence(legs.length),
     predictedAvg: round1(predictedAvg),
     actualHitRate: round1(actualHitRate),
-    gap: round1(predictedAvg - actualHitRate),
+    smoothedHitRate: round1(smoothedHitRate),
+    calibrationError: round1(calibrationError),
+    gap: round1(calibrationError),     // legacy alias
+    status: calibrationStatus(calibrationError),
   };
 }
 
@@ -201,11 +301,22 @@ export function computeCalibration(snapshots: CalibrationInput[]): CalibrationRe
     byConfidence.push(aggregateBucket('Unknown', unknown));
   }
 
+  // Risk tiers — only legs that carry a risk score (newer snapshots).
+  // Legacy snapshots without risk get nothing here, which is fine —
+  // the panel only renders rows with samples.
+  const byRisk = RISK_TIERS.map((tier) =>
+    aggregateBucket(
+      tier,
+      legs.filter((l) => l.riskScore !== null && riskTier(l.riskScore) === tier),
+    ),
+  );
+
   return {
     overall,
     byProbability,
     byStat,
     byConfidence,
+    byRisk,
     daysAnalyzed,
     legsAnalyzed: legs.length,
     rangeStart,

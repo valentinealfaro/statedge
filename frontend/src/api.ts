@@ -882,12 +882,37 @@ export async function getSlateHistoryDay(date: string): Promise<SlateHistoryDay>
 
 // --- Slate calibration (predicted vs actual hit-rate breakdown) ---
 
+export type SampleConfidence =
+  | 'Experimental'
+  | 'Low Confidence'
+  | 'Stabilizing'
+  | 'Strong'
+  | 'Highly Stable';
+
+export type CalibrationStatus =
+  | 'Excellent Calibration'
+  | 'Good Calibration'
+  | 'Moderate Drift'
+  | 'Poor Calibration'
+  | 'Dangerously Overconfident'
+  | 'Underconfident';
+
 export type CalibrationBucket = {
   label: string;
   sampleSize: number;
-  predictedAvg: number;        // 0-100 — avg probability we predicted
-  actualHitRate: number;       // 0-100 — actual hit rate, push counts as hit
-  gap: number;                 // predictedAvg - actualHitRate (positive = overconfident)
+  // Sample-size confidence tier — drives the chip and the "experimental"
+  // badge in the UI.
+  sampleConfidence?: SampleConfidence;
+  predictedAvg: number;             // 0-100
+  actualHitRate: number;            // 0-100, raw
+  // Bayesian-smoothed hit rate (prior 11/20 ≈ 55%). Stable on tiny
+  // samples; this is what the calibration gap is computed against.
+  smoothedHitRate?: number;
+  // predictedAvg - smoothedHitRate. Positive = overconfident,
+  // negative = underconfident. Renamed from `gap`.
+  calibrationError?: number;
+  gap: number;                      // legacy alias, kept for old responses
+  status?: CalibrationStatus;
 };
 
 export type CalibrationReport = {
@@ -895,6 +920,7 @@ export type CalibrationReport = {
   byProbability: CalibrationBucket[];
   byStat: CalibrationBucket[];
   byConfidence: CalibrationBucket[];
+  byRisk?: CalibrationBucket[];
   daysAnalyzed: number;
   legsAnalyzed: number;
   rangeStart: string | null;

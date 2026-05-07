@@ -2564,9 +2564,9 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .slate-calibration-row {
   display: grid;
-  grid-template-columns: 2fr 60px 100px 100px 110px;
+  grid-template-columns: 1.6fr 50px 110px 90px 90px 130px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
   font-size: 13px;
   border-top: 1px solid var(--border-subtle);
@@ -2604,14 +2604,70 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .slate-calibration-row .gap.under { color: var(--hot); }
 .slate-calibration-row .gap.calibrated { color: var(--brand-blue); }
 
+/* Calibration status pills (Excellent / Good / Drift / Poor / Danger /
+   Underconfident). Match the verdict's tone. Used both in the overall
+   banner and inline in each table row. */
+.cal-status {
+  font-weight: 700;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.slate-calibration-row .cal-status {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+.slate-calibration-overall-row .cal-status {
+  margin-left: auto;
+}
+.cal-status.excellent { background: var(--hot-bg); color: var(--hot); }
+.cal-status.good      { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
+.cal-status.under     { background: rgba(91,141,239,0.20); color: var(--brand-blue); }
+.cal-status.drift     { background: rgba(255,184,107,0.15); color: var(--warn); }
+.cal-status.poor      { background: var(--cold-bg); color: var(--cold); }
+.cal-status.danger    {
+  background: rgba(239,106,106,0.25);
+  color: #ff8888;
+  border: 1px solid var(--cold-border);
+}
+.slate-calibration-row .cal-status.excellent { color: var(--hot); }
+.slate-calibration-row .cal-status.good      { color: var(--brand-blue); }
+.slate-calibration-row .cal-status.under     { color: var(--brand-blue); }
+.slate-calibration-row .cal-status.drift     { color: var(--warn); }
+.slate-calibration-row .cal-status.poor      { color: var(--cold); }
+.slate-calibration-row .cal-status.danger    { color: #ff8888; }
+
+/* Sample-confidence chip (Experimental → Highly Stable). Lighter
+   visual weight than the status pill — informational, not a verdict. */
+.sample-conf {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-3);
+  white-space: nowrap;
+  display: inline-block;
+}
+.sample-conf.stable       { background: var(--hot-bg); color: var(--hot); }
+.sample-conf.strong       { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
+.sample-conf.stabilizing  { background: rgba(124,77,255,0.12); color: var(--brand-purple); }
+.sample-conf.low          { background: rgba(255,184,107,0.10); color: var(--warn); }
+.sample-conf.experimental { background: rgba(239,106,106,0.10); color: var(--cold); }
+
 @media (max-width: 720px) {
   .slate-calibration-row {
-    grid-template-columns: 1.5fr 40px 80px 80px 80px;
-    gap: 6px;
-    font-size: 12px;
+    grid-template-columns: 1.4fr 36px 80px 70px 70px 90px;
+    gap: 5px;
+    font-size: 11px;
     padding: 8px 10px;
   }
-  .slate-calibration-overall-gap { margin-left: 0; }
+  .slate-calibration-overall-row .cal-status { margin-left: 0; }
+  .sample-conf { font-size: 9px; padding: 2px 6px; }
 }
 
 /* Player-card collapse states. Header is always visible; the props

@@ -39,6 +39,9 @@ export type GradedLeg = {
   probability: number;
   confidence?: number;
   confidenceLabel?: string;
+  // Risk score echoed for the calibration view's By-Risk panel.
+  // Optional because pre-rewrite snapshots didn't store it.
+  risk?: number;
 
   // Wild Card evidence (only set on legs from the Wild Card combo):
   last10HitCount?: number;
@@ -92,6 +95,11 @@ function legConfidenceLabel(leg: ComboLeg): string | undefined {
   return typeof lp.confidenceLabel === 'string' ? lp.confidenceLabel : undefined;
 }
 
+function legRisk(leg: ComboLeg): number | undefined {
+  const lp = leg as { risk?: number };
+  return typeof lp.risk === 'number' && Number.isFinite(lp.risk) ? lp.risk : undefined;
+}
+
 // Wild Card snapshot fields. Optional because:
 //   - They were added in a later iteration; pre-existing snapshots
 //     don't carry them.
@@ -127,6 +135,7 @@ export function gradeLeg(
   const probability = legProbability(leg);
   const confidence = legConfidence(leg);
   const confidenceLabel = legConfidenceLabel(leg);
+  const risk = legRisk(leg);
   const wild = legWildCardFields(leg);
 
   if (!game) {
@@ -142,6 +151,7 @@ export function gradeLeg(
       probability,
       confidence,
       confidenceLabel,
+      risk,
       ...wild,
       actual: null,
       outcome: 'no_game',
@@ -175,6 +185,7 @@ export function gradeLeg(
     probability,
     confidence,
     confidenceLabel,
+    risk,
     ...wild,
     actual,
     outcome,

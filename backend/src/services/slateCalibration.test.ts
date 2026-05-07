@@ -44,8 +44,10 @@ describe('computeCalibration', () => {
     expect(r.overall.sampleSize).toBe(0);
   });
 
-  test('aggregates predicted vs actual correctly', () => {
-    // 2 legs at 70% predicted; 1 hit, 1 miss → actual hit rate 50%
+  test('aggregates predicted vs actual correctly with Bayesian smoothing', () => {
+    // 2 legs at 70% predicted; 1 hit, 1 miss. Raw actual = 50%.
+    // Smoothed = (1 + 11) / (2 + 20) = 12/22 ≈ 54.5%.
+    // Calibration error = 70 - 54.5 = 15.5 (overconfident).
     const r = computeCalibration([
       snap('2026-05-01', [
         leg({ probability: 70, outcome: 'hit', playerId: 1, statKey: 'points' }),
@@ -54,8 +56,35 @@ describe('computeCalibration', () => {
     ]);
     expect(r.legsAnalyzed).toBe(2);
     expect(r.overall.predictedAvg).toBe(70);
-    expect(r.overall.actualHitRate).toBe(50);
-    expect(r.overall.gap).toBe(20);     // overconfident
+    expect(r.overall.actualHitRate).toBe(50);          // raw
+    expect(r.overall.smoothedHitRate).toBeCloseTo(54.5, 0);
+    expect(r.overall.calibrationError).toBeCloseTo(15.5, 0);
+    expect(r.overall.gap).toBeCloseTo(15.5, 0);         // legacy alias
+    expect(r.overall.sampleConfidence).toBe('Experimental');
+    // 15.5 falls in the Poor Calibration range (13-20).
+    expect(r.overall.status).toBe('Poor Calibration');
+  });
+
+  test('Bayesian smoothing pulls 1/1 toward the prior (not 100%)', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [
+        leg({ probability: 80, outcome: 'hit', playerId: 1, statKey: 'points' }),
+      ]),
+    ]);
+    // Raw 100%, smoothed (1 + 11) / (1 + 20) ≈ 57.1%.
+    expect(r.overall.actualHitRate).toBe(100);
+    expect(r.overall.smoothedHitRate).toBeCloseTo(57.1, 0);
+  });
+
+  test('Bayesian smoothing pulls 0/1 toward the prior (not 0%)', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [
+        leg({ probability: 70, outcome: 'miss', playerId: 1, statKey: 'points' }),
+      ]),
+    ]);
+    // Raw 0%, smoothed (0 + 11) / (1 + 20) ≈ 52.4%.
+    expect(r.overall.actualHitRate).toBe(0);
+    expect(r.overall.smoothedHitRate).toBeCloseTo(52.4, 0);
   });
 
   test('push counts as hit', () => {
@@ -65,6 +94,23 @@ describe('computeCalibration', () => {
       ]),
     ]);
     expect(r.overall.actualHitRate).toBe(100);
+  });
+
+  test('sampleConfidence reports tier from sample size', () => {
+    // Single-leg sample → Experimental
+    const r1 = computeCalibration([snap('2026-05-01', [leg({})])]);
+    expect(r1.overall.sampleConfidence).toBe('Experimental');
+    // 25 legs → Low Confidence
+    const day25: CalibrationInput = {
+      date: '2026-05-01',
+      results: [
+        combo(
+          Array.from({ length: 25 }, (_, i) => leg({ playerId: i + 1, statKey: 'points' })),
+        ),
+      ],
+    };
+    const r25 = computeCalibration([day25]);
+    expect(r25.overall.sampleConfidence).toBe('Low Confidence');
   });
 
   test('no_game / unknown_stat outcomes excluded', () => {
@@ -149,6 +195,26 @@ describe('computeCalibration', () => {
     // Crucially: no NaN. Math.round(NaN * ...) is NaN; JSON would
     // serialize that as null and crash the client's .toFixed().
     expect(Number.isFinite(r.overall.gap)).toBe(true);
+  });
+
+  test('buckets picks by risk tier when risk is present on legs', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [
+        leg({ probability: 70, outcome: 'hit', playerId: 1, statKey: 'points', risk: 30 }),  // Low
+        leg({ probability: 70, outcome: 'miss', playerId: 2, statKey: 'rebounds', risk: 50 }), // Medium
+        leg({ probability: 70, outcome: 'hit', playerId: 3, statKey: 'assists', risk: 70 }),   // High
+        leg({ probability: 70, outcome: 'miss', playerId: 4, statKey: 'steals', risk: 90 }),   // Extreme
+      ]),
+    ]);
+    const populated = r.byRisk.filter((b) => b.sampleSize > 0).map((b) => b.label);
+    expect(populated).toEqual(['Low Risk', 'Medium Risk', 'High Risk', 'Extreme Risk']);
+  });
+
+  test('legs without risk are excluded from byRisk panel', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [leg({ probability: 70, outcome: 'hit', playerId: 1 })]),
+    ]);
+    expect(r.byRisk.every((b) => b.sampleSize === 0)).toBe(true);
   });
 
   test('range start/end track first and last graded date', () => {
