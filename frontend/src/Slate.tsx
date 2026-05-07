@@ -751,9 +751,48 @@ function BestPicksRail({
             && keys.every((k) => activeKeys.includes(k))
             && keys.length === activeKeys.length;
           const isWild = c.tag === 'wild';
-          // Wild Card with no legs = "no qualifying picks" placeholder.
-          // Spec §"If No Wild Card Qualifies" — render an explanatory
-          // tile instead of forcing a weak pick onto the rail.
+          // No-edge fallback: chain found nothing across all six tiers.
+          // Render the "closest candidates" view instead of an empty
+          // tile, so the section stays informative per spec §"Closest
+          // Candidate Logic".
+          if (isWild && c.wildCardKind === 'no_edge') {
+            return (
+              <div key={c.label} className="best-pick-card wild empty-wild" aria-disabled="true">
+                <div className="best-pick-head">
+                  <div className="best-pick-titles">
+                    <span className="best-pick-label">{c.label}</span>
+                    <span className="best-pick-subtitle">No Strong Wild Card Tonight</span>
+                  </div>
+                </div>
+                <div className="empty-wild-body">
+                  <p>No high-upside opportunity met the model's thresholds.</p>
+                  <p className="muted small">
+                    Showing closest candidates so you can see how near we got.
+                  </p>
+                </div>
+                {c.closestCandidates && c.closestCandidates.length > 0 && (
+                  <div className="best-pick-legs">
+                    {c.closestCandidates.map((l, i) => (
+                      <div key={i} className="best-pick-leg-block">
+                        <div className="best-pick-leg">
+                          <span className="best-pick-leg-name">{l.playerName}</span>
+                          <span className="best-pick-leg-stat">
+                            {l.statLabel} {l.line}
+                          </span>
+                          <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                            {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          // Empty Wild Card with no kind metadata (legacy snapshots
+          // before the chain rewrite). Fall back to the simple
+          // placeholder rather than crashing.
           if (isWild && c.legs.length === 0) {
             return (
               <div key={c.label} className="best-pick-card wild empty-wild" aria-disabled="true">

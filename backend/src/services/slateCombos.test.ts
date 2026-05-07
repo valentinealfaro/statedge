@@ -238,103 +238,112 @@ describe('buildCombos correlation block', () => {
   });
 });
 
-describe('buildCombos Wild Card historical gate', () => {
-  // Build a slate where the strong picks have rich L10 + vsOpp history,
-  // plus one extra "wild" pick that tries different evidence levels.
-  function withWildCandidate(opts: {
-    last10Values: number[];
-    vsOppValues: number[];
-    line: number;
-    probability?: number;
-    confidence?: number;
-    risk?: number;
-    edgeScore?: number;
-  }): ResolvedLine[] {
-    const safe = strongSlate(8, 75); // top picks for Best 6
-    // Push a separate candidate at a probability juuust below the
-    // ELIGIBLE floor (so it can't sneak onto Best 6) but inside the
-    // looser WILD bar.
-    safe.push(
+describe('buildCombos Wild Card priority chain', () => {
+  // Build N candidates that each pass the standard Wild Card gate
+  // (≥3 of L10 + ≥1 vs opp). Used so Tier 1 has at least the spec'd
+  // 3-leg minimum to actually emit. Uses a different stat (rebounds)
+  // and team than strongSlate so safe-card exposure caps don't pull
+  // them onto Best 2-6.
+  function wildEligibleCandidates(n: number, baseProb = 60): ResolvedLine[] {
+    return Array.from({ length: n }, (_, i) =>
       makeLine({
-        playerId: 999,
-        playerName: 'Wild Candidate',
-        team: 'BKN',
-        vsOpponent: { opponentAbbr: 'TOR', gamesPlayed: opts.vsOppValues.length, avg: 0, values: opts.vsOppValues },
+        playerId: 800 + i,
+        playerName: `Wild ${i}`,
+        team: ['BKN', 'TOR', 'ORL', 'WAS', 'IND', 'CHI'][i % 6]!,
+        vsOpponent: {
+          opponentAbbr: 'OPP',
+          gamesPlayed: 3,
+          avg: 6,
+          values: [7, 5, 6],   // vs line 4.5 → 2 hits
+        },
         statKey: 'rebounds',
         statLabel: 'Rebounds',
-        line: opts.line,
-        last10Values: opts.last10Values,
-        last10Avg: opts.last10Values.reduce((a, b) => a + b, 0) / Math.max(1, opts.last10Values.length),
+        line: 4.5,
+        last10Values: [5, 6, 7, 8, 4, 3, 6, 5, 4, 7],   // 6 of 10 hits over 4.5
+        last10Avg: 5.5,
         projection: makeProjection({
-          probability: { over: opts.probability ?? 56, under: 100 - (opts.probability ?? 56) },
-          confidence: { score: opts.confidence ?? 50, label: 'Medium Confidence' },
-          risk: { score: opts.risk ?? 70, label: 'High Risk' },
-          edge: { score: opts.edgeScore ?? 40, label: 'Slight Edge', lean: 'Slight Over Lean' },
+          // Just below the ELIGIBLE floor (57) so safe cards skip
+          // these — they go straight to the Wild Card pool.
+          probability: { over: baseProb - i, under: 100 - (baseProb - i) },
+          confidence: { score: 55 - i, label: 'Medium Confidence' },
+          risk: { score: 60 + i, label: 'Moderate Risk' },
+          edge: { score: 45, label: 'Moderate Edge', lean: 'Slight Over Lean' },
         }),
       }),
     );
-    return safe;
   }
 
-  test('candidate with 4 of L10 + 1 vs-opp hit qualifies for Wild Card', () => {
-    const lines = withWildCandidate({
-      // 4 over the line=4.5 (5,6,7,8)
-      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4],
-      // 1 of 3 vs-opp games over 4.5 (5)
-      vsOppValues: [5, 3, 4],
-      line: 4.5,
-    });
+  test('Tier 1 (standard) fires when ≥3 candidates pass the historical gate', () => {
+    const lines = [...strongSlate(8, 75), ...wildEligibleCandidates(4, 60)];
     const { combos } = buildCombos(lines);
     const wild = combos.find((c) => c.label === 'Wild Card');
     expect(wild).toBeDefined();
-    expect(wild!.legs.some((l) => l.playerId === 999)).toBe(true);
-  });
-
-  test('candidate with only 2 of L10 (below ≥3 floor) is rejected', () => {
-    const lines = withWildCandidate({
-      // 2 over line=4.5
-      last10Values: [5, 5, 3, 3, 3, 3, 3, 3, 3, 3],
-      vsOppValues: [5, 3, 4],
-      line: 4.5,
-    });
-    const { combos } = buildCombos(lines);
-    const wild = combos.find((c) => c.label === 'Wild Card');
-    expect(wild?.legs.some((l) => l.playerId === 999)).toBeFalsy();
-  });
-
-  test('candidate with no vs-opp hit (0 hits) is rejected', () => {
-    const lines = withWildCandidate({
-      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4], // 4 hits L10
-      vsOppValues: [3, 3, 3], // 0 hits at line=4.5
-      line: 4.5,
-    });
-    const { combos } = buildCombos(lines);
-    const wild = combos.find((c) => c.label === 'Wild Card');
-    expect(wild?.legs.some((l) => l.playerId === 999)).toBeFalsy();
+    expect(wild!.wildCardKind).toBe('standard');
+    expect(wild!.legs.length).toBeGreaterThanOrEqual(3);
+    // Wild legs should be drawn from the wildEligibleCandidates pool.
+    expect(wild!.legs.some((l) => l.playerId >= 800)).toBe(true);
   });
 
   test('Wild Card legs carry a wildCardReason', () => {
-    const lines = withWildCandidate({
-      last10Values: [5, 6, 7, 8, 4, 3, 2, 4, 4, 4],
-      vsOppValues: [5, 3, 4],
-      line: 4.5,
-    });
+    const lines = [...strongSlate(8, 75), ...wildEligibleCandidates(4, 60)];
     const { combos } = buildCombos(lines);
     const wild = combos.find((c) => c.label === 'Wild Card');
-    const wildCandidate = wild?.legs.find((l) => l.playerId === 999);
-    expect(wildCandidate?.wildCardReason).toBeDefined();
-    expect(wildCandidate?.wildCardReason).toContain('Hit');
+    expect(wild!.legs.length).toBeGreaterThan(0);
+    expect(wild!.legs[0]!.wildCardReason).toBeDefined();
+    expect(wild!.legs[0]!.wildCardReason).toContain('Hit');
   });
 
-  test('emits empty Wild Card with warning when nothing qualifies', () => {
-    // Slate where every candidate fails the historical gate (no
-    // vs-opp data on any pick).
+  test('Tier 7 (no_edge) when nothing qualifies — surfaces closest candidates', () => {
+    // Slate where every candidate fails the historical gate — strip
+    // vsOpponent so vsOpp hit count is always 0.
     const lines = strongSlate(8).map((l) => ({ ...l, vsOpponent: undefined }));
     const { combos } = buildCombos(lines);
     const wild = combos.find((c) => c.label === 'Wild Card');
     expect(wild).toBeDefined();
+    expect(wild!.wildCardKind).toBe('no_edge');
     expect(wild!.legs.length).toBe(0);
-    expect(wild!.warnings.some((w) => w.includes('No Wild Card'))).toBe(true);
+    expect(wild!.warnings.some((w) => w.toLowerCase().includes('did not identify'))).toBe(true);
+    // closestCandidates is populated so the UI can surface near-misses.
+    expect(Array.isArray(wild!.closestCandidates)).toBe(true);
+  });
+
+  test('Tier 2 (near_miss) when no Tier 1 but candidates barely missed', () => {
+    // 4 near-miss candidates: 2 of L10 + 1 vs-opp hit, with the
+    // probability set just BELOW the ELIGIBLE safe-card floor (57)
+    // but above the Near Miss floor (56). This keeps them out of
+    // Best 2-6 entirely so they flow straight into the Wild Card pool.
+    const nearMiss = Array.from({ length: 4 }, (_, i) =>
+      makeLine({
+        playerId: 700 + i,
+        playerName: `NearMiss ${i}`,
+        team: ['BKN', 'TOR', 'ORL', 'WAS'][i % 4]!,
+        vsOpponent: {
+          opponentAbbr: 'OPP',
+          gamesPlayed: 2,
+          avg: 5,
+          values: [5, 4],
+        },
+        statKey: 'rebounds',
+        statLabel: 'Rebounds',
+        line: 4.5,
+        last10Values: [5, 5, 3, 3, 3, 3, 3, 3, 3, 3],
+        last10Avg: 3.4,
+        projection: makeProjection({
+          probability: { over: 56, under: 44 },             // below ELIGIBLE (57), above Near Miss (56)
+          confidence: { score: 55, label: 'Medium Confidence' },
+          risk: { score: 65, label: 'Moderate Risk' },
+          edge: { score: 45, label: 'Moderate Edge', lean: 'Slight Over Lean' },
+          projection: { baseline: 5, contextAdjusted: 5, final: 5, rangeLow: 4, rangeHigh: 6 },
+        }),
+      }),
+    );
+    const lines = [...strongSlate(8, 75), ...nearMiss];
+    const { combos } = buildCombos(lines);
+    const wild = combos.find((c) => c.label === 'Wild Card');
+    expect(wild).toBeDefined();
+    // Standard tier can't fire (no candidates have ≥3 of L10), so the
+    // chain should land on near_miss given the 4 qualifying picks.
+    expect(wild!.wildCardKind).toBe('near_miss');
   });
 });
 

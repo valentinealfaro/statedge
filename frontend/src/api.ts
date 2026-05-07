@@ -645,6 +645,15 @@ export type SlateComboLeg = {
   wildCardReason?: string;
 };
 
+export type WildCardKind =
+  | 'standard'
+  | 'near_miss'
+  | 'momentum'
+  | 'matchup_spike'
+  | 'opportunity_spike'
+  | 'boom_bust'
+  | 'no_edge';
+
 export type SlateCombo = {
   label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6' | 'Wild Card';
   subtitle: string;
@@ -654,6 +663,12 @@ export type SlateCombo = {
   adjustedCombinedHit: number;
   correlationRisk: 'None' | 'Low' | 'Medium' | 'High' | 'Very High';
   warnings: string[];
+  // Set only on the Wild Card combo. wildCardKind tells the rail
+  // which fallback category was surfaced (or 'standard' when the
+  // strict gate passed); closestCandidates populates the no_edge
+  // view with near-miss picks for transparency.
+  wildCardKind?: WildCardKind;
+  closestCandidates?: SlateComboLeg[];
 };
 
 export type SlateResponse = {

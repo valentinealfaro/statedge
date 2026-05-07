@@ -14,7 +14,26 @@
 // which picks to surface and how to group them.
 
 import { LAST10_LABELS, type Last10StatId } from './last10.js';
+import type { PlayerArchetype } from './playerArchetype.js';
 import type { ResolvedLine } from './slatePipeline.js';
+
+// Internal-only — combines the wire-shape ComboCandidate with the
+// projection context the fallback classifier needs (season averages,
+// minutes/usage trend, opponent-defense multiplier, archetype).
+// Never crosses the API boundary; the public Combo emits ComboCandidate
+// only.
+type EnrichedCandidate = ComboCandidate & {
+  context: {
+    seasonAvg: number;
+    last5Avg: number | null;
+    last5HitRate: number | null;       // 0-100; null when window missing
+    minutesMultiplier: number;          // projected / season minutes
+    usageMultiplier: number;            // projection's usage layer
+    opponentDefenseMultiplier: number;  // <1.0 = tough opp, >1.0 = soft
+    blendedStdDev: number;              // for "≥1σ above line" tests
+    archetype: PlayerArchetype | null;
+  };
+};
 
 // -----------------------------------------------------------------
 // Eligibility thresholds (spec §"Candidate Eligibility").
@@ -137,6 +156,21 @@ export type ComboCandidate = {
   wildCardReason?: string;
 };
 
+// Wild Card variants. 'standard' = passes the strict historical gate
+// (≥3 of L10 + ≥1 vs opponent). The others are fallbacks that fire
+// when the strict gate fails — each carries its own analytical angle
+// so the section stays useful without lowering the model's bar.
+// 'no_edge' is the explicit transparency signal: nothing qualified
+// even at the loosest fallback bar; here are the closest candidates.
+export type WildCardKind =
+  | 'standard'
+  | 'near_miss'
+  | 'momentum'
+  | 'matchup_spike'
+  | 'opportunity_spike'
+  | 'boom_bust'
+  | 'no_edge';
+
 // Public combo shape. Card label drives both the row key in the UI
 // and the friendly display string.
 export type Combo = {
@@ -153,6 +187,14 @@ export type Combo = {
   adjustedCombinedHit: number;
   correlationRisk: 'None' | 'Low' | 'Medium' | 'High' | 'Very High';
   warnings: string[];
+
+  // Wild Card metadata. Set only on the Wild Card combo (label ===
+  // 'Wild Card'); the safe cards leave these undefined. wildCardKind
+  // tells the UI which subtitle/copy to render; closestCandidates
+  // populates the "no_edge" fallback view with near-miss picks the
+  // user can review even when nothing qualifies.
+  wildCardKind?: WildCardKind;
+  closestCandidates?: ComboCandidate[];
 };
 
 // Backwards-compat alias for the snapshot grader. Old snapshots in
@@ -239,8 +281,8 @@ function cv(vals: number[]): number {
 // dropped at the source. Picks that fail Eligibility don't appear in
 // the eligible pool but we still rank them for Wild Card consideration.
 // -----------------------------------------------------------------
-function buildCandidates(lines: ResolvedLine[]): ComboCandidate[] {
-  const out: ComboCandidate[] = [];
+function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
+  const out: EnrichedCandidate[] = [];
   for (const l of lines) {
     if (l.injury?.status === 'Out') continue;
     const p = l.projection;
@@ -316,9 +358,31 @@ function buildCandidates(lines: ResolvedLine[]): ComboCandidate[] {
       vsOpponentHitCount,
       vsOpponentHitRate: Math.round(vsOpponentHitRate),
       statVolatility,
+      context: {
+        seasonAvg: p.factorBreakdown.seasonAvg ?? l.last10Avg,
+        last5Avg: p.factorBreakdown.last5Avg,
+        last5HitRate: p.historicalHitRates.last5,
+        minutesMultiplier: p.factorBreakdown.minutesMultiplier,
+        usageMultiplier: p.factorBreakdown.usageMultiplier,
+        opponentDefenseMultiplier: p.factorBreakdown.opponentDefenseMultiplier,
+        blendedStdDev: p.factorBreakdown.blendedStdDev,
+        archetype: l.archetype?.archetype ?? null,
+      },
     });
   }
   return out;
+}
+
+// Strip the internal `context` block before a candidate goes onto a
+// public Combo. Keeps the wire shape clean and stable.
+function strip(c: EnrichedCandidate): ComboCandidate {
+  const { context: _ctx, ...rest } = c;
+  void _ctx;
+  return rest;
+}
+
+function stripAll(cs: EnrichedCandidate[]): ComboCandidate[] {
+  return cs.map(strip);
 }
 
 function passesEligibility(c: ComboCandidate, bar: typeof ELIGIBLE | typeof WILD): boolean {
@@ -350,16 +414,16 @@ const CAPS_TIGHT: Caps = { player: 1, game: 2, team: 1, stat: 2 };
 // already on the card. Stop when we've got `target` legs OR we
 // exhaust the pool. Returns whatever we collected — fewer-than-target
 // is OK and surfaces as a "limited slate" warning later.
-function pickByCaps(
-  sorted: ComboCandidate[],
+function pickByCaps<T extends ComboCandidate>(
+  sorted: T[],
   target: number,
   caps: Caps,
-): ComboCandidate[] {
+): T[] {
   const playerCount = new Map<number, number>();
   const gameCount = new Map<string, number>();
   const teamCount = new Map<string, number>();
   const statCount = new Map<string, number>();
-  const out: ComboCandidate[] = [];
+  const out: T[] = [];
 
   for (const c of sorted) {
     if (out.length >= target) break;
@@ -394,12 +458,12 @@ function pickByCaps(
 // the cards using it lose — not all of them. When the slate has
 // fewer eligible picks than the cards need (6+5+4+3+2 = 20 leg
 // slots), this gracefully degrades to allowing reuse.
-function pickWithDiversity(
-  pool: ComboCandidate[],
+function pickWithDiversity<T extends ComboCandidate>(
+  pool: T[],
   target: number,
   caps: Caps,
   usage: Map<string, number>,
-): ComboCandidate[] {
+): T[] {
   const sorted = [...pool].sort((a, b) => {
     const ua = usage.get(comboKey(a)) ?? 0;
     const ub = usage.get(comboKey(b)) ?? 0;
@@ -536,24 +600,25 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
 
   const combos: Combo[] = [];
   // Order matches what the rail renders left-to-right (Best 2 → 6).
-  if (best2.length === 2) combos.push(makeCombo('Best 2', best2, 'safe'));
-  if (best3.length === 3) combos.push(makeCombo('Best 3', best3, 'safe'));
-  if (best4.length === 4) combos.push(makeCombo('Best 4', best4, 'safe'));
-  if (best5.length === 5) combos.push(makeCombo('Best 5', best5, 'safe'));
-  if (best6.length >= 2) combos.push(makeCombo('Best 6', best6, 'safe'));
+  if (best2.length === 2) combos.push(makeCombo('Best 2', stripAll(best2), 'safe'));
+  if (best3.length === 3) combos.push(makeCombo('Best 3', stripAll(best3), 'safe'));
+  if (best4.length === 4) combos.push(makeCombo('Best 4', stripAll(best4), 'safe'));
+  if (best5.length === 5) combos.push(makeCombo('Best 5', stripAll(best5), 'safe'));
+  if (best6.length >= 2) combos.push(makeCombo('Best 6', stripAll(best6), 'safe'));
 
-  // Wild Card — riskier but still data-supported (spec §"Wild Card
-  // Logic" + "Wild Card Historical Requirement"). Two hard gates:
-  //   1) Hit ≥ 3 of the player's last 10 games at this line/direction
-  //   2) Hit ≥ 1 vs the current opponent (which also requires at
-  //      least 1 game vs that opponent in the cache)
-  // Plus: must clear the looser WILD probability/confidence/risk/edge
-  // floors AND must not be a duplicate of any Best 2-6 pick. Same
-  // player as a Best 2-6 leg is allowed only with a different stat.
+  // Wild Card — riskier but still data-supported. Walks a priority
+  // chain (spec §"Wild Card Fallback Priority Order"):
+  //   1. Standard Wild Card: ≥3 of L10 + ≥1 vs opponent
+  //   2. Near Miss: barely missed the strict gate
+  //   3. Momentum: trend rising fast
+  //   4. Matchup Spike: opponent vulnerability + projection above line
+  //   5. Opportunity Spike: minutes/usage expansion from injuries
+  //   6. Boom/Bust: high variance archetype with elevated ceiling
+  //   7. No Edge: emit closest candidates with explanatory copy
   //
-  // With independent cards, "used on a safe card" is the union of
-  // every Best 2-6 pick (not just Best 6's), so the Wild Card can't
-  // duplicate any of them.
+  // First category that has enough qualifying picks wins. Each emits
+  // a labeled Wild Card combo so the user can see what kind of edge
+  // (or absence of edge) we found.
   const best2Combo = combos.find((c) => c.label === 'Best 2');
   const usedKeys = new Set<string>();
   for (const combo of combos) {
@@ -650,36 +715,253 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
     return { score, tags };
   }
 
-  // Build the Wild Card pool with all the hard gates, then sort by
-  // wildCardScore (with boosts/penalties) and pick legs honoring the
-  // existing exposure caps.
-  const wildScored = allCandidates
+  // -----------------------------------------------------------------
+  // Wild Card priority chain. Each tier has its own qualification.
+  // First tier with ≥3 qualifying picks wins. If none qualifies, fall
+  // through to the "no edge" view with closest candidates.
+  // -----------------------------------------------------------------
+  const unusedPool = allCandidates.filter((c) => !usedKeys.has(comboKey(c)));
+  const MIN_LEGS = 3;        // emit any tier that produces this many legs
+  const TARGET_LEGS = 6;     // ideal Wild Card size
+
+  // Tier 1: STANDARD — passes both historical gates.
+  const standardPool = unusedPool
     .filter((c) => passesEligibility(c, WILD))
-    .filter(passesWildHistorical)
-    .filter((c) => !usedKeys.has(comboKey(c)))
-    .map((c) => ({ c, ...scoreWild(c) }))
-    .sort((a, b) => b.score - a.score);
+    .filter(passesWildHistorical);
+  const wildCard = (() => {
+    if (standardPool.length >= MIN_LEGS) {
+      const scored = standardPool
+        .map((c) => ({ c, ...scoreWild(c) }))
+        .sort((a, b) => b.score - a.score);
+      const legs = pickByCaps(scored.map((x) => x.c), TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: buildWildCardReason(c, scored.find((s) => s.c === c)?.tags ?? []),
+      }));
+      if (legs.length >= MIN_LEGS) {
+        return {
+          kind: 'standard' as const,
+          subtitle: 'Higher Risk — meets historical Wild Card gates',
+          legs: stripAll(legs),
+        };
+      }
+    }
+    return null;
+  })()
+    // Tier 2: NEAR MISS — barely missed the strict gate.
+    ?? (() => {
+      const pool = unusedPool.filter((c) => {
+        // Two ways to "barely miss":
+        //   - 2 of L10 with at least 1 vs-opp hit
+        //   - 3+ of L10 with 0 vs-opp hits but only 1 matchup sample
+        const hist =
+          (c.last10HitCount === 2 && c.vsOpponentHitCount >= 1)
+          || (c.last10HitCount >= 3 && c.vsOpponentHitCount === 0 && c.vsOpponentGames === 1);
+        if (!hist) return false;
+        // Stricter floors than WILD per spec §"Near Miss" requirements:
+        if (c.probability < 56) return false;
+        if (c.confidence < 50) return false;
+        if (c.edgeScore < 40) return false;
+        if (c.risk > 75) return false;
+        // Projection above line in the chosen direction:
+        const beats = c.direction === 'OVER' ? c.projection > c.line : c.projection < c.line;
+        return beats;
+      });
+      if (pool.length < MIN_LEGS) return null;
+      const sorted = [...pool].sort((a, b) => b.slateScore - a.slateScore);
+      const legs = pickByCaps(sorted, TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: buildNearMissReason(c),
+      }));
+      if (legs.length < MIN_LEGS) return null;
+      return {
+        kind: 'near_miss' as const,
+        subtitle: 'Near Miss — almost qualified under standard rules',
+        legs: stripAll(legs),
+      };
+    })()
+    // Tier 3: MOMENTUM — last 5 trending fast above season.
+    ?? (() => {
+      const pool = unusedPool.filter((c) => {
+        if (!passesEligibility(c, WILD)) return false;
+        const ctx = c.context;
+        if (ctx.last5Avg === null || ctx.last5HitRate === null) return false;
+        const momentumScore = ctx.last5Avg - ctx.seasonAvg;
+        // Threshold: last5 ahead of season by ≥1 stat unit OR ≥10% of season
+        const meaningful = momentumScore >= 1 || momentumScore >= ctx.seasonAvg * 0.10;
+        if (!meaningful) return false;
+        // Last-5 hit rate ≥ 60% in chosen direction (rate is over-side;
+        // for UNDER picks, "supports direction" = rate ≤ 40%).
+        const last5HitInDir = c.direction === 'OVER'
+          ? ctx.last5HitRate
+          : 100 - ctx.last5HitRate;
+        if (last5HitInDir < 60) return false;
+        // Minutes trending up — minutesMultiplier > 1.0 means projected
+        // > season minutes.
+        if (ctx.minutesMultiplier < 1.02) return false;
+        return true;
+      });
+      if (pool.length < MIN_LEGS) return null;
+      const sorted = [...pool].sort((a, b) => {
+        const ma = a.context.last5Avg! - a.context.seasonAvg;
+        const mb = b.context.last5Avg! - b.context.seasonAvg;
+        return mb - ma;
+      });
+      const legs = pickByCaps(sorted, TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: `L5 avg ${(c.context.last5Avg ?? 0).toFixed(1)} vs season ${c.context.seasonAvg.toFixed(1)} · minutes trending up`,
+      }));
+      if (legs.length < MIN_LEGS) return null;
+      return {
+        kind: 'momentum' as const,
+        subtitle: 'Momentum — recent form and usage rising fast',
+        legs: stripAll(legs),
+      };
+    })()
+    // Tier 4: MATCHUP SPIKE — opponent vulnerability + projection above line.
+    ?? (() => {
+      const pool = unusedPool.filter((c) => {
+        if (!passesEligibility(c, WILD)) return false;
+        // opponentDefenseMultiplier > 1.0 means the opponent is bad
+        // defensively vs this stat — a soft matchup. Threshold 1.04
+        // approximately corresponds to top-third vulnerability.
+        if (c.context.opponentDefenseMultiplier < 1.04) return false;
+        // Projection materially above line — at least 1.5σ above for
+        // OVER, below for UNDER.
+        const dist = c.direction === 'OVER' ? c.projection - c.line : c.line - c.projection;
+        const sigma = c.context.blendedStdDev || 1;
+        if (dist / sigma < 1.0) return false;
+        return true;
+      });
+      if (pool.length < MIN_LEGS) return null;
+      const sorted = [...pool].sort((a, b) =>
+        b.context.opponentDefenseMultiplier - a.context.opponentDefenseMultiplier,
+      );
+      const legs = pickByCaps(sorted, TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: `Soft matchup vs ${c.opponentAbbr ?? 'opp'} · projection above line`,
+      }));
+      if (legs.length < MIN_LEGS) return null;
+      return {
+        kind: 'matchup_spike' as const,
+        subtitle: 'Matchup Spike — opponent vulnerable to this stat tonight',
+        legs: stripAll(legs),
+      };
+    })()
+    // Tier 5: OPPORTUNITY SPIKE — minutes/usage expansion (injuries).
+    ?? (() => {
+      const pool = unusedPool.filter((c) => {
+        if (!passesEligibility(c, WILD)) return false;
+        const minutesUp = c.context.minutesMultiplier >= 1.12;
+        const usageUp = c.context.usageMultiplier >= 1.08;
+        if (!minutesUp && !usageUp) return false;
+        // Projection above line in the chosen direction:
+        const beats = c.direction === 'OVER' ? c.projection > c.line : c.projection < c.line;
+        return beats;
+      });
+      if (pool.length < MIN_LEGS) return null;
+      const sorted = [...pool].sort((a, b) =>
+        (b.context.minutesMultiplier + b.context.usageMultiplier)
+        - (a.context.minutesMultiplier + a.context.usageMultiplier),
+      );
+      const legs = pickByCaps(sorted, TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: `Minutes ×${c.context.minutesMultiplier.toFixed(2)} · usage ×${c.context.usageMultiplier.toFixed(2)} — role expanding`,
+      }));
+      if (legs.length < MIN_LEGS) return null;
+      return {
+        kind: 'opportunity_spike' as const,
+        subtitle: 'Opportunity Spike — projected role expansion creates upside',
+        legs: stripAll(legs),
+      };
+    })()
+    // Tier 6: BOOM/BUST — high variance archetype with elevated ceiling.
+    ?? (() => {
+      const pool = unusedPool.filter((c) => {
+        // Looser bar than WILD per spec — risk cap is 85, no probability floor.
+        if (c.probability < 52) return false;
+        if (c.confidence < 45) return false;
+        if (c.risk > 85) return false;
+        const isVolatile = c.context.archetype === 'Boom/Bust' || c.statVolatility >= 0.40;
+        if (!isVolatile) return false;
+        // 90th-percentile estimate ≈ projection + 1.28σ (one-sided).
+        // Require it to clear the line in the chosen direction by a
+        // margin (the "elevated ceiling" check).
+        const sigma = c.context.blendedStdDev || 1;
+        const ceiling = c.direction === 'OVER'
+          ? c.projection + 1.28 * sigma
+          : c.projection - 1.28 * sigma;
+        const beats = c.direction === 'OVER' ? ceiling > c.line + sigma * 0.3 : ceiling < c.line - sigma * 0.3;
+        return beats;
+      });
+      if (pool.length < MIN_LEGS) return null;
+      const sorted = [...pool].sort((a, b) => b.statVolatility - a.statVolatility);
+      const legs = pickByCaps(sorted, TARGET_LEGS, CAPS_LARGE).map((c) => ({
+        ...c,
+        wildCardReason: `${c.context.archetype ?? 'Volatile'} archetype · ceiling well above line`,
+      }));
+      if (legs.length < MIN_LEGS) return null;
+      return {
+        kind: 'boom_bust' as const,
+        subtitle: 'Boom/Bust — high variance with elevated ceiling',
+        legs: stripAll(legs),
+      };
+    })()
+    // Tier 7 (LAST RESORT): NO EDGE — surface closest candidates.
+    ?? (() => {
+      // Spec §"Closest Candidate Logic" — sort the WILD-eligibility
+      // pool by edge*0.35 + prob*0.25 + conf*0.20 - risk*0.20 and
+      // surface the top 2-3 so the user can see how close we got.
+      const pool = unusedPool.filter((c) => passesEligibility(c, WILD));
+      const closest = [...pool]
+        .sort((a, b) => closestScore(b) - closestScore(a))
+        .slice(0, 3);
+      return {
+        kind: 'no_edge' as const,
+        subtitle: 'No Strong Wild Card Available Tonight',
+        legs: [] as ComboCandidate[],
+        closestCandidates: stripAll(closest),
+      };
+    })();
 
-  // Run pickByCaps on the score-ordered pool. Because the candidate
-  // shape is the same, we can reuse the standard exposure logic.
-  const wildPool = wildScored.map((x) => x.c);
-  const wildLegs = pickByCaps(wildPool, 6, CAPS_LARGE).map((c) => ({
-    ...c,
-    wildCardReason: buildWildCardReason(c, wildScored.find((s) => s.c === c)?.tags ?? []),
-  }));
-
-  // Spec §"If No Wild Card Qualifies": always emit the Wild Card slot
-  // so the UI has a stable card to render. Empty legs + warning tells
-  // the renderer to show the "No Wild Card available tonight" copy.
-  if (wildLegs.length >= 4) {
-    combos.push(makeCombo('Wild Card', wildLegs, 'wild'));
-  } else {
-    const empty = makeCombo('Wild Card', wildLegs, 'wild');
-    empty.warnings.push('No Wild Card available tonight — not enough historical support.');
-    combos.push(empty);
+  // Emit the Wild Card combo with its kind metadata. Even the
+  // no_edge case is emitted so the rail always has the slot.
+  const wildCombo = makeCombo('Wild Card', wildCard.legs, 'wild');
+  wildCombo.subtitle = wildCard.subtitle;
+  wildCombo.wildCardKind = wildCard.kind;
+  if ('closestCandidates' in wildCard && wildCard.closestCandidates) {
+    wildCombo.closestCandidates = wildCard.closestCandidates;
   }
+  if (wildCard.kind === 'no_edge') {
+    wildCombo.warnings.push(
+      'The model did not identify a high-upside opportunity that met the minimum thresholds tonight.',
+    );
+  } else if (wildCard.kind !== 'standard') {
+    wildCombo.warnings.push(
+      'Standard Wild Card gates not met — fallback category surfaced instead.',
+    );
+  }
+  combos.push(wildCombo);
 
   return { combos };
+}
+
+// Closest-candidates score (spec §"Closest Candidate Logic"). Used
+// when no fallback category produces a viable Wild Card; surfaces
+// the best near-misses so the section stays informative.
+function closestScore(c: ComboCandidate): number {
+  return c.edgeScore * 0.35 + c.probability * 0.25 + c.confidence * 0.20 - c.risk * 0.20;
+}
+
+// Reason copy for Near Miss legs — explains why the pick didn't pass
+// the strict historical gate but still has analytical value.
+function buildNearMissReason(c: ComboCandidate): string {
+  if (c.last10HitCount === 2 && c.vsOpponentHitCount >= 1) {
+    return `Hit 2 of last 10 + ${c.vsOpponentHitCount} vs opp — one short of standard`;
+  }
+  if (c.last10HitCount >= 3 && c.vsOpponentGames === 1 && c.vsOpponentHitCount === 0) {
+    return `Hit ${c.last10HitCount} of last 10 · only 1 prior vs ${c.opponentAbbr ?? 'opp'} (no hit)`;
+  }
+  return `Hit ${c.last10HitCount} of last 10 — almost qualified`;
 }
 
 // Compose a one-sentence "why this is a Wild Card" line. Drawn from
