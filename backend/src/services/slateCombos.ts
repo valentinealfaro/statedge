@@ -15,6 +15,7 @@
 
 import { LAST10_LABELS, type Last10StatId } from './last10.js';
 import type { PlayerArchetype } from './playerArchetype.js';
+import { normalCdf } from './projectionEngine.js';
 import type { ResolvedLine } from './slatePipeline.js';
 
 // Internal-only — combines the wire-shape ComboCandidate with the
@@ -125,6 +126,124 @@ function statsCorrelated(a: Last10StatId, b: Last10StatId): boolean {
 }
 
 // -----------------------------------------------------------------
+// Line raising (Slate Builder spec §"Line Raising Feature").
+//
+// When the model has elite conviction at the offered line, we test
+// whether a higher line still meets keep thresholds. If yes, we
+// surface the raised version. The user gets a "raised line" candidate
+// at lower probability but materially higher payout.
+//
+// CAVEAT: PrizePicks doesn't actually offer alternate lines for most
+// props. The raised line here is an *analytical* output — it tells
+// the user "if a sportsbook offered Points 18.5 instead of 14.5,
+// the model would still favor it ~75%". The frontend surfaces this
+// as informational, not bookable.
+//
+// We re-derive probability at the new line via the normal CDF using
+// the projection's mean (`projection.final`) and `blendedStdDev` —
+// no need to re-run the full projection engine. Confidence and risk
+// are kept as-is; properly recomputing them at a raised line is a
+// follow-up (the spec's "Confidence remains" / "Risk remains" checks
+// behave like soft sanity gates anyway).
+// -----------------------------------------------------------------
+
+// Per-stat absolute cap on how far a line can be raised (spec
+// §"Do Not Over-Raise Lines"). Keep these strictly aligned with the
+// spec — pushing past them surfaces "raised lines" the model has
+// effectively no historical anchor for.
+const LINE_RAISE_CAPS: Partial<Record<Last10StatId, number>> = {
+  points: 4.0,
+  rebounds: 2.0,
+  assists: 2.0,
+  three_pt_made: 1.0,
+  steals: 0.5,
+  blocks: 0.5,
+  pra: 5.0,
+  pr: 3.0,
+  pa: 3.0,
+  ra: 3.0,
+  stocks: 0.5,
+};
+
+// Trigger thresholds — the candidate's ORIGINAL state must clear all
+// of these for line-raising to even be considered. Conservative on
+// purpose: raised lines are an analytical bonus, not a primary path.
+const LINE_RAISE_TRIGGER = {
+  probability: 70,
+  confidence: 70,
+  risk: 55,
+  // Projection edge in stddev units — distance from line / σ.
+  edgeSigmas: 1.25,
+} as const;
+
+// Keep thresholds — at each candidate raised line, we check the new
+// probability still clears these. We don't re-derive confidence/risk
+// at the raised line in V1; per-line risk recomputation is on the
+// follow-up list. The probability check is the binding constraint.
+const LINE_RAISE_KEEP = {
+  probability: 60,
+} as const;
+
+function maybeRaiseLine(
+  c: ComboCandidate,
+  projectionMean: number,
+  blendedStdDev: number,
+): ComboCandidate {
+  const cap = LINE_RAISE_CAPS[c.statKey];
+  if (cap === undefined) return c;          // stat not eligible for raising
+  if (blendedStdDev <= 0) return c;
+
+  // Trigger check on the original candidate.
+  if (c.probability < LINE_RAISE_TRIGGER.probability) return c;
+  if (c.confidence < LINE_RAISE_TRIGGER.confidence) return c;
+  if (c.risk > LINE_RAISE_TRIGGER.risk) return c;
+
+  // Edge in stddev units. For OVER picks the model's mean must be
+  // ≥1.25σ above the line; for UNDER, ≥1.25σ below.
+  const edgeSigmas =
+    c.direction === 'OVER'
+      ? (projectionMean - c.line) / blendedStdDev
+      : (c.line - projectionMean) / blendedStdDev;
+  if (edgeSigmas < LINE_RAISE_TRIGGER.edgeSigmas) return c;
+
+  // Walk the line up (or down for UNDER) in 0.5 steps, capped by
+  // LINE_RAISE_CAPS. Stop at the highest step where the keep check
+  // passes. If none pass, stay at original.
+  const STEP = 0.5;
+  const sign = c.direction === 'OVER' ? 1 : -1;
+  let bestLine = c.line;
+  let bestProb = c.probability;
+  for (let delta = STEP; delta <= cap + 1e-9; delta += STEP) {
+    const trialLine = c.line + sign * delta;
+    const z = (trialLine - projectionMean) / blendedStdDev;
+    const overP = (1 - normalCdf(z)) * 100;
+    const trialProb = c.direction === 'OVER' ? overP : 100 - overP;
+    if (trialProb < LINE_RAISE_KEEP.probability) break;
+    bestLine = trialLine;
+    bestProb = trialProb;
+  }
+
+  if (bestLine === c.line) return c;        // no raise survived
+
+  // Raised candidate. Note we keep slateScore in sync with the new
+  // probability so card-builder ranking reflects the trade-off
+  // (lower prob, raised line). The Wild Card +4 boost (un-stubbed
+  // below) compensates for the prob drop on longshot picks.
+  const raisedScore =
+    Math.round(bestProb) * 0.35 + c.confidence * 0.25 + c.edgeScore * 0.25 - c.risk * 0.15;
+  return {
+    ...c,
+    originalLine: c.line,
+    originalProbability: c.probability,
+    line: bestLine,
+    probability: Math.round(bestProb),
+    slateScore: raisedScore,
+    lineRaised: true,
+    lineRaiseReason: `Raised from ${c.line} → ${bestLine} · projection still favors ${c.direction}.`,
+  };
+}
+
+// -----------------------------------------------------------------
 // Candidate type. One per (player, stat, direction) — i.e. one
 // directional pick per resolved line. We commit to a single direction
 // up front based on the projection's lean, since a "both-sides"
@@ -180,6 +299,18 @@ export type ComboCandidate = {
   // archetype — a Boom/Bust pick missing isn't the same kind of miss
   // as a Stable Producer flopping.
   archetype?: string;
+
+  // Line-raising metadata (Slate Builder spec §"Line Raising Feature").
+  // When the model has elite confidence in a line, we test whether
+  // a higher line (e.g. Points 14.5 → 18.5) still meets keep
+  // thresholds. If yes, we surface the raised version: `line` and
+  // `probability` reflect the raised values; `originalLine` and
+  // `originalProbability` track what the prop board actually offered.
+  // Only set when a raise actually fired.
+  originalLine?: number;
+  originalProbability?: number;
+  lineRaised?: boolean;
+  lineRaiseReason?: string;
 
   // Set only on legs picked for the Wild Card combo. Frontend reads
   // this to render the spec'd "Hit X of last 10 and has hit this line
@@ -363,7 +494,7 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
         injStatus === 'Questionable' || injStatus === 'Day-To-Day',
     });
 
-    out.push({
+    const raw: EnrichedCandidate = {
       playerId: l.playerId,
       playerName: l.playerName,
       team: l.team,
@@ -400,7 +531,13 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
         blendedStdDev: p.factorBreakdown.blendedStdDev,
         archetype: l.archetype?.archetype ?? null,
       },
-    });
+    };
+
+    // Try to raise the line. If trigger thresholds aren't met or no
+    // raised step survives the keep threshold, returns the raw
+    // candidate unchanged.
+    const maybeRaised = maybeRaiseLine(raw, p.projection.final, p.factorBreakdown.blendedStdDev);
+    out.push(maybeRaised as EnrichedCandidate);
   }
   return out;
 }
@@ -698,8 +835,14 @@ export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
         tags.push('projection ≥ 1σ above line');
       }
     }
-    // +4 line raised — stub: line raising is staged for a follow-up,
-    // so this never fires today. Reason tag preserved for future work.
+    // +4 line raised. The candidate already had elite triggers
+    // (prob ≥70, conf ≥70, risk ≤55) and survived the keep threshold
+    // at a higher line — Wild Card weights this because it's the
+    // exact "high-edge, line moves" pattern the section is built for.
+    if (c.lineRaised) {
+      score += 4;
+      tags.push('line raised');
+    }
     // +3 minutes trending up — stub: minutes time series not yet
     // exposed on ResolvedLine. Skip.
     // +3 role increased due to teammate injury — stub: teammate-injury

@@ -840,7 +840,16 @@ function BestPicksRail({
                     <div className="best-pick-leg">
                       <span className="best-pick-leg-name">{l.playerName}</span>
                       <span className="best-pick-leg-stat">
-                        {l.statLabel} {l.line}
+                        {l.statLabel}{' '}
+                        {l.lineRaised && l.originalLine !== undefined ? (
+                          <>
+                            <span className="best-pick-leg-line-orig">{l.originalLine}</span>
+                            {' → '}
+                            <strong className="best-pick-leg-line-raised">{l.line}</strong>
+                          </>
+                        ) : (
+                          l.line
+                        )}
                       </span>
                       <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
                         {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
@@ -855,6 +864,14 @@ function BestPicksRail({
                     {isWild && l.wildCardReason && (
                       <div className="best-pick-wild-evidence">
                         {l.wildCardReason}
+                      </div>
+                    )}
+                    {l.lineRaised && (
+                      <div
+                        className="best-pick-leg-raised-note"
+                        title="The model has elite conviction at the offered line — surfacing this as a higher-line analytical signal. Not bookable on PrizePicks; treat as upside reference."
+                      >
+                        ↑ raised line · model still favors {l.direction.toLowerCase()}
                       </div>
                     )}
                   </div>

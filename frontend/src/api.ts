@@ -643,6 +643,18 @@ export type SlateComboLeg = {
   // Set only on Wild Card legs — one-sentence "why this is a Wild
   // Card" narrative composed from hit counts + caveats.
   wildCardReason?: string;
+
+  // Line-raising metadata. When the model had elite conviction at
+  // the offered line, the slate builder tests higher lines and
+  // surfaces the highest one that still meets keep thresholds. The
+  // leg's `line` and `probability` show the raised values; original
+  // values are preserved here so the UI can render "raised from X.X".
+  // CAVEAT: PrizePicks doesn't actually offer alternate lines for
+  // most props — this is an analytical signal, not a bookable bet.
+  originalLine?: number;
+  originalProbability?: number;
+  lineRaised?: boolean;
+  lineRaiseReason?: string;
 };
 
 export type WildCardKind =

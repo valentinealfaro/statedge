@@ -201,7 +201,9 @@ function clamp(n: number, lo: number, hi: number): number {
 }
 
 // Abramowitz & Stegun 26.2.17 standard normal CDF.
-function normalCdf(z: number): number {
+// Exported so the line-raising helper in slateCombos can re-derive
+// probability at alternate lines without re-running the full projection.
+export function normalCdf(z: number): number {
   const t = 1 / (1 + 0.2316419 * Math.abs(z));
   const d = 0.3989422804014327 * Math.exp(-(z * z) / 2);
   const p = d * t * (

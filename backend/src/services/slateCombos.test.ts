@@ -82,6 +82,10 @@ function strongSlate(n: number, baseProb = 75): ResolvedLine[] {
       line: 20 + i,
       projection: makeProjection({
         probability: { over: baseProb - i, under: 100 - (baseProb - i) },
+        // Risk above the line-raise trigger (≤55) so this fixture
+        // produces predictable, non-raised candidates. Line-raising
+        // gets its own deliberately-elite fixtures below.
+        risk: { score: 60, label: 'Moderate Risk' },
         // Decreasing edge so slateScore order tracks pick index.
         edge: { score: 70 - i * 2, label: 'Moderate Edge', lean: 'Strong Over Lean' },
       }),
@@ -210,6 +214,124 @@ describe('buildCombos exposure caps', () => {
     const best3 = combos.find((c) => c.label === 'Best 3')!;
     const starCount = best3.legs.filter((l) => l.playerId === 50).length;
     expect(starCount).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('buildCombos line-raising', () => {
+  // An "elite" candidate that meets all line-raise triggers:
+  //   probability ≥ 70, confidence ≥ 70, risk ≤ 55,
+  //   projection ≥ 1.25σ above line.
+  function eliteCandidate(over: Partial<{
+    line: number;
+    statKey: 'points' | 'rebounds' | 'assists' | 'three_pt_made' | 'pra';
+    projectionFinal: number;
+    blendedStdDev: number;
+    probability: number;
+    confidence: number;
+    risk: number;
+  }> = {}): ResolvedLine {
+    const line = over.line ?? 14.5;
+    const projectionFinal = over.projectionFinal ?? 20.8;
+    const blendedStdDev = over.blendedStdDev ?? 4;
+    return makeLine({
+      playerId: 999,
+      playerName: 'Elite Pick',
+      team: 'NYK',
+      vsOpponent: { opponentAbbr: 'PHI', gamesPlayed: 3, avg: 22, values: [22, 24, 20] },
+      statKey: over.statKey ?? 'points',
+      statLabel: 'Points',
+      line,
+      projection: makeProjection({
+        probability: { over: over.probability ?? 78, under: 100 - (over.probability ?? 78) },
+        confidence: { score: over.confidence ?? 75, label: 'High Confidence' },
+        risk: { score: over.risk ?? 40, label: 'Low Risk' },
+        edge: { score: 70, label: 'Strong Edge', lean: 'Strong Over Lean' },
+        projection: {
+          baseline: projectionFinal, contextAdjusted: projectionFinal,
+          final: projectionFinal, rangeLow: projectionFinal - blendedStdDev,
+          rangeHigh: projectionFinal + blendedStdDev,
+        },
+        factorBreakdown: {
+          seasonAvg: projectionFinal, last10Avg: projectionFinal, last5Avg: projectionFinal,
+          vsOpponentAvg: projectionFinal, homeAwayAvg: projectionFinal,
+          seasonMedian: projectionFinal, last10Median: projectionFinal,
+          blendedStdDev,
+          projectedMinutes: 36, minutesMultiplier: 1, usageMultiplier: 1,
+          injuryMultiplier: 1, opponentDefenseMultiplier: 1, paceMultiplier: 1,
+          restMultiplier: 1, gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 90,
+        },
+      }),
+    });
+  }
+
+  test('raises a Points line when all elite triggers are met', () => {
+    // Line 14.5, projection 20.8, σ=4 → edge = 1.575σ ≥ 1.25 ✓
+    // Original prob 78 ≥ 70 ✓; conf 75 ≥ 70 ✓; risk 40 ≤ 55 ✓
+    const lines = [eliteCandidate(), ...strongSlate(8, 70)];
+    const { combos } = buildCombos(lines);
+    // Find the elite candidate in any card.
+    let raised: { lineRaised?: boolean; originalLine?: number; line: number } | undefined;
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 999);
+      if (found) raised = found;
+    }
+    expect(raised).toBeDefined();
+    expect(raised!.lineRaised).toBe(true);
+    expect(raised!.originalLine).toBe(14.5);
+    expect(raised!.line).toBeGreaterThan(14.5);
+  });
+
+  test('respects the per-stat cap on how far a line can be raised', () => {
+    // Points cap is +4.0, so 14.5 → max 18.5. With projection 25 and σ=4
+    // the model would happily go further but the cap binds.
+    const lines = [
+      eliteCandidate({ projectionFinal: 25, blendedStdDev: 4 }),
+      ...strongSlate(8, 70),
+    ];
+    const { combos } = buildCombos(lines);
+    let raised: { line: number; originalLine?: number } | undefined;
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 999);
+      if (found) raised = found;
+    }
+    expect(raised).toBeDefined();
+    // 14.5 + 4.0 cap = 18.5 max.
+    expect(raised!.line).toBeLessThanOrEqual(18.5);
+  });
+
+  test('does NOT raise when probability trigger fails', () => {
+    // probability 65 < 70 → no raise should fire.
+    const lines = [eliteCandidate({ probability: 65 }), ...strongSlate(8, 70)];
+    const { combos } = buildCombos(lines);
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 999);
+      if (found) expect(found.lineRaised).toBeFalsy();
+    }
+  });
+
+  test('does NOT raise when risk is too high', () => {
+    // risk 60 > 55 → no raise.
+    const lines = [eliteCandidate({ risk: 60 }), ...strongSlate(8, 70)];
+    const { combos } = buildCombos(lines);
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 999);
+      if (found) expect(found.lineRaised).toBeFalsy();
+    }
+  });
+
+  test('does NOT raise when projection edge is below 1.25σ', () => {
+    // projection 15.5, line 14.5, σ=4 → edge = 0.25σ. Way below the
+    // 1.25σ trigger.
+    const lines = [
+      eliteCandidate({ projectionFinal: 15.5, blendedStdDev: 4 }),
+      ...strongSlate(8, 70),
+    ];
+    const { combos } = buildCombos(lines);
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 999);
+      if (found) expect(found.lineRaised).toBeFalsy();
+    }
   });
 });
 

@@ -2443,6 +2443,25 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-top: -1px;
 }
 
+/* Line-raising indicators on the leg row. Original line is struck
+   through to make the move visible at a glance; new line emphasized.
+   The note below the leg explains the analytical-signal caveat. */
+.best-pick-leg-line-orig {
+  text-decoration: line-through;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.best-pick-leg-line-raised {
+  color: var(--warn);
+}
+.best-pick-leg-raised-note {
+  font-size: 10px;
+  color: var(--warn);
+  font-weight: 600;
+  padding-left: 2px;
+  margin-top: -1px;
+}
+
 /* Empty Wild Card tile — surfaces "no qualifying picks" copy without
    pretending to be a clickable card. */
 .best-pick-card.empty-wild {
