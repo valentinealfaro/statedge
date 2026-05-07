@@ -67,36 +67,61 @@ function confidenceLabel(score: number): string {
 }
 
 // -----------------------------------------------------------------
-// Correlation map. Highly-correlated stats from the SAME PLAYER on
-// the same card amplify variance — if Points misses badly, PRA tends
-// to miss too. We block these combinations (spec §"Same Player Rule"
-// and §"Correlation Risk Rules"). Cross-player correlation (game
-// script, opposing players) is harder to model with current data;
-// not enforced in V1.
+// Correlation derivation. Two stats are "correlated" (and so blocked
+// from co-occurring on the same card for a given player) when they
+// share a base box-score component — a bad scoring night drags
+// Points, Pts+Rebs, Pts+Asts, PRA, FG Made, and 3PT Made together,
+// so they shouldn't all sit on the same ticket.
+//
+// Earlier we maintained a hand-rolled lookup table, which missed
+// cross-pairs like Pts+Rebs ↔ Pts+Asts (both share Points). Driving
+// the relation off a base-component set fixes that systematically:
+// any two stats whose component sets intersect are flagged.
+//
+// Cross-player correlation (game script, opposing stars) is still
+// out of scope here — handled at the combined-hit penalty layer
+// instead, since it's a softer signal than same-player base overlap.
 // -----------------------------------------------------------------
-const CORRELATED_STATS: Record<string, readonly Last10StatId[]> = {
-  points: ['pra', 'pr', 'pa'],
-  pra: ['points', 'pr', 'pa', 'ra', 'rebounds', 'assists'],
-  pr: ['points', 'rebounds', 'pra'],
-  pa: ['points', 'assists', 'pra'],
-  ra: ['rebounds', 'assists', 'pra'],
-  rebounds: ['pra', 'pr', 'ra', 'offensive_rebounds', 'defensive_rebounds'],
-  assists: ['pra', 'pa', 'ra'],
-  blocks: ['stocks'],
-  steals: ['stocks'],
-  stocks: ['blocks', 'steals'],
-  three_pt_made: ['fg_made'],
-  fg_made: ['three_pt_made', 'fg_attempted'],
-  fg_attempted: ['fg_made'],
-  ft_made: ['ft_attempted'],
-  ft_attempted: ['ft_made'],
-  offensive_rebounds: ['rebounds'],
-  defensive_rebounds: ['rebounds'],
+const BASE_COMPONENTS: Record<Last10StatId, ReadonlySet<string>> = {
+  points: new Set(['points']),
+  rebounds: new Set(['rebounds']),
+  // Offensive/defensive rebounds are subsets of total rebounds —
+  // share the rebounds base so PRA / PR / RA pairs block them.
+  offensive_rebounds: new Set(['rebounds']),
+  defensive_rebounds: new Set(['rebounds']),
+  assists: new Set(['assists']),
+  // PRA-family stats share their constituent bases.
+  pra: new Set(['points', 'rebounds', 'assists']),
+  pr: new Set(['points', 'rebounds']),
+  pa: new Set(['points', 'assists']),
+  ra: new Set(['rebounds', 'assists']),
+  // Shooting stats: 3PT Made and FG Made both contribute to Points.
+  // FG attempts share volume with FG makes (same shot opportunity).
+  three_pt_made: new Set(['points', 'fg_volume']),
+  fg_made: new Set(['points', 'fg_volume']),
+  fg_attempted: new Set(['fg_volume']),
+  ft_made: new Set(['points', 'ft_volume']),
+  ft_attempted: new Set(['ft_volume']),
+  // Defensive counters.
+  steals: new Set(['steals']),
+  blocks: new Set(['blocks']),
+  stocks: new Set(['steals', 'blocks']),
+  // Stats with no shared base — never block.
+  turnovers: new Set(['turnovers']),
+  personal_fouls: new Set(['personal_fouls']),
+  // Double-double depends on at least two of these crossing 10 — same
+  // player's high-output night that drives a DD also drives the
+  // individual stat lines.
+  double_double: new Set(['points', 'rebounds', 'assists', 'steals', 'blocks']),
 };
 
 function statsCorrelated(a: Last10StatId, b: Last10StatId): boolean {
   if (a === b) return true;
-  return CORRELATED_STATS[a]?.includes(b) ?? false;
+  const ca = BASE_COMPONENTS[a];
+  const cb = BASE_COMPONENTS[b];
+  if (!ca || !cb) return false;
+  for (const v of ca) if (cb.has(v)) return true;
+  return false;
 }
 
 // -----------------------------------------------------------------

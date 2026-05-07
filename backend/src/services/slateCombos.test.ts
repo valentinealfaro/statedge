@@ -236,6 +236,61 @@ describe('buildCombos correlation block', () => {
     const hasPra = starStats.includes('pra');
     expect(hasPoints && hasPra).toBe(false);
   });
+
+  test('blocks same-player Pts+Rebs and Pts+Asts on same card (shared Points base)', () => {
+    // Regression: the old hand-rolled correlation map had pr→[points,
+    // rebounds, pra] and pa→[points, assists, pra] but never linked
+    // pr↔pa directly. Same-player Pts+Rebs and Pts+Asts both depend
+    // on the player's scoring; if Tobias has a quiet 8-point night
+    // both legs lose together. New base-component model catches this
+    // via the shared 'points' base.
+    const lines: ResolvedLine[] = [
+      makeLine({
+        playerId: 88, playerName: 'Tobias',
+        statKey: 'pr', statLabel: 'Pts + Rebs', line: 24.5,
+        projection: makeProjection({ probability: { over: 75, under: 25 } }),
+      }),
+      makeLine({
+        playerId: 88, playerName: 'Tobias',
+        statKey: 'pa', statLabel: 'Pts + Asts', line: 19.5,
+        projection: makeProjection({ probability: { over: 72, under: 28 } }),
+      }),
+      ...strongSlate(8, 70),
+    ];
+    const { combos } = buildCombos(lines);
+    for (const c of combos) {
+      const tobiasStats = c.legs.filter((l) => l.playerId === 88).map((l) => l.statKey);
+      const hasPR = tobiasStats.includes('pr');
+      const hasPA = tobiasStats.includes('pa');
+      expect(hasPR && hasPA).toBe(false);
+    }
+  });
+
+  test('blocks same-player 3PT Made + Points (shared points base)', () => {
+    // A made 3 contributes to points. Same-player 3PT-over and
+    // Points-over share variance — rough night from deep usually
+    // means a low-points night too.
+    const lines: ResolvedLine[] = [
+      makeLine({
+        playerId: 77, playerName: 'Sniper',
+        statKey: 'three_pt_made', statLabel: '3-PT Made', line: 2.5,
+        projection: makeProjection({ probability: { over: 76, under: 24 } }),
+      }),
+      makeLine({
+        playerId: 77, playerName: 'Sniper',
+        statKey: 'points', statLabel: 'Points', line: 22.5,
+        projection: makeProjection({ probability: { over: 74, under: 26 } }),
+      }),
+      ...strongSlate(8, 70),
+    ];
+    const { combos } = buildCombos(lines);
+    for (const c of combos) {
+      const sniperStats = c.legs.filter((l) => l.playerId === 77).map((l) => l.statKey);
+      const has3 = sniperStats.includes('three_pt_made');
+      const hasPts = sniperStats.includes('points');
+      expect(has3 && hasPts).toBe(false);
+    }
+  });
 });
 
 describe('buildCombos Wild Card priority chain', () => {
