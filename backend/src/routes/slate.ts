@@ -334,17 +334,71 @@ slateRouter.post('/parse', async (req, res) => {
   }
 });
 
-// Public daily slate. The admin POSTs the day's prop sheet once and
-// every visitor's /slate page loads it via GET — no per-user paste
-// required. We auto-resolve on GET so the response carries fully
-// populated cards (with model probabilities) ready to render.
+// In-process dedupe for the auto-publish path below. When tonight's
+// slate hasn't been admin-pasted yet, the first visitor to hit
+// /slate/today triggers a live PrizePicks pull and persist; while
+// that's in flight, concurrent visitors await the same promise so
+// we don't fire 10 PP requests when 10 tabs open at once.
+let autoPublishInflight: Promise<StoredSlateLine[]> | null = null;
+
+// Live-pull from PrizePicks → normalize → persist as today's slate.
+// Used as the auto-fallback when no admin paste exists for today.
+// Returns the lines that were persisted (empty array if PP returned
+// nothing usable). Throws on PP errors so the caller can decide
+// whether to surface or swallow.
+async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
+  const ppLines = await fetchPrizePicksNba();
+  const stored: StoredSlateLine[] = [];
+  for (const p of ppLines) {
+    if (!p.playerName || !p.statType) continue;
+    if (!Number.isFinite(p.line) || p.line <= 0) continue;
+    const opp = parseOpponent(p.description, p.team);
+    stored.push({
+      playerName: p.playerName,
+      statLabel: p.statType,
+      line: p.line,
+      team: p.team || undefined,
+      opponentAbbr: opp,
+      direction: 'both',
+    });
+  }
+  if (stored.length === 0) return [];
+  await setDailySlateInDb(stored);
+  return stored;
+}
+
+// Public daily slate. The admin can POST the day's prop sheet, but
+// when no paste has happened yet we auto-pull from PrizePicks so
+// visitors see tonight's lines without anyone having to publish.
+// We auto-resolve on GET so the response carries fully populated
+// cards (with model probabilities) ready to render.
 slateRouter.get('/today', async (_req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });
     return;
   }
   try {
-    const stored = await getDailySlateFromDb();
+    let stored = await getDailySlateFromDb();
+
+    // Empty-for-today → try the auto-publish fallback. PP can 403 from
+    // Vercel egress IPs, so we treat any failure as "nothing to show"
+    // and let the admin paste path remain available.
+    if (!stored || stored.lines.length === 0) {
+      try {
+        if (!autoPublishInflight) {
+          autoPublishInflight = autoPublishFromPrizePicks().finally(() => {
+            autoPublishInflight = null;
+          });
+        }
+        const lines = await autoPublishInflight;
+        if (lines.length > 0) {
+          stored = await getDailySlateFromDb();
+        }
+      } catch (err) {
+        console.warn('slate/today auto-publish skipped:', (err as Error).message);
+      }
+    }
+
     if (!stored || stored.lines.length === 0) {
       res.json({ slate: null, resolved: null });
       return;
