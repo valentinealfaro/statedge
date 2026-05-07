@@ -361,6 +361,16 @@ describe('buildCombos EV engine', () => {
     }
   });
 
+  test('Best 6 payout matches PrizePicks Power Play boosted rate (8.4x)', () => {
+    // Regression: was 25x (older / wrong). Real Power Play 6-pick
+    // pays 7x base / 8.4x with the standard "Payout Boost" promo.
+    // Using 8.4x because that's what users actually see; if
+    // PrizePicks restructures payouts again, update PRIZEPICKS_PAYOUTS.
+    const { combos } = buildCombos(strongSlate(20, 80));
+    const best6 = combos.find((c) => c.label === 'Best 6');
+    expect(best6?.payoutMultiplier).toBe(8.4);
+  });
+
   test('Best 2 with 90% legs at 3x payout reads as Positive EV', () => {
     // 0.90 × 0.90 × 3 − 1 = 1.43 (massively +EV)
     // (correlation penalty drops it slightly but well above +0.10)

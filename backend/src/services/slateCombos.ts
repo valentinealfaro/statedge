@@ -75,18 +75,31 @@ function confidenceLabel(score: number): string {
 // independent, this is the per-leg break-even rate at which a card's
 // EV is zero. Anything above this is positive expected value.
 //
-// 2-leg payout=3x  → implied per-leg ≈ 57.7%
-// 3-leg payout=5x  → implied per-leg ≈ 58.5%
-// 4-leg payout=10x → implied per-leg ≈ 56.2%
-// 5-leg payout=20x → implied per-leg ≈ 54.9%
-// 6-leg payout=25x → implied per-leg ≈ 52.2%
+// Numbers tuned to match what users actually see in the PrizePicks
+// app. PrizePicks restructured Power Play payouts and currently
+// runs a "Payout Boost" promo on most accounts; we use the boosted
+// rates because that's what shows up in the user's flow. If the
+// boost is removed, base rates would be lower (e.g. 6-pick 7× base
+// vs 8.4× boosted) — adjust this table when payouts change again.
+//
+// 2-leg payout=3x   → implied per-leg ≈ 57.7%   break-even ≈ 33.3% combined
+// 3-leg payout=5x   → implied per-leg ≈ 58.5%   break-even ≈ 20% combined
+// 4-leg payout=10x  → implied per-leg ≈ 56.2%   break-even ≈ 10% combined
+// 5-leg payout=20x  → implied per-leg ≈ 54.9%   break-even ≈ 5% combined
+// 6-leg payout=8.4x → implied per-leg ≈ 74.6%   break-even ≈ 11.9% combined
+//
+// The 6-leg implied is much higher than the others because the
+// payout is structurally worse — 6-pick is one of the least
+// profitable cards on PrizePicks. This is exactly why the spec
+// pushed for "Aggressive Edge" identity on Best 6: a 6-pick needs
+// genuine market mispricing to be +EV, not safe consensus props.
 // -----------------------------------------------------------------
 export const PRIZEPICKS_PAYOUTS: Record<number, number> = {
   2: 3,
   3: 5,
   4: 10,
   5: 20,
-  6: 25,
+  6: 8.4,
 };
 
 // Average per-leg implied across the card sizes — used as the
