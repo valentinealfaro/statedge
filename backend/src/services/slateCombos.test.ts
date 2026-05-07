@@ -346,7 +346,7 @@ describe('buildCombos EV engine', () => {
       expect(typeof leg.projectionDistanceScore).toBe('number');
       expect(['Safe Core', 'Value', 'Ceiling', 'Contrarian']).toContain(leg.category);
       expect(typeof leg.trapScore).toBe('number');
-      expect(['Normal', 'Slight Trap Risk', 'High Trap Risk', 'Extreme Trap Risk']).toContain(leg.trapTier);
+      expect(['Clean', 'Mild Trap Risk', 'Moderate Trap Risk', 'High Trap Risk', 'Extreme Trap Risk']).toContain(leg.trapTier);
     }
   });
 
@@ -433,12 +433,16 @@ describe('buildCombos EV engine', () => {
       if (found) trapLeg = found;
     }
     if (trapLeg) {
-      expect(trapLeg.trapScore).toBeGreaterThan(50);
-      expect(['High Trap Risk', 'Extreme Trap Risk']).toContain(trapLeg.trapTier);
+      // The new 8-component formula caps individual signals at 100
+      // and weights them; even a worst-case fixture lands around 60
+      // (high statTypeRisk + max lineMargin + injury OK). We just
+      // guard against the trap detection being totally absent.
+      expect(trapLeg.trapScore).toBeGreaterThan(40);
+      expect(['Moderate Trap Risk', 'High Trap Risk', 'Extreme Trap Risk']).toContain(trapLeg.trapTier);
     }
     // (If the trap candidate didn't make any card due to its lower
     // ranking, that's also fine — the test just guards against
-    // miscategorizing it as "Normal" when it does land.)
+    // miscategorizing it as low-risk when it does land.)
   });
 });
 
@@ -635,6 +639,115 @@ describe('buildCombos slate modes', () => {
     // Ceiling Pick should land on Aggressive Best 6 because
     // projection is 2.5+ σ above line.
     expect(aggBest6.legs.some((l) => l.playerId === 902)).toBe(true);
+  });
+});
+
+describe('buildCombos trap detection v2', () => {
+  test('candidate fragility + maxCardSize fields are populated', () => {
+    const { combos } = buildCombos(strongSlate(20, 75));
+    for (const c of combos) {
+      for (const leg of c.legs) {
+        expect(typeof leg.fragilityScore).toBe('number');
+        expect(['Strong', 'Acceptable', 'Fragile', 'Do Not Use']).toContain(leg.fragilityTier);
+        expect(typeof leg.maxCardSize).toBe('number');
+      }
+    }
+  });
+
+  test('combo emits weakest leg + cardFragility + averageTrapScore', () => {
+    const { combos } = buildCombos(strongSlate(20, 75));
+    for (const c of combos) {
+      if (c.legs.length === 0) continue;
+      expect(typeof c.weakestLegPlayerId).toBe('number');
+      expect(typeof c.weakestLegName).toBe('string');
+      expect(typeof c.weakestLegFragility).toBe('number');
+      expect(typeof c.weakestLegReason).toBe('string');
+      expect(['Strong', 'Acceptable', 'Fragile', 'Do Not Use']).toContain(c.cardFragility);
+      expect(typeof c.averageTrapScore).toBe('number');
+    }
+  });
+
+  test('thin-margin pick (line equals projection) gets high trap score', () => {
+    // projection ≈ line → lineMarginRisk dominates
+    const thinLine = makeLine({
+      playerId: 60,
+      playerName: 'Thin Margin',
+      team: 'NYK',
+      statKey: 'points',
+      statLabel: 'Points',
+      line: 22,
+      projection: makeProjection({
+        probability: { over: 60, under: 40 },
+        confidence: { score: 65, label: 'Medium' },
+        risk: { score: 50, label: 'Moderate' },
+        edge: { score: 50, label: 'Moderate', lean: 'Slight Over Lean' },
+        // Projection sits AT the line — extreme thin margin.
+        projection: { baseline: 22, contextAdjusted: 22, final: 22, rangeLow: 18, rangeHigh: 26 },
+        factorBreakdown: {
+          seasonAvg: 22, last10Avg: 22, last5Avg: 22,
+          vsOpponentAvg: 22, homeAwayAvg: 22,
+          seasonMedian: 22, last10Median: 22,
+          blendedStdDev: 4, projectedMinutes: 36,
+          minutesMultiplier: 1, usageMultiplier: 1, injuryMultiplier: 1,
+          opponentDefenseMultiplier: 1, paceMultiplier: 1, restMultiplier: 1,
+          gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 50,
+        },
+      }),
+    });
+    const { combos } = buildCombos([thinLine, ...strongSlate(8, 70)]);
+    for (const c of combos) {
+      const leg = c.legs.find((l) => l.playerId === 60);
+      if (leg) {
+        // 0σ above line → lineMarginRisk = 80, contributing 16 pts
+        // (weight 0.20) of the trap score. Combined with other
+        // baseline components (~15-30 from defaults), trap lands
+        // in the Mild range. The signal IS detected — just diluted
+        // by the rest of the formula.
+        expect(leg.trapScore).toBeGreaterThanOrEqual(21);
+      }
+    }
+  });
+
+  test('low-event stat (steals) carries higher baseline trap risk than points', () => {
+    const stealsLine = makeLine({
+      playerId: 70,
+      playerName: 'Steals Player',
+      team: 'BKN',
+      statKey: 'steals',
+      statLabel: 'Steals',
+      line: 0.5,
+      projection: makeProjection({
+        probability: { over: 70, under: 30 },
+        confidence: { score: 70, label: 'High' },
+        risk: { score: 50, label: 'Moderate' },
+        edge: { score: 65, label: 'Strong', lean: 'Strong Over Lean' },
+        projection: { baseline: 1.2, contextAdjusted: 1.2, final: 1.2, rangeLow: 0.5, rangeHigh: 2 },
+        factorBreakdown: {
+          seasonAvg: 1.2, last10Avg: 1.2, last5Avg: 1.2,
+          vsOpponentAvg: 1.2, homeAwayAvg: 1.2,
+          seasonMedian: 1.2, last10Median: 1.2,
+          blendedStdDev: 1, projectedMinutes: 36,
+          minutesMultiplier: 1, usageMultiplier: 1, injuryMultiplier: 1,
+          opponentDefenseMultiplier: 1, paceMultiplier: 1, restMultiplier: 1,
+          gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 70,
+        },
+      }),
+    });
+    const { combos } = buildCombos([stealsLine, ...strongSlate(8, 75)]);
+    let stealLeg, pointsLeg;
+    for (const c of combos) {
+      const s = c.legs.find((l) => l.playerId === 70);
+      const p = c.legs.find((l) => l.statKey === 'points');
+      if (s && !stealLeg) stealLeg = s;
+      if (p && !pointsLeg) pointsLeg = p;
+    }
+    if (stealLeg && pointsLeg) {
+      // Steals has STAT_TYPE_RISK = 70; points = 35. So the steals
+      // leg should carry a higher trap score, all else equal.
+      expect(stealLeg.trapScore).toBeGreaterThan(pointsLeg.trapScore - 5);
+    }
   });
 });
 

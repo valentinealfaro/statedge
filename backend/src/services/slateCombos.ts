@@ -182,14 +182,100 @@ function pickCategory(c: {
 // signals; we don't have public-sentiment data so that component is
 // proxied with stat volatility (a high-variance recent-spike player
 // is the typical public-trap candidate anyway).
-export type TrapTier = 'Normal' | 'Slight Trap Risk' | 'High Trap Risk' | 'Extreme Trap Risk';
+// Trap tier — 5 levels per the Trap Detection spec. Boundaries:
+// 0-20 Clean / 21-40 Mild / 41-60 Moderate / 61-80 High / 81+ Extreme.
+export type TrapTier =
+  | 'Clean'
+  | 'Mild Trap Risk'
+  | 'Moderate Trap Risk'
+  | 'High Trap Risk'
+  | 'Extreme Trap Risk';
 
 function trapTierFromScore(score: number): TrapTier {
-  if (score >= 76) return 'Extreme Trap Risk';
-  if (score >= 51) return 'High Trap Risk';
-  if (score >= 26) return 'Slight Trap Risk';
-  return 'Normal';
+  if (score >= 81) return 'Extreme Trap Risk';
+  if (score >= 61) return 'High Trap Risk';
+  if (score >= 41) return 'Moderate Trap Risk';
+  if (score >= 21) return 'Mild Trap Risk';
+  return 'Clean';
 }
+
+// Fragility tier — derived from fragilityScore. Spec §"Fragility Score":
+// 0-25 Strong, 26-45 Acceptable, 46-65 Fragile, 66+ Do Not Use.
+export type FragilityTier = 'Strong' | 'Acceptable' | 'Fragile' | 'Do Not Use';
+
+function fragilityTierFromScore(score: number): FragilityTier {
+  if (score >= 66) return 'Do Not Use';
+  if (score >= 46) return 'Fragile';
+  if (score >= 26) return 'Acceptable';
+  return 'Strong';
+}
+
+// Per-stat baseline trap risk (spec §"Stat Type Risk"). Low-event
+// stats (steals, blocks, 3PT, turnovers) get higher baseline risk
+// because their distributions are noisy and small-sample-sensitive.
+const STAT_TYPE_RISK: Record<Last10StatId, number> = {
+  pra: 20,
+  pr: 30,
+  pa: 32,
+  ra: 35,
+  points: 35,
+  rebounds: 35,
+  defensive_rebounds: 35,
+  assists: 40,
+  fg_attempted: 40,
+  fg_made: 45,
+  ft_made: 45,
+  ft_attempted: 45,
+  offensive_rebounds: 50,
+  three_pt_made: 55,
+  turnovers: 55,
+  double_double: 60,
+  stocks: 70,
+  steals: 70,
+  blocks: 75,
+  personal_fouls: 75,
+};
+
+// Map injury status string → injury risk score (0-100). Spec
+// §"Injury / Reboot Risk" — Out is structurally blocked upstream
+// (we never include OUT players as candidates), but we keep the
+// 100 case for robustness.
+function injuryRiskFromStatus(status: string | null | undefined): number {
+  if (!status) return 5;       // Healthy
+  switch (status) {
+    case 'Out':           return 100;
+    case 'Doubtful':      return 90;
+    case 'Questionable':  return 70;
+    case 'Day-To-Day':    return 50;
+    case 'Probable':      return 30;
+    default:              return 15;
+  }
+}
+
+// Map archetype label → role risk. Players whose archetypes signal
+// usage / minutes instability get higher role risk. Insufficient-data
+// players get a moderate penalty (we just don't know).
+function roleRiskFromArchetype(archetype: string | null | undefined): number {
+  switch (archetype) {
+    case 'Stable Producer':      return 10;
+    case 'Moderately Volatile':  return 30;
+    case 'High Variance':        return 50;
+    case 'Boom/Bust':            return 70;
+    case 'Minutes Sensitive':    return 80;
+    case 'Insufficient Data':    return 60;
+    default:                     return 35;     // unknown archetype
+  }
+}
+
+// Per-card-size eligibility gates (spec §"Card Eligibility Rules"):
+// the larger the card, the cleaner each leg must be.
+const CARD_SIZE_GATES: Record<number, { maxTrap: number; minConfidence: number }> = {
+  2: { maxTrap: 50, minConfidence: 60 },
+  3: { maxTrap: 45, minConfidence: 62 },
+  4: { maxTrap: 40, minConfidence: 65 },
+  5: { maxTrap: 35, minConfidence: 68 },
+  6: { maxTrap: 30, minConfidence: 70 },
+};
 
 // Slate strategy mode (spec §"USER RISK MODES"). Five modes:
 //   safe        Conservative — high hit rate, low variance
@@ -320,47 +406,112 @@ function computeMarketDisagreement(c: {
   );
 }
 
+// Trap-detection engine (spec §"Trap Score Formula"). Eight signals
+// combined into a single 0-100 score that says "how fragile is this
+// pick?" — separate from "is this a +EV pick?". A pick can be +EV
+// and high-trap (large edge but thin margin / unstable role); the
+// trap score is what protects multi-leg cards from one-short losses.
+//
+// V1 limitations:
+//   - gameScriptRisk: no pace/spread data yet → constant baseline 30
+//   - correlationRisk at the leg level: not knowable without card
+//     context → constant baseline 30. Card-level correlation block
+//     still happens during card construction.
+//   - minutesRisk: no per-game minutes time series exposed yet →
+//     proxy with statVolatility × 80 (correlated in practice).
 function computeTrapScore(c: {
   direction: 'OVER' | 'UNDER';
   line: number;
   projection: number;
-  l10Avg: number;
-  seasonAvg: number;
-  last5Avg: number | null;
+  blendedStdDev: number;
+  statKey: Last10StatId;
   statVolatility: number;
+  archetype: string | null;
+  injuryStatus: string | null;
 }): number {
-  // Recent overreaction — L5 avg vs L10/season baseline. A 50%+
-  // jump signals a hot streak the public chases.
-  let recentOverreactionScore = 0;
-  if (c.last5Avg !== null) {
-    const baseline = (c.seasonAvg + c.l10Avg) / 2;
-    if (baseline > 0) {
-      const spike = (c.last5Avg - baseline) / baseline;
-      if (spike > 0.5) recentOverreactionScore = 100;
-      else if (spike > 0.3) recentOverreactionScore = 70;
-      else if (spike > 0.15) recentOverreactionScore = 40;
+  // 1. Line margin risk — distance / σ. The most important signal:
+  //    a projection 0.2σ over the line is fragile no matter how
+  //    confident the model is in the projection.
+  let lineMarginRisk = 50;
+  if (c.blendedStdDev > 0) {
+    const distance =
+      c.direction === 'OVER' ? c.projection - c.line : c.line - c.projection;
+    const sigmas = distance / c.blendedStdDev;
+    if (sigmas >= 1.0) lineMarginRisk = 10;
+    else if (sigmas >= 0.5) lineMarginRisk = 30;
+    else if (sigmas >= 0.25) lineMarginRisk = 60;
+    else if (sigmas >= 0) lineMarginRisk = 80;
+    else lineMarginRisk = 95;        // projection is on the wrong side
+  }
+
+  // 2. Minutes risk — proxy with statVolatility (we don't have a
+  //    minutes time series exposed on candidates yet).
+  const minutesRisk = Math.min(100, c.statVolatility * 200);
+
+  // 3. Role risk — derived from the archetype classifier.
+  const roleRisk = roleRiskFromArchetype(c.archetype);
+
+  // 4. Volatility risk — coefficient of variation on the stat itself.
+  const volatilityRisk = Math.min(100, c.statVolatility * 200);
+
+  // 5. Stat-type risk — baseline per stat category.
+  const statTypeRisk = STAT_TYPE_RISK[c.statKey] ?? 40;
+
+  // 6. Injury / reboot risk — derived from the ESPN status string.
+  const injuryRisk = injuryRiskFromStatus(c.injuryStatus);
+
+  // 7. Game script risk — placeholder until we plumb pace/spread.
+  const gameScriptRisk = 30;
+
+  // 8. Correlation risk — placeholder at the leg level. The card
+  //    builder enforces same-player base-component blocks during
+  //    construction, so this is informational here.
+  const correlationRisk = 30;
+
+  return Math.round(
+    lineMarginRisk * 0.20
+    + minutesRisk * 0.20
+    + roleRisk * 0.15
+    + volatilityRisk * 0.15
+    + statTypeRisk * 0.10
+    + injuryRisk * 0.10
+    + gameScriptRisk * 0.05
+    + correlationRisk * 0.05,
+  );
+}
+
+// Per-leg fragility (spec §"Fragility Score"). Combines trap with
+// the projection's risk score and injury risk. Used to surface the
+// weakest leg on each card and decide if a card should be flagged.
+//
+// Spec formula references a `correlationRisk` term we don't have at
+// leg level; we omit it (treat as 0). The remaining weights still
+// sum reasonably.
+function computeFragilityScore(c: {
+  trapScore: number;
+  riskScore: number;
+  injuryRisk: number;
+}): number {
+  return Math.round(
+    c.trapScore * 0.45
+    + c.riskScore * 0.25
+    + c.injuryRisk * 0.15,
+  );
+}
+
+// Largest card size a leg can land on (spec §"Card Eligibility").
+// Computed from the leg's trap score + confidence: stricter gates
+// for bigger cards. Returns 0 if the leg fails the loosest gate
+// (Best 2) — but this rarely fires because passesEligibility blocks
+// poor candidates upstream.
+function maxCardSizeFor(trapScore: number, confidence: number): number {
+  for (const size of [6, 5, 4, 3, 2]) {
+    const gate = CARD_SIZE_GATES[size]!;
+    if (trapScore <= gate.maxTrap && confidence >= gate.minConfidence) {
+      return size;
     }
   }
-  // Line inflation — line set above projection (for OVER) or below
-  // (for UNDER). Means the market priced in expectation the model
-  // doesn't share. Most damaging when paired with a recent spike.
-  const inflation =
-    c.direction === 'OVER' ? c.line - c.projection : c.projection - c.line;
-  let lineInflationScore = 0;
-  if (inflation > 0.5) lineInflationScore = 100;
-  else if (inflation > 0) lineInflationScore = 60;
-  else if (inflation > -0.5) lineInflationScore = 30;
-  // Public-bias signals — proxied by stat volatility (no public data).
-  // Highly volatile players attract recency-bias action.
-  const publicBiasSignals = Math.min(100, c.statVolatility * 200);
-  // Variance — high CV = unstable, easy to misprice in either direction.
-  const variance = Math.min(100, c.statVolatility * 200);
-  return Math.round(
-    recentOverreactionScore * 0.30
-    + lineInflationScore * 0.30
-    + publicBiasSignals * 0.20
-    + variance * 0.20,
-  );
+  return 0;
 }
 
 // -----------------------------------------------------------------
@@ -585,6 +736,17 @@ export type ComboCandidate = {
   category: PickCategory;
   trapScore: number;                // 0-100
   trapTier: TrapTier;
+  // Fragility — combines trap with the projection's risk score and
+  // injury risk into a single "how reliable is this leg in a multi-
+  // leg card?" number. Used to surface the weakest leg per card and
+  // gate which card sizes the leg can ride on.
+  fragilityScore: number;           // 0-100
+  fragilityTier: FragilityTier;
+  // Largest card size this leg can land on per spec eligibility
+  // gates (Best N requires trapScore ≤ size-specific threshold AND
+  // confidence ≥ size-specific threshold). 0 when the leg fails
+  // the loosest gate (rare — eligibility filter usually catches first).
+  maxCardSize: number;
 
   // MarketDisagreementScore — how aggressively the model disagrees
   // with the market on this line. Combines projection separation
@@ -695,6 +857,16 @@ export type Combo = {
   averageProjectionGap?: number;          // avg |projection − line|
   trapExposure?: 'Low' | 'Medium' | 'High';
   marketDisagreementRating?: 'Low' | 'Medium' | 'High';
+
+  // Spec §"One-Short Prevention Rule" — surface the weakest leg so
+  // users can see what would fail first. Plus a card-level fragility
+  // tier and average trap score for quick scanning.
+  weakestLegPlayerId?: number;
+  weakestLegName?: string;
+  weakestLegFragility?: number;           // 0-100
+  weakestLegReason?: string;
+  cardFragility?: FragilityTier;
+  averageTrapScore?: number;              // 0-100
 };
 
 // Backwards-compat alias for the snapshot grader. Old snapshots in
@@ -857,15 +1029,23 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       risk: p.risk.score,
     });
     const seasonAvg = p.factorBreakdown.seasonAvg ?? l.last10Avg;
+    const archetypeLabel = l.archetype?.archetype ?? null;
     const trapScore = computeTrapScore({
       direction,
       line: l.line,
       projection: p.projection.final,
-      l10Avg: l.last10Avg,
-      seasonAvg,
-      last5Avg: p.factorBreakdown.last5Avg,
+      blendedStdDev: p.factorBreakdown.blendedStdDev,
+      statKey: l.statKey,
       statVolatility,
+      archetype: archetypeLabel,
+      injuryStatus: injStatus,
     });
+    const fragilityScore = computeFragilityScore({
+      trapScore,
+      riskScore: p.risk.score,
+      injuryRisk: injuryRiskFromStatus(injStatus),
+    });
+    const maxCardSize = maxCardSizeFor(trapScore, p.confidence.score);
     const category = pickCategory({
       probability,
       edgePercent,
@@ -877,6 +1057,9 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       edgePercent,
       confidence: p.confidence.score,
     });
+    // seasonAvg held for reference even though the new trap formula
+    // doesn't use it; downstream code might.
+    void seasonAvg;
 
     const raw: EnrichedCandidate = {
       playerId: l.playerId,
@@ -902,6 +1085,9 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       category,
       trapScore,
       trapTier: trapTierFromScore(trapScore),
+      fragilityScore,
+      fragilityTier: fragilityTierFromScore(fragilityScore),
+      maxCardSize,
       marketDisagreementScore,
       l10Avg: l.last10Avg,
       vsOppAvg: l.vsOpponent?.avg ?? null,
@@ -1250,6 +1436,12 @@ function makeCombo(
   // props. Empty cards leave them undefined.
   let averageProjectionGap: number | undefined;
   let marketDisagreementRating: Combo['marketDisagreementRating'];
+  let averageTrapScore: number | undefined;
+  let weakestLegPlayerId: number | undefined;
+  let weakestLegName: string | undefined;
+  let weakestLegFragility: number | undefined;
+  let weakestLegReason: string | undefined;
+  let cardFragility: FragilityTier | undefined;
   if (legs.length > 0) {
     const sumGap = legs.reduce((s, l) => s + (l.projectionDistance ?? 0), 0);
     averageProjectionGap = round1(sumGap / legs.length);
@@ -1259,6 +1451,54 @@ function makeCombo(
     // expected range of marketDisagreementScore on real slates.
     marketDisagreementRating =
       avgMd >= 60 ? 'High' : avgMd >= 40 ? 'Medium' : 'Low';
+
+    // Average trap score across legs.
+    const sumTrap = legs.reduce((s, l) => s + (l.trapScore ?? 0), 0);
+    averageTrapScore = round1(sumTrap / legs.length);
+
+    // Weakest leg — highest fragility score on the card. Drives the
+    // one-short prevention warning ("Luke Kornet is the weakest leg
+    // on this card — minutes instability + thin margin"). When all
+    // legs are Strong, we still surface the highest one as info but
+    // skip the explicit warning.
+    let worst = legs[0]!;
+    for (const leg of legs) {
+      if ((leg.fragilityScore ?? 0) > (worst.fragilityScore ?? 0)) worst = leg;
+    }
+    weakestLegPlayerId = worst.playerId;
+    weakestLegName = worst.playerName;
+    weakestLegFragility = worst.fragilityScore;
+    cardFragility = worst.fragilityTier;
+    weakestLegReason = describeFragility(worst);
+
+    // Card-size eligibility check (spec §"Card Eligibility Rules").
+    // Bigger cards require cleaner legs. If any leg's trap score
+    // exceeds the size-specific threshold, surface a warning so the
+    // user knows what's fragile. We don't drop the card outright —
+    // showing it with a warning is better UX than silent removal.
+    const expected = label === 'Wild Card' ? null : Number(label.split(' ')[1]);
+    if (expected !== null) {
+      const gate = CARD_SIZE_GATES[expected];
+      if (gate) {
+        const overTrap = legs.filter((l) => (l.trapScore ?? 0) > gate.maxTrap).length;
+        const underConf = legs.filter((l) => (l.confidence ?? 0) < gate.minConfidence).length;
+        if (overTrap > 0) {
+          warnings.push(
+            `${overTrap} leg${overTrap === 1 ? '' : 's'} exceed${overTrap === 1 ? 's' : ''} the trap-score gate for a ${expected}-leg card (≤${gate.maxTrap}) — consider a smaller card.`,
+          );
+        }
+        if (underConf > 0) {
+          warnings.push(
+            `${underConf} leg${underConf === 1 ? '' : 's'} below the confidence floor (≥${gate.minConfidence}) for a ${expected}-leg card.`,
+          );
+        }
+      }
+    }
+    if (cardFragility === 'Do Not Use') {
+      warnings.push(
+        `Card fragility is "Do Not Use" — at least one leg has compounded trap + risk + injury exposure that makes large cards unreliable. Recommend trimming.`,
+      );
+    }
   }
 
   return {
@@ -1277,7 +1517,36 @@ function makeCombo(
     averageProjectionGap,
     trapExposure,
     marketDisagreementRating,
+    weakestLegPlayerId,
+    weakestLegName,
+    weakestLegFragility,
+    weakestLegReason,
+    cardFragility,
+    averageTrapScore,
   };
+}
+
+// Human-readable explanation of why this leg is the most fragile.
+// Picks the strongest contributing factor (thin margin / high trap /
+// injury / etc) and surfaces it as the "fragility reason".
+function describeFragility(leg: ComboCandidate): string {
+  const reasons: string[] = [];
+  // Margin check — projection thinly above line is the most
+  // important fragility signal.
+  if (leg.projectionDistance !== undefined && leg.projectionDistanceScore !== undefined) {
+    if (leg.projectionDistanceScore < 25) reasons.push('thin projection margin');
+  }
+  if (leg.injuryStatus && leg.injuryStatus !== 'Probable') {
+    reasons.push(`${leg.injuryStatus.toLowerCase()} injury status`);
+  }
+  if (leg.statVolatility >= 0.4) reasons.push('high stat volatility');
+  if (leg.archetype === 'Boom/Bust' || leg.archetype === 'Minutes Sensitive') {
+    reasons.push(`${leg.archetype.toLowerCase()} archetype`);
+  }
+  const lowEvent = STAT_TYPE_RISK[leg.statKey] ?? 0;
+  if (lowEvent >= 60) reasons.push('low-event stat type');
+  if (reasons.length === 0) return `Highest combined trap + risk on this card.`;
+  return reasons.slice(0, 2).join(' + ') + '.';
 }
 
 function round2(n: number): number {

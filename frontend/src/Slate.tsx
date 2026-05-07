@@ -938,6 +938,21 @@ function BestPicksRail({
                   )}
                 </div>
               )}
+              {/* One-Short Prevention call-out — names the leg most
+                  likely to fail and explains why. Drives user
+                  decisions about whether to trim the card. Only shows
+                  when a card is Fragile or worse; Strong/Acceptable
+                  cards stay quiet. */}
+              {c.weakestLegName && c.cardFragility
+                && c.cardFragility !== 'Strong' && c.cardFragility !== 'Acceptable' && (
+                <div
+                  className={`best-pick-weakest weakest-${(c.cardFragility ?? '').toLowerCase().replace(/ /g, '-')}`}
+                  title="The leg most likely to short this card. If you're going to trim, start here."
+                >
+                  ⚠ Weakest leg: <strong>{c.weakestLegName}</strong>
+                  {c.weakestLegReason && <> — {c.weakestLegReason}</>}
+                </div>
+              )}
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
                   <div key={i} className="best-pick-leg-block">

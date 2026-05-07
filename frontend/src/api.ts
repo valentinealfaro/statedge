@@ -610,10 +610,15 @@ export type SlateUnresolvedLine = {
 
 export type SlatePickCategory = 'Safe Core' | 'Value' | 'Ceiling' | 'Contrarian';
 export type SlateTrapTier =
-  | 'Normal'
-  | 'Slight Trap Risk'
+  | 'Clean'
+  | 'Mild Trap Risk'
+  | 'Moderate Trap Risk'
   | 'High Trap Risk'
-  | 'Extreme Trap Risk';
+  | 'Extreme Trap Risk'
+  // Legacy tiers — old snapshots stored these; UI handles both.
+  | 'Normal'
+  | 'Slight Trap Risk';
+export type SlateFragilityTier = 'Strong' | 'Acceptable' | 'Fragile' | 'Do Not Use';
 
 export type SlateComboLeg = {
   playerId: number;
@@ -641,6 +646,9 @@ export type SlateComboLeg = {
   category?: SlatePickCategory;
   trapScore?: number;
   trapTier?: SlateTrapTier;
+  fragilityScore?: number;
+  fragilityTier?: SlateFragilityTier;
+  maxCardSize?: number;
   marketDisagreementScore?: number;
   l10Avg: number;
   vsOppAvg: number | null;
@@ -706,6 +714,14 @@ export type SlateCombo = {
   averageProjectionGap?: number;   // avg |projection − line| across legs
   trapExposure?: 'Low' | 'Medium' | 'High';
   marketDisagreementRating?: 'Low' | 'Medium' | 'High';
+  // Spec §"One-Short Prevention Rule" — surface the weakest leg + a
+  // card-level fragility tier. Helps users see what would fail first.
+  weakestLegPlayerId?: number;
+  weakestLegName?: string;
+  weakestLegFragility?: number;
+  weakestLegReason?: string;
+  cardFragility?: SlateFragilityTier;
+  averageTrapScore?: number;
 };
 
 export type SlateResponse = {

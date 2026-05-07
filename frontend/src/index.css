@@ -2623,6 +2623,28 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .best-pick-signal strong.disagree-medium { color: var(--brand-blue); }
 .best-pick-signal strong.disagree-low    { color: var(--text-3); }
 
+/* Weakest-leg call-out — sits between the signals row and the legs.
+   Color-keyed to fragility tier (red for "Do Not Use", amber for
+   Fragile). Strong/Acceptable cards skip rendering this entirely. */
+.best-pick-weakest {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.best-pick-weakest.weakest-fragile {
+  background: rgba(255, 184, 107, 0.10);
+  border: 1px solid rgba(255, 184, 107, 0.25);
+  color: var(--warn);
+}
+.best-pick-weakest.weakest-do-not-use {
+  background: rgba(239, 106, 106, 0.10);
+  border: 1px solid rgba(239, 106, 106, 0.25);
+  color: var(--cold);
+}
+.best-pick-weakest strong { color: inherit; font-weight: 800; }
+
 /* Per-leg EV bar — second row under the leg's main row. Edge %,
    category chip, trap warning when the leg looks public-driven. */
 .best-pick-leg-evbar {
