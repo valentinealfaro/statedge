@@ -62,6 +62,27 @@ export type CalibrationBucket = {
   status: CalibrationStatus;
 };
 
+// Projection-error summary (spec §"Projection Error Distribution"):
+// per-leg miss = actual − projected. Surfaces whether the model
+// systematically over- or under-projects, separate from whether it's
+// well-calibrated on hit %.
+export type ProjectionErrorSummary = {
+  // How many legs had both an actual and a projected value (DD legs
+  // and legacy snapshots without `projection` are excluded).
+  sampleSize: number;
+  // Average signed miss (actual − projected). Positive = we
+  // under-projected; negative = we over-projected.
+  meanMiss: number;
+  medianMiss: number;
+  // Average |actual − projected| — pure accuracy, ignoring direction.
+  meanAbsoluteMiss: number;
+  // Bias breakdown: % of legs where we under- vs over-projected.
+  // Sums (with the "exact" rate) to 100. Useful for spotting
+  // systematic skew the meanMiss might smooth over.
+  underProjectionRate: number;     // actual > projected
+  overProjectionRate: number;      // actual < projected
+};
+
 export type CalibrationReport = {
   overall: CalibrationBucket;
   byProbability: CalibrationBucket[];
@@ -71,6 +92,13 @@ export type CalibrationReport = {
   // the risk engine is actually predicting risk. Picks tagged "High
   // Risk" should hit less often than "Low Risk" picks.
   byRisk: CalibrationBucket[];
+  // Volatility-archetype calibration (spec §"Volatility Archetype
+  // Accuracy") — surfaces which archetypes break the model. Boom/Bust
+  // legs missing isn't the same kind of miss as Stable Producers.
+  byArchetype: CalibrationBucket[];
+  // Projection-error distribution. Null when the dataset has no legs
+  // carrying a projected stat value (very early days / legacy only).
+  projectionError: ProjectionErrorSummary | null;
   daysAnalyzed: number;
   legsAnalyzed: number;          // distinct legs after dedupe
   rangeStart: string | null;
@@ -99,6 +127,15 @@ type DedupedLeg = {
   statKey: Last10StatId;
   confidenceLabel: string | null;
   riskScore: number | null;        // 0-100; null when missing on legacy snapshots
+  // Projected stat value at lock time. Only present on snapshots
+  // written after the projection-echo change; null on legacy.
+  projection: number | null;
+  // Actual stat value at game end. Already on GradedLeg via the
+  // grader's stat lookup; needed here for projection-error math.
+  // double_double legs return 0/1 — we exclude those from projection
+  // error since the "line" doesn't have meaningful units there.
+  actual: number | null;
+  archetype: string | null;        // volatility archetype label, or null
   outcome: 'hit' | 'miss' | 'push';
 };
 
@@ -189,7 +226,10 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
           leg.outcome !== 'miss' &&
           leg.outcome !== 'push'
         ) continue;
-        const lp = leg as { probability?: number; pct?: number; risk?: number };
+        const lp = leg as {
+          probability?: number; pct?: number; risk?: number;
+          projection?: number; archetype?: string;
+        };
         const probability =
           typeof lp.probability === 'number' ? lp.probability
           : typeof lp.pct === 'number' ? lp.pct
@@ -206,6 +246,18 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
           confidenceLabel: leg.confidenceLabel ?? null,
           riskScore:
             typeof lp.risk === 'number' && Number.isFinite(lp.risk) ? lp.risk : null,
+          projection:
+            typeof lp.projection === 'number' && Number.isFinite(lp.projection)
+              ? lp.projection
+              : null,
+          actual:
+            typeof leg.actual === 'number' && Number.isFinite(leg.actual)
+              ? leg.actual
+              : null,
+          archetype:
+            typeof lp.archetype === 'string' && lp.archetype.length > 0
+              ? lp.archetype
+              : null,
           outcome: leg.outcome,
         });
       }
@@ -311,15 +363,72 @@ export function computeCalibration(snapshots: CalibrationInput[]): CalibrationRe
     ),
   );
 
+  // Volatility archetype — answers "which archetypes break the
+  // model?" (spec §"Volatility Archetype Accuracy"). One row per
+  // archetype that has data; archetype-less legs (legacy, or DD with
+  // 'Insufficient Data') get bucketed into "Unknown" if they exist.
+  const archetypeGroups = new Map<string, DedupedLeg[]>();
+  for (const l of legs) {
+    if (!l.archetype) continue;
+    const arr = archetypeGroups.get(l.archetype) ?? [];
+    arr.push(l);
+    archetypeGroups.set(l.archetype, arr);
+  }
+  const byArchetype = Array.from(archetypeGroups.entries())
+    .map(([key, arr]) => aggregateBucket(key, arr))
+    .sort((a, b) => b.sampleSize - a.sampleSize);
+
+  // Projection-error distribution — drops DD (binary, no meaningful
+  // unit gap) and any leg without both a projection and an actual.
+  const projErrorLegs = legs.filter(
+    (l) =>
+      l.statKey !== 'double_double'
+      && l.projection !== null
+      && l.actual !== null,
+  );
+  const projectionError = computeProjectionError(projErrorLegs);
+
   return {
     overall,
     byProbability,
     byStat,
     byConfidence,
     byRisk,
+    byArchetype,
+    projectionError,
     daysAnalyzed,
     legsAnalyzed: legs.length,
     rangeStart,
     rangeEnd,
+  };
+}
+
+function computeProjectionError(
+  legs: DedupedLeg[],
+): ProjectionErrorSummary | null {
+  if (legs.length === 0) return null;
+  const misses: number[] = [];
+  for (const l of legs) {
+    if (l.projection === null || l.actual === null) continue;
+    misses.push(l.actual - l.projection);
+  }
+  if (misses.length === 0) return null;
+  const meanMiss = misses.reduce((a, b) => a + b, 0) / misses.length;
+  const meanAbsoluteMiss =
+    misses.reduce((a, b) => a + Math.abs(b), 0) / misses.length;
+  // Median: sort + middle.
+  const sorted = [...misses].sort((a, b) => a - b);
+  const m = sorted.length;
+  const medianMiss =
+    m % 2 === 1 ? sorted[(m - 1) / 2] : (sorted[m / 2 - 1] + sorted[m / 2]) / 2;
+  const underCount = misses.filter((x) => x > 0).length;     // actual > projected
+  const overCount = misses.filter((x) => x < 0).length;      // actual < projected
+  return {
+    sampleSize: misses.length,
+    meanMiss: round1(meanMiss),
+    medianMiss: round1(medianMiss),
+    meanAbsoluteMiss: round1(meanAbsoluteMiss),
+    underProjectionRate: round1((underCount / misses.length) * 100),
+    overProjectionRate: round1((overCount / misses.length) * 100),
   };
 }

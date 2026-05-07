@@ -42,6 +42,14 @@ export type GradedLeg = {
   // Risk score echoed for the calibration view's By-Risk panel.
   // Optional because pre-rewrite snapshots didn't store it.
   risk?: number;
+  // Projected stat value (e.g. "model said 28.4 points"). Drives
+  // the projection-error distribution panel — paired with `actual`
+  // it gives us the absolute miss + over/under bias per leg. Optional
+  // because old snapshots predate the field.
+  projection?: number;
+  // Volatility archetype echoed so the Calibration tab can bucket
+  // accuracy by archetype. Optional for legacy legs.
+  archetype?: string;
 
   // Wild Card evidence (only set on legs from the Wild Card combo):
   last10HitCount?: number;
@@ -100,6 +108,20 @@ function legRisk(leg: ComboLeg): number | undefined {
   return typeof lp.risk === 'number' && Number.isFinite(lp.risk) ? lp.risk : undefined;
 }
 
+function legProjection(leg: ComboLeg): number | undefined {
+  const lp = leg as { projection?: number };
+  return typeof lp.projection === 'number' && Number.isFinite(lp.projection)
+    ? lp.projection
+    : undefined;
+}
+
+function legArchetype(leg: ComboLeg): string | undefined {
+  const lp = leg as { archetype?: string };
+  return typeof lp.archetype === 'string' && lp.archetype.length > 0
+    ? lp.archetype
+    : undefined;
+}
+
 // Wild Card snapshot fields. Optional because:
 //   - They were added in a later iteration; pre-existing snapshots
 //     don't carry them.
@@ -136,6 +158,8 @@ export function gradeLeg(
   const confidence = legConfidence(leg);
   const confidenceLabel = legConfidenceLabel(leg);
   const risk = legRisk(leg);
+  const projection = legProjection(leg);
+  const archetype = legArchetype(leg);
   const wild = legWildCardFields(leg);
 
   if (!game) {
@@ -152,6 +176,8 @@ export function gradeLeg(
       confidence,
       confidenceLabel,
       risk,
+      projection,
+      archetype,
       ...wild,
       actual: null,
       outcome: 'no_game',
@@ -186,6 +212,8 @@ export function gradeLeg(
     confidence,
     confidenceLabel,
     risk,
+    projection,
+    archetype,
     ...wild,
     actual,
     outcome,

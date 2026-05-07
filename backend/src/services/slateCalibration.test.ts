@@ -217,6 +217,66 @@ describe('computeCalibration', () => {
     expect(r.byRisk.every((b) => b.sampleSize === 0)).toBe(true);
   });
 
+  test('byArchetype groups legs by archetype label', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [
+        leg({ probability: 70, outcome: 'hit', playerId: 1, archetype: 'Stable Producer' }),
+        leg({ probability: 70, outcome: 'miss', playerId: 2, archetype: 'Stable Producer' }),
+        leg({ probability: 70, outcome: 'hit', playerId: 3, archetype: 'Boom/Bust' }),
+        leg({ probability: 70, outcome: 'miss', playerId: 4, archetype: 'Boom/Bust' }),
+      ]),
+    ]);
+    const labels = r.byArchetype.map((b) => b.label);
+    expect(labels).toContain('Stable Producer');
+    expect(labels).toContain('Boom/Bust');
+    const stable = r.byArchetype.find((b) => b.label === 'Stable Producer')!;
+    expect(stable.sampleSize).toBe(2);
+  });
+
+  test('byArchetype is empty when legs have no archetype', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [leg({ probability: 70, outcome: 'hit', playerId: 1 })]),
+    ]);
+    expect(r.byArchetype).toEqual([]);
+  });
+
+  test('projectionError reports mean miss + over/under bias', () => {
+    // 4 legs: actual − projected = +2, -3, +1, -4. Mean = -1.
+    // Mean absolute = 2.5. 2 over-projected (negative), 2 under (positive).
+    const legs = [
+      leg({ probability: 70, outcome: 'hit', playerId: 1, projection: 26, actual: 28 }),
+      leg({ probability: 70, outcome: 'miss', playerId: 2, projection: 28, actual: 25 }),
+      leg({ probability: 70, outcome: 'hit', playerId: 3, projection: 24, actual: 25 }),
+      leg({ probability: 70, outcome: 'miss', playerId: 4, projection: 30, actual: 26 }),
+    ];
+    const r = computeCalibration([snap('2026-05-01', legs)]);
+    expect(r.projectionError).not.toBeNull();
+    expect(r.projectionError!.sampleSize).toBe(4);
+    expect(r.projectionError!.meanMiss).toBe(-1.0);          // signed
+    expect(r.projectionError!.meanAbsoluteMiss).toBe(2.5);
+    expect(r.projectionError!.underProjectionRate).toBe(50); // 2/4
+    expect(r.projectionError!.overProjectionRate).toBe(50);
+  });
+
+  test('projectionError null when no legs carry projection + actual', () => {
+    const r = computeCalibration([
+      snap('2026-05-01', [leg({ probability: 70, outcome: 'hit', playerId: 1 })]),
+    ]);
+    expect(r.projectionError).toBeNull();
+  });
+
+  test('projectionError excludes double_double legs', () => {
+    // DD legs have actual=0/1 binary — no meaningful unit gap.
+    const legs = [
+      leg({
+        probability: 70, outcome: 'hit', playerId: 1,
+        statKey: 'double_double', projection: 0.6, actual: 1,
+      }),
+    ];
+    const r = computeCalibration([snap('2026-05-01', legs)]);
+    expect(r.projectionError).toBeNull();
+  });
+
   test('range start/end track first and last graded date', () => {
     const r = computeCalibration([
       snap('2026-05-01', [leg({ playerId: 1 })]),

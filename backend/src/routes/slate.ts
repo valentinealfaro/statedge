@@ -779,6 +779,8 @@ slateRouter.get('/calibration', async (_req, res) => {
       byStat: [],
       byConfidence: [],
       byRisk: [],
+      byArchetype: [],
+      projectionError: null,
       daysAnalyzed: 0,
       legsAnalyzed: 0,
       rangeStart: null,

@@ -915,12 +915,23 @@ export type CalibrationBucket = {
   status?: CalibrationStatus;
 };
 
+export type ProjectionErrorSummary = {
+  sampleSize: number;
+  meanMiss: number;
+  medianMiss: number;
+  meanAbsoluteMiss: number;
+  underProjectionRate: number;
+  overProjectionRate: number;
+};
+
 export type CalibrationReport = {
   overall: CalibrationBucket;
   byProbability: CalibrationBucket[];
   byStat: CalibrationBucket[];
   byConfidence: CalibrationBucket[];
   byRisk?: CalibrationBucket[];
+  byArchetype?: CalibrationBucket[];
+  projectionError?: ProjectionErrorSummary | null;
   daysAnalyzed: number;
   legsAnalyzed: number;
   rangeStart: string | null;

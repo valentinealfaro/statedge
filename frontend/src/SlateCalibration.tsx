@@ -15,6 +15,7 @@ import {
   type CalibrationBucket,
   type CalibrationReport,
   type CalibrationStatus,
+  type ProjectionErrorSummary,
   type SampleConfidence,
 } from './api';
 import { Skeleton } from './Skeleton';
@@ -174,6 +175,77 @@ export function SlateCalibration() {
           labelHeader="Risk"
         />
       )}
+      {report.byArchetype && report.byArchetype.length > 0 && (
+        <BucketTable
+          title="By volatility archetype"
+          buckets={report.byArchetype}
+          labelHeader="Archetype"
+        />
+      )}
+      {report.projectionError && (
+        <ProjectionAccuracy err={report.projectionError} />
+      )}
+    </div>
+  );
+}
+
+// "Did the projected stat value land near the actual?" Independent
+// from hit-rate calibration: a model can hit 70% of its lines and
+// still systematically under-project the actual stat by 3 points.
+// Surfaces mean/median miss + absolute miss + over/under bias.
+function ProjectionAccuracy({ err }: { err: ProjectionErrorSummary }) {
+  const meanMiss = n(err.meanMiss);
+  const median = n(err.medianMiss);
+  const abs = n(err.meanAbsoluteMiss);
+  const under = n(err.underProjectionRate);
+  const over = n(err.overProjectionRate);
+  // Verdict copy keyed off the signed mean miss + bias rates.
+  let verdict = 'Projections track actuals tightly — no systematic bias.';
+  if (meanMiss > 1) {
+    verdict = `Model under-projects on average: actuals come in ${meanMiss.toFixed(1)} stat units higher.`;
+  } else if (meanMiss < -1) {
+    verdict = `Model over-projects on average: actuals come in ${Math.abs(meanMiss).toFixed(1)} stat units lower.`;
+  } else if (Math.abs(under - over) >= 15) {
+    verdict =
+      under > over
+        ? 'Projections skew low — actuals beat the projection more often than not.'
+        : 'Projections skew high — actuals fall short more often than not.';
+  }
+  return (
+    <div className="slate-calibration-section">
+      <h3>Projection accuracy</h3>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        How close the projected stat value lands to the actual game-end
+        value. Hit-rate calibration tells you if 70% means 70%; this
+        tells you if "we said 28 points" tends to land near 28.
+      </p>
+      <div className="proj-accuracy">
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Mean miss (signed)</span>
+          <strong>{meanMiss >= 0 ? '+' : ''}{meanMiss.toFixed(1)}</strong>
+        </div>
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Median miss</span>
+          <strong>{median >= 0 ? '+' : ''}{median.toFixed(1)}</strong>
+        </div>
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Mean absolute miss</span>
+          <strong>{abs.toFixed(1)}</strong>
+        </div>
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Under-projected</span>
+          <strong>{under.toFixed(0)}%</strong>
+        </div>
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Over-projected</span>
+          <strong>{over.toFixed(0)}%</strong>
+        </div>
+        <div className="proj-accuracy-stat">
+          <span className="muted small">Sample</span>
+          <strong>{err.sampleSize}</strong>
+        </div>
+      </div>
+      <div className="muted small" style={{ marginTop: 8 }}>{verdict}</div>
     </div>
   );
 }

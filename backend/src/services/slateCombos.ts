@@ -175,6 +175,12 @@ export type ComboCandidate = {
   // volatility penalty (spec §"-6 if stat is highly volatile").
   statVolatility: number;       // stddev / mean (0+ — higher = more volatile)
 
+  // Volatility archetype label (e.g. "Boom/Bust", "Stable Producer").
+  // Snapshotted on legs so the Calibration tab can bucket accuracy by
+  // archetype — a Boom/Bust pick missing isn't the same kind of miss
+  // as a Stable Producer flopping.
+  archetype?: string;
+
   // Set only on legs picked for the Wild Card combo. Frontend reads
   // this to render the spec'd "Hit X of last 10 and has hit this line
   // against the current opponent" copy underneath the leg.
@@ -383,6 +389,7 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       vsOpponentHitCount,
       vsOpponentHitRate: Math.round(vsOpponentHitRate),
       statVolatility,
+      archetype: l.archetype?.archetype,
       context: {
         seasonAvg: p.factorBreakdown.seasonAvg ?? l.last10Avg,
         last5Avg: p.factorBreakdown.last5Avg,
