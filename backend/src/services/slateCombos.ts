@@ -178,28 +178,60 @@ function trapTierFromScore(score: number): TrapTier {
   return 'Normal';
 }
 
-// Slate strategy mode (spec §"ADD SLATE TYPES"). Each mode swaps
-// the candidate ranker so the cards reflect a different angle on
-// the same underlying pool. balanced is the default — ranks by
-// evScore (the EV-engine ranker). The other two are alternate
-// lenses the user can opt into.
-//
-// Per-leg score functions (higher is better) — used as the primary
-// sort key in pickWithDiversity:
-//   - safe        legacy slateScore (probability-heavy, lower variance)
-//   - balanced    evScore (default; market-mispricing focused)
-//   - aggressive  projectionDistanceScore + edge — favors big
-//                 separations / ceiling outcomes
-export type SlateMode = 'safe' | 'balanced' | 'aggressive';
+// Slate strategy mode (spec §"USER RISK MODES"). Five modes:
+//   safe        Conservative — high hit rate, low variance
+//   balanced    Default — best risk-adjusted EV
+//   aggressive  Edge-hunting — strong market mispricings
+//   insane      Maximum upside — extreme projection separation
+//   auto        Adaptive — measures slate quality, picks the right
+//               underlying mode automatically. Resolves to one of
+//               the four explicit modes before card construction.
+export type SlateMode = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+// Modes that actually drive card construction (auto resolves to one
+// of these before any cards are built).
+export type ResolvedSlateMode = Exclude<SlateMode, 'auto'>;
 
-function modeScore(mode: SlateMode, c: ComboCandidate): number {
+// Per-mode configuration. minEdge is the candidate-eligibility floor
+// (legs below this are dropped); allowedSizes restricts which Best-N
+// cards get built. Edge floors come from spec §"EDGE THRESHOLDS"
+// per mode; card-size limits from spec §"CARD LIMITS".
+const MODE_CONFIG: Record<ResolvedSlateMode, {
+  minEdge: number;
+  preferredEdge: number;
+  allowedSizes: ReadonlySet<number>;
+  label: string;
+}> = {
+  safe: {
+    minEdge: 5,
+    preferredEdge: 8,
+    allowedSizes: new Set([2, 3, 4]),       // skip 5/6 per spec
+    label: 'Safe',
+  },
+  balanced: {
+    minEdge: 0,                              // no floor — ranks by EV
+    preferredEdge: 12,
+    allowedSizes: new Set([2, 3, 4, 5, 6]),  // all sizes
+    label: 'Balanced',
+  },
+  aggressive: {
+    minEdge: 12,
+    preferredEdge: 18,
+    allowedSizes: new Set([3, 4, 5, 6]),     // skip 2 (anchor)
+    label: 'Aggressive',
+  },
+  insane: {
+    minEdge: 18,
+    preferredEdge: 25,
+    allowedSizes: new Set([4, 5, 6]),        // skip 2/3 (anchor)
+    label: 'Insane',
+  },
+};
+
+function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
   if (mode === 'safe') return c.slateScore;
   if (mode === 'aggressive') {
-    // Aggressive mode now ranks primarily by MarketDisagreementScore
-    // — the user-facing concept of "how mispriced is this leg" — so
-    // 6-man cards under Aggressive mode read as "the slate's
-    // strongest disagreements with PrizePicks", not "the most
-    // separated picks".
+    // Aggressive: rank by MarketDisagreementScore — "how mispriced
+    // is this leg" is the headline concept.
     return (
       c.marketDisagreementScore * 0.60
       + c.edgePercent * 0.20
@@ -207,15 +239,50 @@ function modeScore(mode: SlateMode, c: ComboCandidate): number {
       + c.edgeScore * 0.10
     );
   }
+  if (mode === 'insane') {
+    // Insane: even heavier on raw projection separation + edge,
+    // willing to pay more risk for ceiling. The risk penalty drops
+    // to 0.05 because Insane intentionally embraces variance.
+    return (
+      c.projectionDistanceScore * 0.50
+      + c.edgePercent * 0.35
+      + c.edgeScore * 0.15
+      - c.risk * 0.05
+    );
+  }
   return c.evScore;     // balanced (default)
+}
+
+// Resolve auto mode based on slate quality. Looks at the eligible
+// candidate pool and picks the most aggressive mode the slate can
+// actually support. A weak slate stays Safe; a slate dense with
+// high-edge picks gets unlocked into Aggressive or Insane. Spec
+// §"AUTO MODE BEHAVIOR".
+function resolveAutoMode(eligible: EnrichedCandidate[]): ResolvedSlateMode {
+  if (eligible.length < 6) return 'safe';        // not enough to build
+  const eliteCount = eligible.filter((c) => c.edgePercent >= 25).length;
+  const strongCount = eligible.filter((c) => c.edgePercent >= 18).length;
+  const goodCount = eligible.filter((c) => c.edgePercent >= 12).length;
+  // Average edge across the top-10 candidates by edgePercent —
+  // signals overall slate softness.
+  const top10AvgEdge =
+    [...eligible]
+      .sort((a, b) => b.edgePercent - a.edgePercent)
+      .slice(0, 10)
+      .reduce((s, c) => s + c.edgePercent, 0) / Math.min(10, eligible.length);
+
+  if (eliteCount >= 6 && top10AvgEdge >= 22) return 'insane';
+  if (strongCount >= 6 && top10AvgEdge >= 16) return 'aggressive';
+  if (goodCount >= 6) return 'balanced';
+  return 'safe';
 }
 
 // Per-card identity in Balanced mode: small cards lean safer, big
 // cards lean aggressive. Spec §"6-MAN PHILOSOPHY" — the 6-leg card
-// SHOULD be the most aggressive by design, not balanced. Safe and
-// Aggressive user modes still apply globally (no per-size tilt) so
-// the user can override.
-function effectiveMode(userMode: SlateMode, cardSize: number): SlateMode {
+// SHOULD be the most aggressive by design, not balanced. Safe /
+// Aggressive / Insane user modes apply globally (no per-size tilt)
+// so the user can override the inherent identity.
+function effectiveMode(userMode: ResolvedSlateMode, cardSize: number): ResolvedSlateMode {
   if (userMode !== 'balanced') return userMode;
   if (cardSize >= 6) return 'aggressive';
   if (cardSize <= 2) return 'safe';
@@ -955,46 +1022,49 @@ const LOW_LINE_THRESHOLDS: Partial<Record<Last10StatId, number>> = {
   rebounds: 2.0,
 };
 
-// Min edge required for a candidate to land on an aggressive card.
-// Spec §"ADD MINIMUM EDGE REQUIREMENTS": +10 minimum, +20 elite.
-const AGGRESSIVE_MIN_EDGE = 10;
-// Edge required to override the low-line dominance block.
-const LOW_LINE_OVERRIDE_EDGE = 20;
+// Edge floor for the low-line dominance override per mode. Aggressive
+// allows low lines only when edge ≥20; Insane is even stricter (≥30).
+const LOW_LINE_OVERRIDE_BY_MODE: Record<ResolvedSlateMode, number> = {
+  safe: 999,                  // never matters — Safe doesn't use the block
+  balanced: 999,
+  aggressive: 20,
+  insane: 30,
+};
 
-// Size-aware picker. Resolves the effective mode for the card size,
-// applies aggressive-only quality gates (min edge + low-line block),
-// then defers to pickWithDiversity for the actual ranked selection.
-function pickAggressiveAware<T extends ComboCandidate>(
+// Mode-aware picker. Resolves the effective mode for the card size,
+// applies the mode's edge floor and (for aggressive/insane) the
+// low-line dominance block, then defers to pickWithDiversity for the
+// ranked selection. Spec §"ADD MINIMUM EDGE REQUIREMENTS" +
+// §"NEW LOW-LINE RULE".
+function pickModeAware<T extends ComboCandidate>(
   pool: T[],
   target: number,
   caps: Caps,
   usage: Map<string, number>,
-  userMode: SlateMode,
+  userMode: ResolvedSlateMode,
 ): T[] {
   const eff = effectiveMode(userMode, target);
+  const cfg = MODE_CONFIG[eff];
   let filtered = pool;
-  if (eff === 'aggressive') {
-    filtered = pool.filter((c) => {
-      // Quality gate 1: min edge floor.
-      if (c.edgePercent < AGGRESSIVE_MIN_EDGE) return false;
-      // Quality gate 2: low-line block. A low-line stat survives
-      // only when the model sees extreme edge (≥20%).
-      const lowLineThreshold = LOW_LINE_THRESHOLDS[c.statKey];
-      if (
-        lowLineThreshold !== undefined
-        && c.line <= lowLineThreshold
-        && c.edgePercent < LOW_LINE_OVERRIDE_EDGE
-      ) {
+  // Edge floor — every mode has one (Balanced's is 0). Drops
+  // candidates below the bar before ranking.
+  if (cfg.minEdge > 0) {
+    filtered = filtered.filter((c) => c.edgePercent >= cfg.minEdge);
+  }
+  // Low-line dominance block — only aggressive + insane apply it.
+  if (eff === 'aggressive' || eff === 'insane') {
+    const lowLineFloor = LOW_LINE_OVERRIDE_BY_MODE[eff];
+    filtered = filtered.filter((c) => {
+      const lineCap = LOW_LINE_THRESHOLDS[c.statKey];
+      if (lineCap !== undefined && c.line <= lineCap && c.edgePercent < lowLineFloor) {
         return false;
       }
       return true;
     });
-    // Fallback: if the aggressive filter wipes the pool below
-    // viable, relax to the un-filtered pool. Better to ship a
-    // softer card than an empty one (the user can still see the
-    // average-edge metrics and judge for themselves).
-    if (filtered.length < target) filtered = pool;
   }
+  // Fallback: if filters wipe the pool below viable, relax to the
+  // un-filtered pool. Better to ship a softer card than nothing.
+  if (filtered.length < target) filtered = pool;
   return pickWithDiversity(filtered, target, caps, usage, eff);
 }
 
@@ -1003,7 +1073,7 @@ function pickWithDiversity<T extends ComboCandidate>(
   target: number,
   caps: Caps,
   usage: Map<string, number>,
-  mode: SlateMode,
+  mode: ResolvedSlateMode,
 ): T[] {
   // Primary sort: mode-specific score (Safe → slateScore,
   // Balanced → evScore, Aggressive → projection separation + edge).
@@ -1206,6 +1276,11 @@ function round2(n: number): number {
 // -----------------------------------------------------------------
 export type SlateCombosResult = {
   combos: Combo[];
+  // The mode actually used to construct the combos. When the request
+  // came in as 'auto', this reports which underlying mode the
+  // resolver picked (so the UI can render "Auto · using Aggressive
+  // tonight"). For explicit modes, equals the request mode.
+  resolvedMode: ResolvedSlateMode;
 };
 
 export function buildCombos(
@@ -1216,23 +1291,23 @@ export function buildCombos(
   const eligible = allCandidates
     .filter((c) => passesEligibility(c, ELIGIBLE));
 
+  // Resolve auto mode based on slate quality. Weak slates stay Safe;
+  // dense high-edge slates get unlocked into Aggressive or Insane.
+  const resolvedMode: ResolvedSlateMode =
+    mode === 'auto' ? resolveAutoMode(eligible) : mode;
+  const cfg = MODE_CONFIG[resolvedMode];
+
   // Build cards LARGEST → SMALLEST so the strongest mode-aligned
-  // picks land on Best 6 first. Each card uses its EFFECTIVE mode
-  // — in Balanced mode, big cards (Best 6) lean Aggressive Edge
-  // and small cards (Best 2) lean Safe Core, per the spec's
-  // "different cards = different identities" insight. Safe and
-  // Aggressive user-modes apply globally without size tilt.
-  //
-  // Aggressive cards get the additional 6-man filters: minimum
-  // edge floor (≥10%) and a low-line dominance block. These quality
-  // gates produce cards that genuinely feel like market-disagreement
-  // signals, not "6 safe-looking props".
+  // picks land on Best 6 first. Card sizes outside the resolved
+  // mode's allowedSizes are suppressed (Safe drops 5/6, Aggressive
+  // drops 2, Insane drops 2/3) so each mode has a distinct identity.
   const usage = new Map<string, number>();
-  const best6 = pickAggressiveAware(eligible, 6, CAPS_LARGE, usage, mode);
-  const best5 = pickAggressiveAware(eligible, 5, CAPS_LARGE, usage, mode);
-  const best4 = pickAggressiveAware(eligible, 4, CAPS_LARGE, usage, mode);
-  const best3 = pickAggressiveAware(eligible, 3, CAPS_TIGHT, usage, mode);
-  const best2 = pickAggressiveAware(eligible, 2, CAPS_TIGHT, usage, mode);
+  const wantSize = (n: number): boolean => cfg.allowedSizes.has(n);
+  const best6 = wantSize(6) ? pickModeAware(eligible, 6, CAPS_LARGE, usage, resolvedMode) : [];
+  const best5 = wantSize(5) ? pickModeAware(eligible, 5, CAPS_LARGE, usage, resolvedMode) : [];
+  const best4 = wantSize(4) ? pickModeAware(eligible, 4, CAPS_LARGE, usage, resolvedMode) : [];
+  const best3 = wantSize(3) ? pickModeAware(eligible, 3, CAPS_TIGHT, usage, resolvedMode) : [];
+  const best2 = wantSize(2) ? pickModeAware(eligible, 2, CAPS_TIGHT, usage, resolvedMode) : [];
 
   const combos: Combo[] = [];
   // Order matches what the rail renders left-to-right (Best 2 → 6).
@@ -1584,7 +1659,7 @@ export function buildCombos(
   }
   combos.push(wildCombo);
 
-  return { combos };
+  return { combos, resolvedMode };
 }
 
 // Closest-candidates score (spec §"Closest Candidate Logic"). Used

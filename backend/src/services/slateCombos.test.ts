@@ -526,14 +526,66 @@ describe('buildCombos slate modes', () => {
     const slate = [safeStarLine, ...strongSlate(8, 70)];
     const safe = buildCombos(slate, 'safe');
     const balanced = buildCombos(slate, 'balanced');
-    const safeBest6 = safe.combos.find((c) => c.label === 'Best 6')!;
+    // Safe mode skips Best 5/6 per spec — anchor cards only. Best 4
+    // is the largest card it builds.
+    const safeBest4 = safe.combos.find((c) => c.label === 'Best 4')!;
     const balancedBest6 = balanced.combos.find((c) => c.label === 'Best 6')!;
-    // Safe Star should land on Safe-mode Best 6 (prob 87 dominates).
-    expect(safeBest6.legs.some((l) => l.playerId === 901)).toBe(true);
-    // The two cards aren't required to differ in every fixture, but
-    // they should at least be valid 6-leg cards under both modes.
-    expect(safeBest6.legs.length).toBe(6);
+    // Safe Star should land on Safe-mode Best 4 (prob 87 dominates).
+    expect(safeBest4.legs.some((l) => l.playerId === 901)).toBe(true);
+    expect(safeBest4.legs.length).toBe(4);
     expect(balancedBest6.legs.length).toBe(6);
+    // Spec §"SAFE MODE CARD LIMITS": Safe mode shouldn't emit Best 6.
+    expect(safe.combos.find((c) => c.label === 'Best 6')).toBeUndefined();
+  });
+
+  test('Insane mode skips Best 2 and Best 3 — focuses on big upside cards', () => {
+    // Need a strong slate to support Insane mode (edge ≥18 floor).
+    // strongSlate(20, 80) gives edges +25 down to +6; 7 picks pass
+    // the +18 cutoff which is enough to populate Best 4/5/6.
+    const { combos } = buildCombos(strongSlate(20, 80), 'insane');
+    expect(combos.find((c) => c.label === 'Best 2')).toBeUndefined();
+    expect(combos.find((c) => c.label === 'Best 3')).toBeUndefined();
+    expect(combos.find((c) => c.label === 'Best 4')).toBeDefined();
+  });
+
+  test('Insane mode requires edge ≥18 on every leg', () => {
+    const slate = strongSlate(20, 80);
+    const { combos } = buildCombos(slate, 'insane');
+    for (const c of combos) {
+      if (c.tag === 'wild') continue;     // Wild Card has its own rules
+      for (const leg of c.legs) {
+        // Filter is +18 with un-filtered fallback — at least the
+        // primary picks should clear the bar in a realistic slate.
+        // We just verify the constraint isn't ignored: if any pick
+        // is below +18, the rest of the slate didn't have ≥6
+        // qualifying picks for that card size.
+        if (leg.edgePercent < 18) {
+          // Fallback path fired — sanity-check that the slate was
+          // genuinely too thin for the size.
+          const eligibleAtFloor = slate.filter((l) => {
+            const p = l.projection;
+            if (!p) return false;
+            const edge = p.probability.over - 55;
+            return edge >= 18;
+          }).length;
+          expect(eligibleAtFloor).toBeLessThan(c.legs.length);
+        }
+      }
+    }
+  });
+
+  test('Auto mode resolves to safe on a thin slate', () => {
+    // Only 3 candidates pass eligibility — too thin for any
+    // aggressive variant. Auto should fall back to Safe.
+    const { resolvedMode } = buildCombos(strongSlate(3, 70), 'auto');
+    expect(resolvedMode).toBe('safe');
+  });
+
+  test('Auto mode resolves to a stronger mode on an edge-rich slate', () => {
+    // Dense high-edge slate: 20 candidates with avg edge ≥+15.
+    // Auto should pick Aggressive or Insane (not Safe/Balanced).
+    const { resolvedMode } = buildCombos(strongSlate(20, 80), 'auto');
+    expect(['aggressive', 'insane']).toContain(resolvedMode);
   });
 
   test('Aggressive mode prioritizes projection separation', () => {

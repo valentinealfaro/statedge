@@ -714,9 +714,11 @@ export type SlateResponse = {
   source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
   combos: SlateCombo[];
-  // Slate strategy mode reflected in `combos`. Only set on responses
-  // from /slate/today (the route that honors ?mode=).
-  mode?: 'safe' | 'balanced' | 'aggressive';
+  // Slate strategy mode reflected in `combos`. mode is the user's
+  // request (may be 'auto'); resolvedMode is the underlying mode
+  // actually used. They differ only when the user picked Auto.
+  mode?: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+  resolvedMode?: 'safe' | 'balanced' | 'aggressive' | 'insane';
 };
 
 export type ManualSlateLine = {
@@ -763,8 +765,12 @@ export async function postTodaySlate(
 // /slate can render immediately without a second round-trip.
 // Strategy mode the user picks. Backend re-ranks the candidate pool
 // per mode; the snapshot always uses 'balanced' so history stays
-// consistent regardless of which mode each visitor chose.
-export type SlateMode = 'safe' | 'balanced' | 'aggressive';
+// consistent regardless of which mode each visitor chose. 'auto'
+// asks the backend to pick the right mode based on slate quality;
+// the response's `resolvedMode` then reports which underlying mode
+// fired ("Auto · using Aggressive tonight").
+export type SlateMode = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+export type ResolvedSlateMode = Exclude<SlateMode, 'auto'>;
 
 export async function getTodaySlate(mode: SlateMode = 'balanced'): Promise<{
   slate: { date: string; count: number; updatedAt: string } | null;

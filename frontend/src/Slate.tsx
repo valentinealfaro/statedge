@@ -44,7 +44,10 @@ export function Slate() {
   // default) on first visit.
   const [slateMode, setSlateModeState] = useState<SlateMode>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('statedge.slate.mode') : null;
-    if (saved === 'safe' || saved === 'balanced' || saved === 'aggressive') return saved;
+    if (
+      saved === 'safe' || saved === 'balanced' || saved === 'aggressive'
+      || saved === 'insane' || saved === 'auto'
+    ) return saved;
     return 'balanced';
   });
   function setSlateMode(m: SlateMode): void {
@@ -489,7 +492,11 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
           separation, ceiling outcomes). */}
       {data?.combos && data.combos.length > 0 && (
         <>
-          <SlateModeSelector mode={slateMode} onChange={setSlateMode} />
+          <SlateModeSelector
+            mode={slateMode}
+            onChange={setSlateMode}
+            resolvedMode={data.resolvedMode}
+          />
           <BestPicksRail
             combos={data.combos}
             lines={lines}
@@ -1834,37 +1841,67 @@ function TrendChip({
 // etc next to the projection so users can read the variance profile
 // at a glance. Backend classifies based on stat CV, minutes CV, and
 // boom/bust tail rates over the player's last 20 games.
-// Strategy mode selector. Three buttons (Safe / Balanced / Aggressive)
-// with copy that explains the angle. Defaults to Balanced (the EV-
-// engine default). Persists to localStorage so the user's choice
-// survives reloads.
+// Strategy mode selector — five buttons covering the user-risk
+// spectrum (spec §"REQUIRED USER RISK MODES"). Each button shows
+// a label, a one-line hint, and a "risk meter" (filled segments
+// out of 5 conveying variance/aggression). The active mode highlights;
+// Auto mode also surfaces the underlying mode the resolver picked
+// ("Auto · using Aggressive tonight"). Persists to localStorage so
+// the user's choice survives reloads.
 function SlateModeSelector({
   mode,
   onChange,
+  resolvedMode,
 }: {
   mode: SlateMode;
   onChange: (m: SlateMode) => void;
+  // What the auto resolver actually picked. Only set when mode='auto'.
+  resolvedMode?: 'safe' | 'balanced' | 'aggressive' | 'insane';
 }) {
-  const opts: Array<{ id: SlateMode; label: string; hint: string }> = [
-    { id: 'safe',       label: 'Safe',       hint: 'Highest probability · lowest variance' },
-    { id: 'balanced',   label: 'Balanced EV', hint: 'Default — best risk-adjusted edge' },
-    { id: 'aggressive', label: 'Aggressive',  hint: 'Largest projection separation · ceiling' },
+  // Risk-meter fill (out of 5) per mode — visual variance/aggression
+  // indicator from the spec.
+  const opts: Array<{ id: SlateMode; label: string; hint: string; meter: number }> = [
+    { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
+    { id: 'balanced',   label: 'Balanced',   hint: 'Recommended for most users · all card sizes',       meter: 2 },
+    { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
+    { id: 'insane',     label: 'Insane',     hint: 'Maximum upside · extreme edge required · 4-6 leg',   meter: 5 },
+    { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
   ];
+  const showAutoBadge = mode === 'auto' && resolvedMode !== undefined;
   return (
-    <div className="slate-mode-selector" role="tablist" aria-label="Slate strategy">
-      {opts.map((o) => (
-        <button
-          key={o.id}
-          role="tab"
-          aria-selected={mode === o.id}
-          className={`slate-mode-btn ${mode === o.id ? 'active' : ''}`}
-          onClick={() => onChange(o.id)}
-          title={o.hint}
-        >
-          <span className="slate-mode-label">{o.label}</span>
-          <span className="slate-mode-hint">{o.hint}</span>
-        </button>
-      ))}
+    <div className="slate-mode-section">
+      <div className="slate-mode-selector" role="tablist" aria-label="Slate strategy">
+        {opts.map((o) => (
+          <button
+            key={o.id}
+            role="tab"
+            aria-selected={mode === o.id}
+            className={`slate-mode-btn ${mode === o.id ? 'active' : ''} mode-${o.id}`}
+            onClick={() => onChange(o.id)}
+            title={o.hint}
+          >
+            <span className="slate-mode-label">{o.label}</span>
+            <span className="slate-mode-hint">{o.hint}</span>
+            <span className="slate-mode-meter" aria-hidden>
+              {Array.from({ length: 5 }, (_, i) => (
+                <span key={i} className={`mode-meter-bar ${i < o.meter ? 'filled' : ''}`} />
+              ))}
+            </span>
+          </button>
+        ))}
+      </div>
+      {showAutoBadge && (
+        <div className="slate-mode-auto-badge">
+          <strong>Auto</strong> · tonight's slate resolves to{' '}
+          <strong>{resolvedMode}</strong> · the system picks the right mode based on edge concentration.
+        </div>
+      )}
+      {mode === 'insane' && (
+        <div className="slate-mode-insane-warn">
+          ⚠ Insane mode targets maximum upside. Higher variance, lower hit
+          probability, no Best 2/3 cards. Picks must clear +18% edge.
+        </div>
+      )}
     </div>
   );
 }

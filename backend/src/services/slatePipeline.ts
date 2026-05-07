@@ -131,9 +131,12 @@ export type SlateResponse = {
   // enough eligible candidates (spec §"Limited slate" warning).
   combos: Combo[];
   // Slate strategy mode reflected in `combos`. Only set on responses
-  // from /slate/today (the route that honors ?mode=). Other entry
-  // points always use 'balanced' (the default).
-  mode?: 'safe' | 'balanced' | 'aggressive';
+  // from /slate/today (the route that honors ?mode=). 'mode' is what
+  // the user requested (may be 'auto'); 'resolvedMode' is the
+  // underlying mode actually used to construct the cards. They differ
+  // only when the user picked Auto.
+  mode?: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+  resolvedMode?: 'safe' | 'balanced' | 'aggressive' | 'insane';
 };
 
 function round2(n: number): number {

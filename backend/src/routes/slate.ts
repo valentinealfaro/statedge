@@ -25,7 +25,10 @@ import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
 // Parse + validate the ?mode= query param. Unknown / missing values
 // fall back to 'balanced' (the EV-engine default).
 function parseSlateMode(q: unknown): SlateMode {
-  if (q === 'safe' || q === 'balanced' || q === 'aggressive') return q;
+  if (
+    q === 'safe' || q === 'balanced' || q === 'aggressive'
+    || q === 'insane' || q === 'auto'
+  ) return q;
   return 'balanced';
 }
 
@@ -436,10 +439,13 @@ slateRouter.get('/today', async (req, res) => {
     // requester selected. The user-facing response then either reuses
     // those (mode=balanced) or rebuilds in the requested mode.
     const requestedMode = parseSlateMode(req.query.mode);
-    const responseCombos =
-      requestedMode === 'balanced'
-        ? resolved.combos
-        : buildCombos(resolved.lines, requestedMode).combos;
+    let responseCombos = resolved.combos;
+    let responseResolvedMode: 'safe' | 'balanced' | 'aggressive' | 'insane' = 'balanced';
+    if (requestedMode !== 'balanced') {
+      const built = buildCombos(resolved.lines, requestedMode);
+      responseCombos = built.combos;
+      responseResolvedMode = built.resolvedMode;
+    }
 
     // Snapshot today's pre-built parlays (always balanced mode) into
     // slate_results. upsertIfPending=true means we keep refreshing
@@ -462,7 +468,16 @@ slateRouter.get('/today', async (req, res) => {
 
     res.json({
       slate: { date: stored.date, count: stored.lines.length, updatedAt: stored.updatedAt },
-      resolved: { ...resolved, combos: responseCombos, mode: requestedMode },
+      resolved: {
+        ...resolved,
+        combos: responseCombos,
+        // Mode the user requested (may be 'auto'). resolvedMode is
+        // the underlying mode auto picked, or equals mode for explicit
+        // requests. Frontend uses this to render "Auto · using
+        // Aggressive tonight" badges.
+        mode: requestedMode,
+        resolvedMode: responseResolvedMode,
+      },
     });
   } catch (err) {
     console.error('slate/today GET failed', err);
