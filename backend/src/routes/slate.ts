@@ -424,14 +424,19 @@ slateRouter.get('/today', async (_req, res) => {
     }));
     const resolved = await resolveSlate(raw, 'manual');
 
-    // Lock today's pre-built parlays into slate_results on first fetch.
-    // ON CONFLICT DO NOTHING in the helper means subsequent fetches
-    // leave the snapshot untouched — every visitor sees the same
-    // combos all day, and we have a stable record to grade later.
+    // Snapshot today's pre-built parlays into slate_results.
+    // upsertIfPending=true means we keep refreshing the snapshot
+    // throughout the day so the History tab reflects the latest
+    // algorithm. Once any leg has been graded against actuals
+    // (resolved_at IS NOT NULL), the row freezes — past picks stay
+    // locked to what was actually shown when the games happened.
+    //
     // Best-effort: failure here must not break the slate response.
     try {
       if (resolved.combos.length > 0) {
-        await snapshotSlateCombosInDb(stored.date, resolved.combos);
+        await snapshotSlateCombosInDb(stored.date, resolved.combos, {
+          upsertIfPending: true,
+        });
       }
     } catch (snapErr) {
       console.warn('slate/today combo snapshot failed:', (snapErr as Error).message);

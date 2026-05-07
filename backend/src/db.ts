@@ -1086,23 +1086,54 @@ export async function listDailySlatesMissingSnapshotFromDb(
   return rows.map((r) => ({ date: r.slate_date, lines: r.lines }));
 }
 
-// Lock today's combos. ON CONFLICT DO NOTHING so the very first call
-// of the day wins — subsequent calls (other visitors, refreshes) leave
-// the snapshot untouched. This is what makes the snapshot deterministic
-// per-day even though the upstream slate may shift slightly throughout
-// the day.
+// Snapshot today's combos. Two modes:
+//
+//   - default (insert-only) — used by the History backfill path. If a
+//     row exists for the date, leave it alone. Past days are frozen
+//     once snapshotted.
+//
+//   - upsertIfPending — used by the live /slate/today path. If the
+//     row exists AND has not yet been graded (`resolved_at IS NULL`),
+//     OVERWRITE the combos with the fresh ones. Once any grading has
+//     happened (resolved_at set), the row freezes — you can't change
+//     picks that already played.
+//
+// Why upsertIfPending matters: when we ship a combo-builder
+// improvement (diversity-first, correlation fix, line-raising, etc),
+// today's snapshot was written under the old algo and would otherwise
+// stay frozen forever. The History tab would show stale picks for
+// today even though the games haven't been played yet. With
+// upsertIfPending, the next /slate/today fetch refreshes the snapshot
+// to reflect the latest algo.
+//
+// Determinism trade-off: visitors during the day may see slightly
+// different combos as PrizePicks lines drift. That's acceptable
+// because (a) the slate already updates that way for live data and
+// (b) once games tip off and grading begins, the snapshot freezes.
 export async function snapshotSlateCombosInDb(
   date: string,
   combos: unknown,
-): Promise<{ inserted: boolean }> {
+  options: { upsertIfPending?: boolean } = {},
+): Promise<{ inserted: boolean; updated: boolean }> {
   await ensureSlateResultsTable();
+  if (options.upsertIfPending) {
+    const { rowCount } = await getPool().query(
+      `INSERT INTO slate_results (slate_date, combos)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (slate_date) DO UPDATE
+         SET combos = EXCLUDED.combos
+         WHERE slate_results.resolved_at IS NULL`,
+      [date, JSON.stringify(combos)],
+    );
+    return { inserted: false, updated: (rowCount ?? 0) > 0 };
+  }
   const { rowCount } = await getPool().query(
     `INSERT INTO slate_results (slate_date, combos)
      VALUES ($1, $2::jsonb)
      ON CONFLICT (slate_date) DO NOTHING`,
     [date, JSON.stringify(combos)],
   );
-  return { inserted: (rowCount ?? 0) > 0 };
+  return { inserted: (rowCount ?? 0) > 0, updated: false };
 }
 
 // Fill in graded results for a previously-locked snapshot. Idempotent:
