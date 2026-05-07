@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   getTeams,
-  getTodayGames,
   getTodaySlate,
   postManualSlate,
   postTodaySlate,
-  type EspnScoreboardGame,
   type ManualSlateLine,
   type Player,
   type SlateResponse,
@@ -13,7 +11,6 @@ import {
 } from './api';
 import { isAdminEmail } from './admin';
 import { useAuth } from './auth';
-import { TeamLogo } from './Avatar';
 import { userKey } from './userKey';
 
 // New /slate experience: a prop-board entry. The user pastes (or has
@@ -188,7 +185,6 @@ export function SlateManualEntry({ onResult }: Props) {
   const [text, setText] = useState('');
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [todayGames, setTodayGames] = useState<EspnScoreboardGame[]>([]);
   const [stored, setStored] = useState<StoredSlate | null>(() => loadStoredSlate());
   const [showPaste, setShowPaste] = useState(false);
   const [report, setReport] = useState<ParseReport | null>(null);
@@ -258,11 +254,9 @@ export function SlateManualEntry({ onResult }: Props) {
     }
   }
 
-  // Today's games rail is now informational only — no click handlers.
-  // Helps users orient without becoming a "research" surface.
+  // Pre-warm the team list so any future hydration uses canonical abbrs.
+  // (Tonight's games rail moved to <TonightsGames /> at the top of /slate.)
   useEffect(() => {
-    getTodayGames().then((d) => setTodayGames(d.games)).catch(() => setTodayGames([]));
-    // Pre-warm the team list so any future hydration uses canonical abbrs.
     getTeams().catch(() => {});
   }, []);
 
@@ -349,31 +343,9 @@ export function SlateManualEntry({ onResult }: Props) {
 
   return (
     <div className="manual-entry">
-      {todayGames.length > 0 && (
-        <div className="today-rail informational">
-          <div className="today-rail-head">
-            <span className="recents-title">Tonight's games</span>
-          </div>
-          <div className="today-rail-list">
-            {todayGames.map((g) => (
-              <div key={g.id} className="today-game">
-                <div className="today-game-status">{g.status.detail}</div>
-                <div className="today-side static">
-                  <TeamLogo abbr={g.away.abbreviation} name={g.away.displayName} size="md" />
-                  <span className="today-side-abbr">{g.away.abbreviation}</span>
-                  {g.away.record && <span className="muted small">{g.away.record}</span>}
-                </div>
-                <span className="today-at">@</span>
-                <div className="today-side static">
-                  <TeamLogo abbr={g.home.abbreviation} name={g.home.displayName} size="md" />
-                  <span className="today-side-abbr">{g.home.abbreviation}</span>
-                  {g.home.record && <span className="muted small">{g.home.record}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Tonight's Games rail moved to the top of /slate (rendered
+          in Slate.tsx via <TonightsGames />) so users see the game
+          context before scanning the pre-built parlays. */}
 
       {isAdmin && (
         <div className="admin-publish">

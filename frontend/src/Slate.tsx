@@ -28,6 +28,7 @@ import { SlateCalibration } from './SlateCalibration';
 import { SlateHistory } from './SlateHistory';
 import { SlateManualEntry } from './SlateManualEntry';
 import { SlatePaywall } from './SlatePaywall';
+import { TonightsGames } from './TonightsGames';
 import { computeHitProbability } from './slateMath';
 import { useTitle } from './useTitle';
 
@@ -329,6 +330,12 @@ export function Slate() {
         Tap any card to add it to your parlay (up to 6 legs) and we'll
         score the combined hit probability.
       </p>
+
+      {/* Tonight's NBA games — sits at the top so users orient on
+          the actual game context before scanning the pre-built
+          parlays below. Self-contained component handles its own
+          fetch and renders nothing when the schedule is empty. */}
+      <TonightsGames />
 
       {/* Top-level tabs — Today's prop board, past graded picks
           (History), and predicted-vs-actual calibration aggregates. */}
