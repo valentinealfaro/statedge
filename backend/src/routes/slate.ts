@@ -18,6 +18,7 @@ import {
 } from '../db.js';
 import { currentSeason } from '../nba/client.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
+import { computeCalibration } from '../services/slateCalibration.js';
 import type { Combo } from '../services/slateCombos.js';
 import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
 
@@ -750,6 +751,39 @@ slateRouter.get('/history/:date', async (req, res) => {
   } catch (err) {
     console.error('slate/history/:date failed', err);
     res.status(500).json({ error: 'history detail failed' });
+  }
+});
+
+// Calibration report — aggregates the graded snapshots in
+// slate_results to surface predicted % vs actual hit rate. The data
+// is whatever has already been graded by the History tab; fresh days
+// land in the report automatically once their lazy-grade pass runs.
+slateRouter.get('/calibration', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({
+      overall: { label: 'Overall', sampleSize: 0, predictedAvg: 0, actualHitRate: 0, gap: 0 },
+      byProbability: [],
+      byStat: [],
+      byConfidence: [],
+      daysAnalyzed: 0,
+      legsAnalyzed: 0,
+      rangeStart: null,
+      rangeEnd: null,
+    });
+    return;
+  }
+  try {
+    // Pull a generous window — calibration becomes more meaningful
+    // with more samples. 90 days is the rough horizon where roster
+    // changes and rule shifts start to make older data less relevant.
+    const rows = await listSlateSnapshotsFromDb(90);
+    const report = computeCalibration(
+      rows.map((r) => ({ date: r.date, results: r.results })),
+    );
+    res.json(report);
+  } catch (err) {
+    console.error('slate/calibration failed', err);
+    res.status(500).json({ error: 'calibration failed' });
   }
 });
 

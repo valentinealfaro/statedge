@@ -844,6 +844,33 @@ export async function getSlateHistoryDay(date: string): Promise<SlateHistoryDay>
   return (await res.json()) as SlateHistoryDay;
 }
 
+// --- Slate calibration (predicted vs actual hit-rate breakdown) ---
+
+export type CalibrationBucket = {
+  label: string;
+  sampleSize: number;
+  predictedAvg: number;        // 0-100 — avg probability we predicted
+  actualHitRate: number;       // 0-100 — actual hit rate, push counts as hit
+  gap: number;                 // predictedAvg - actualHitRate (positive = overconfident)
+};
+
+export type CalibrationReport = {
+  overall: CalibrationBucket;
+  byProbability: CalibrationBucket[];
+  byStat: CalibrationBucket[];
+  byConfidence: CalibrationBucket[];
+  daysAnalyzed: number;
+  legsAnalyzed: number;
+  rangeStart: string | null;
+  rangeEnd: string | null;
+};
+
+export async function getSlateCalibration(): Promise<CalibrationReport> {
+  const res = await fetch(`${API_BASE}/api/slate/calibration`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as CalibrationReport;
+}
+
 // --- ESPN today's games + game summary ---
 
 export type EspnGameTeam = {

@@ -2489,6 +2489,131 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   .slate-history-leg-evidence { padding-left: 32px; }
 }
 
+/* ─── Calibration view ─────────────────────────────────────── */
+.slate-calibration { margin-top: 8px; }
+.slate-calibration-head {
+  margin-bottom: 16px;
+}
+.slate-calibration-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+
+.slate-calibration-overall {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--surface-1);
+  margin-bottom: 20px;
+}
+.slate-calibration-overall-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+.slate-calibration-overall-label {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+.slate-calibration-overall-pred,
+.slate-calibration-overall-actual {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.slate-calibration-overall-pred strong,
+.slate-calibration-overall-actual strong {
+  color: var(--text-1);
+  font-size: 16px;
+  margin-left: 4px;
+}
+.slate-calibration-overall-gap {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+}
+
+.gap.over { background: var(--cold-bg); color: var(--cold); }
+.gap.under { background: var(--hot-bg); color: var(--hot); }
+.gap.calibrated { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
+
+.slate-calibration-section {
+  margin-top: 24px;
+}
+.slate-calibration-section h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--text-2);
+  letter-spacing: -0.1px;
+}
+
+.slate-calibration-table {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.slate-calibration-row {
+  display: grid;
+  grid-template-columns: 2fr 60px 100px 100px 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-top: 1px solid var(--border-subtle);
+}
+.slate-calibration-row:first-child {
+  border-top: none;
+}
+.slate-calibration-row.head {
+  background: var(--surface-0);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  font-weight: 700;
+}
+.slate-calibration-bucket-label {
+  font-weight: 600;
+  color: var(--text-1);
+}
+.slate-calibration-row .small-n {
+  color: var(--warn);
+}
+.slate-calibration-row .small-n-flag {
+  margin-left: 2px;
+  font-weight: 700;
+}
+.slate-calibration-row .gap.over,
+.slate-calibration-row .gap.under,
+.slate-calibration-row .gap.calibrated {
+  background: transparent;
+  padding: 0;
+  font-weight: 700;
+}
+.slate-calibration-row .gap.over { color: var(--cold); }
+.slate-calibration-row .gap.under { color: var(--hot); }
+.slate-calibration-row .gap.calibrated { color: var(--brand-blue); }
+
+@media (max-width: 720px) {
+  .slate-calibration-row {
+    grid-template-columns: 1.5fr 40px 80px 80px 80px;
+    gap: 6px;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .slate-calibration-overall-gap { margin-left: 0; }
+}
+
 /* Player-card collapse states. Header is always visible; the props
    list expands underneath. */
 .player-card-head-button {

@@ -22,6 +22,7 @@ import { NavBar } from './NavBar';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
+import { SlateCalibration } from './SlateCalibration';
 import { SlateHistory } from './SlateHistory';
 import { SlateManualEntry } from './SlateManualEntry';
 import { SlatePaywall } from './SlatePaywall';
@@ -64,11 +65,15 @@ export function Slate() {
   // Pre-populated from ?legs= URL param so shared links work.
   const [searchParams, setSearchParams] = useSearchParams();
   // Tab: 'today' shows the live prop board; 'history' shows past
-  // pre-built parlays graded against actuals. Synced to ?tab= so the
-  // History view is shareable / bookmarkable.
-  const [tab, setTab] = useState<'today' | 'history'>(() =>
-    searchParams.get('tab') === 'history' ? 'history' : 'today',
-  );
+  // pre-built parlays graded against actuals; 'calibration' shows
+  // predicted-vs-actual hit rate aggregated across all graded days.
+  // Synced to ?tab= so the views are shareable / bookmarkable.
+  const [tab, setTab] = useState<'today' | 'history' | 'calibration'>(() => {
+    const t = searchParams.get('tab');
+    if (t === 'history') return 'history';
+    if (t === 'calibration') return 'calibration';
+    return 'today';
+  });
   const [parlay, setParlay] = useState<string[]>(() => {
     const raw = searchParams.get('legs');
     if (!raw) return [];
@@ -116,13 +121,13 @@ export function Slate() {
   }, [parlay, setSearchParams]);
 
   // Mirror the active tab to ?tab= so deep links to /slate?tab=history
-  // land directly on the history view.
+  // (or ?tab=calibration) land directly on those views.
   useEffect(() => {
     setSearchParams(
       (prev) => {
         const sp = new URLSearchParams(prev);
-        if (tab === 'history') sp.set('tab', 'history');
-        else sp.delete('tab');
+        if (tab === 'today') sp.delete('tab');
+        else sp.set('tab', tab);
         return sp;
       },
       { replace: true },
@@ -288,8 +293,8 @@ export function Slate() {
         score the combined hit probability.
       </p>
 
-      {/* Top-level tabs — Today's prop board vs History (past pre-built
-          parlays graded against actual stats). Default lands on Today. */}
+      {/* Top-level tabs — Today's prop board, past graded picks
+          (History), and predicted-vs-actual calibration aggregates. */}
       <div className="slate-tabs" role="tablist" aria-label="Slate view">
         <button
           role="tab"
@@ -307,9 +312,18 @@ export function Slate() {
         >
           History
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'calibration'}
+          className={`slate-tab ${tab === 'calibration' ? 'active' : ''}`}
+          onClick={() => setTab('calibration')}
+        >
+          Calibration
+        </button>
       </div>
 
       {tab === 'history' && <SlateHistory />}
+      {tab === 'calibration' && <SlateCalibration />}
 
       {tab === 'today' && (
         <SlateTodayBody
