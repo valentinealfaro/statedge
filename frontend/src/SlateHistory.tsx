@@ -140,15 +140,27 @@ export function SlateHistory() {
   );
 }
 
+function legProb(leg: SlateHistoryCombo['legs'][number]): number {
+  // New snapshots emit `probability`; legacy snapshots have `pct`.
+  return leg.probability ?? leg.pct ?? 0;
+}
+
+function comboHit(combo: SlateHistoryCombo): number {
+  return combo.predictedHit ?? combo.combinedPct ?? 0;
+}
+
 function ComboRow({ combo }: { combo: SlateHistoryCombo }) {
   const sb = statusBadge(combo.status);
   return (
     <div className={`slate-history-combo ${combo.tag === 'wild' ? 'wild' : ''}`}>
       <div className="slate-history-combo-head">
         <span className="slate-history-combo-label">{combo.label}</span>
+        {combo.subtitle && (
+          <span className="slate-history-combo-subtitle">{combo.subtitle}</span>
+        )}
         <span className="slate-history-combo-size">{combo.legs.length}-leg</span>
         <span className="slate-history-combo-pct" title="Combined hit probability we predicted at lock time">
-          {combo.combinedPct.toFixed(1)}% predicted
+          {comboHit(combo).toFixed(1)}% predicted
         </span>
         <span className={`slate-history-combo-status ${sb.cls}`}>{sb.label}</span>
       </div>
@@ -170,7 +182,10 @@ function ComboRow({ combo }: { combo: SlateHistoryCombo }) {
               <span className="slate-history-leg-actual">
                 Actual <strong>{actualLabel}</strong>
               </span>
-              <span className="slate-history-leg-pct">{leg.pct}% predicted</span>
+              <span className="slate-history-leg-pct">
+                {legProb(leg).toFixed(0)}% predicted
+                {leg.confidenceLabel ? ` · ${leg.confidenceLabel}` : ''}
+              </span>
             </div>
           );
         })}

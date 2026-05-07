@@ -39,12 +39,19 @@ const baseLeg = {
   playerName: 'Test Player',
   team: 'NYK',
   opponentAbbr: 'PHI',
+  gameKey: 'NYK-PHI',
   statKey: 'points' as const,
   statLabel: 'Points',
-  pct: 75,
-  edge: 50,
+  probability: 75,
+  confidence: 70,
+  risk: 50,
+  edgeScore: 60,
+  projection: 28,
+  confidenceLabel: 'Strong',
+  slateScore: 60,
   l10Avg: 26,
   vsOppAvg: null,
+  injuryStatus: null,
 };
 
 describe('gradeLeg', () => {
@@ -128,8 +135,12 @@ describe('gradeLeg', () => {
 describe('gradeCombo parlay status', () => {
   const combo: Combo = {
     label: 'Best 2',
+    subtitle: 'Safest Core',
     tag: 'safe',
-    combinedPct: 60,
+    rawCombinedHit: 60,
+    adjustedCombinedHit: 60,
+    correlationRisk: 'None',
+    warnings: [],
     legs: [
       { ...baseLeg, line: 22.5, direction: 'OVER', playerId: 1 },
       { ...baseLeg, line: 5.5, direction: 'OVER', playerId: 2, statKey: 'rebounds', statLabel: 'Rebounds' },

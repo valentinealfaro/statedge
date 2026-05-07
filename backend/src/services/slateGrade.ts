@@ -8,6 +8,12 @@
 // PrizePicks behavior is to refund a push and the parlay continues at
 // reduced legs, but for our scoreboard we treat any non-loss as
 // surviving — so a parlay only loses if any leg outright misses.
+//
+// The grader is shape-tolerant: ComboLeg gained extra fields in the
+// new combo builder rewrite (probability/confidence/risk/edge replacing
+// a single `pct`). Older snapshots in slate_results.combos JSONB
+// still have the old shape, so we read both new and legacy field
+// names and degrade gracefully when something is missing.
 
 import type { PlayerGame } from '../nba/client.js';
 import { isDoubleDoubleGame, STAT_MAP, type Last10StatId } from './last10.js';
@@ -27,9 +33,12 @@ export type GradedLeg = {
   line: number;
   direction: 'OVER' | 'UNDER';
 
-  // Snapshotted model state (echoed so UI shows what we predicted vs
-  // what happened):
-  pct: number;
+  // Snapshotted model state echoed onto the graded shape so the UI
+  // can show "what we predicted vs what happened" without a second
+  // join. probability is the per-leg hit % at lock time.
+  probability: number;
+  confidence?: number;
+  confidenceLabel?: string;
 
   // Actual outcome:
   actual: number | null;     // null when we couldn't find a game
@@ -38,9 +47,13 @@ export type GradedLeg = {
 
 export type GradedCombo = {
   label: Combo['label'];
+  subtitle?: string;
   tag: Combo['tag'];
   legs: GradedLeg[];
-  combinedPct: number;
+  // Predicted hit % at lock time. Mirrors Combo's adjusted hit; kept
+  // as a single number on the graded shape so the History UI doesn't
+  // need to know about correlation tiers post-hoc.
+  predictedHit: number;
   // Aggregate parlay status:
   //   'won'     all legs hit (pushes count as survival, mirrors PP)
   //   'lost'    at least one leg missed
@@ -57,6 +70,23 @@ function valueFor(g: PlayerGame, stat: Last10StatId): number {
   return get(g);
 }
 
+// Old snapshots stored `pct` instead of `probability`. Read either,
+// fall back to 0 so the UI still renders something sensible.
+function legProbability(leg: ComboLeg | (ComboLeg & { pct?: number })): number {
+  const lp = leg as { probability?: number; pct?: number };
+  return lp.probability ?? lp.pct ?? 0;
+}
+
+function legConfidence(leg: ComboLeg): number | undefined {
+  const lp = leg as { confidence?: number };
+  return typeof lp.confidence === 'number' ? lp.confidence : undefined;
+}
+
+function legConfidenceLabel(leg: ComboLeg): string | undefined {
+  const lp = leg as { confidenceLabel?: string };
+  return typeof lp.confidenceLabel === 'string' ? lp.confidenceLabel : undefined;
+}
+
 export function gradeLeg(
   leg: ComboLeg,
   gamesByDate: PlayerGame[],
@@ -67,6 +97,9 @@ export function gradeLeg(
   // ONLY if it lands on slateDate exactly — earlier dates mean the
   // player didn't play tonight (game logs are appended after each game).
   const game = gamesByDate.find((g) => g.date === slateDate);
+  const probability = legProbability(leg);
+  const confidence = legConfidence(leg);
+  const confidenceLabel = legConfidenceLabel(leg);
 
   if (!game) {
     return {
@@ -78,7 +111,9 @@ export function gradeLeg(
       statLabel: leg.statLabel,
       line: leg.line,
       direction: leg.direction,
-      pct: leg.pct,
+      probability,
+      confidence,
+      confidenceLabel,
       actual: null,
       outcome: 'no_game',
     };
@@ -108,10 +143,24 @@ export function gradeLeg(
     statLabel: leg.statLabel,
     line: leg.line,
     direction: leg.direction,
-    pct: leg.pct,
+    probability,
+    confidence,
+    confidenceLabel,
     actual,
     outcome,
   };
+}
+
+// Read the predicted-hit % off a Combo, tolerating both new and
+// legacy shapes. New: adjustedCombinedHit (or rawCombinedHit fallback).
+// Legacy: combinedPct.
+function comboPredictedHit(combo: Combo): number {
+  const c = combo as {
+    adjustedCombinedHit?: number;
+    rawCombinedHit?: number;
+    combinedPct?: number;
+  };
+  return c.adjustedCombinedHit ?? c.rawCombinedHit ?? c.combinedPct ?? 0;
 }
 
 export function gradeCombo(
@@ -134,9 +183,10 @@ export function gradeCombo(
     missCount > 0 ? 'lost' : pendingCount > 0 ? 'pending' : 'won';
   return {
     label: combo.label,
+    subtitle: combo.subtitle,
     tag: combo.tag,
     legs,
-    combinedPct: combo.combinedPct,
+    predictedHit: comboPredictedHit(combo),
     status,
     hitCount,
     missCount,

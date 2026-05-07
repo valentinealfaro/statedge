@@ -2385,6 +2385,51 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--hot);
 }
 
+/* Slate-builder rewrite: card subtitle, confidence chip, warnings.
+   Layered on top of the existing best-pick-card grid so the rail
+   keeps the same density. */
+.best-pick-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.best-pick-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+.best-pick-card.wild .best-pick-subtitle {
+  color: var(--warn);
+}
+.best-pick-leg-conf {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  margin-left: 4px;
+}
+.best-pick-leg-conf.conf-elite { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
+.best-pick-leg-conf.conf-strong { background: var(--hot-bg); color: var(--hot); }
+.best-pick-leg-conf.conf-medium { background: rgba(255,184,107,0.12); color: var(--warn); }
+.best-pick-leg-conf.conf-low { background: var(--cold-bg); color: var(--cold); }
+.best-pick-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.best-pick-warning {
+  font-size: 10px;
+  color: var(--warn);
+  font-weight: 600;
+}
+
 /* Player-card collapse states. Header is always visible; the props
    list expands underneath. */
 .player-card-head-button {
@@ -4153,6 +4198,11 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .slate-history-combo-label {
   font-weight: 800;
   font-size: 15px;
+}
+.slate-history-combo-subtitle {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 500;
 }
 .slate-history-combo-size {
   font-size: 12px;

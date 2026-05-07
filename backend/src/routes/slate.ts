@@ -18,7 +18,7 @@ import {
 } from '../db.js';
 import { currentSeason } from '../nba/client.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
-import { buildCombos, type Combo } from '../services/slateCombos.js';
+import type { Combo } from '../services/slateCombos.js';
 import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
 
 export const slateRouter: Router = Router();
@@ -429,9 +429,8 @@ slateRouter.get('/today', async (_req, res) => {
     // combos all day, and we have a stable record to grade later.
     // Best-effort: failure here must not break the slate response.
     try {
-      const combos = buildCombos(resolved.lines);
-      if (combos.length > 0) {
-        await snapshotSlateCombosInDb(stored.date, combos);
+      if (resolved.combos.length > 0) {
+        await snapshotSlateCombosInDb(stored.date, resolved.combos);
       }
     } catch (snapErr) {
       console.warn('slate/today combo snapshot failed:', (snapErr as Error).message);
@@ -568,12 +567,11 @@ async function backfillSnapshotForDate(
     direction: l.direction ?? 'both',
   }));
   const resolved = await resolveSlate(raw, 'manual', date);
-  const combos = buildCombos(resolved.lines);
   // Snapshot even when the combos array is empty so we don't keep
   // re-attempting the same backfill on every history hit. An empty
   // snapshot just renders as "No pre-built parlays were generated
   // for this date" in the UI.
-  await snapshotSlateCombosInDb(date, combos);
+  await snapshotSlateCombosInDb(date, resolved.combos);
 }
 
 slateRouter.get('/history', async (_req, res) => {

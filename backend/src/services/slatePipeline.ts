@@ -15,6 +15,7 @@ import {
   type InjuryStatus,
   type ProjectionResult,
 } from './projectionEngine.js';
+import { buildCombos, type Combo } from './slateCombos.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
 import { normalizeStatLabel, statLabelFor } from './slateNormalize.js';
 import {
@@ -112,6 +113,11 @@ export type SlateResponse = {
   unresolved: UnresolvedLine[];
   source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
+  // Pre-built parlays (Best 2-6 + Wild Card) computed server-side so
+  // every visitor sees the same picks and the snapshot writer/reader
+  // share one source of truth. Empty when the slate doesn't have
+  // enough eligible candidates (spec §"Limited slate" warning).
+  combos: Combo[];
 };
 
 function round2(n: number): number {
@@ -387,10 +393,17 @@ export async function resolveSlate(
   // Sort by mightHitPct desc — strongest signals first.
   resolved.sort((a, b) => (b.hitProbability?.mightHitPct ?? 0) - (a.hitProbability?.mightHitPct ?? 0));
 
+  // Compute pre-built parlays once, server-side, so /slate/today,
+  // /slate/auto, /slate/parse, and /slate/parse-image all surface the
+  // same picks the snapshot path will store. The frontend renders
+  // these directly (no client-side combo math).
+  const { combos } = buildCombos(resolved);
+
   return {
     lines: resolved,
     unresolved,
     source,
+    combos,
     fetchedAt: new Date().toISOString(),
   };
 }

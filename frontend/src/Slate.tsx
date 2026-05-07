@@ -9,6 +9,7 @@ import {
   postSlateImage,
   type BackendVersion,
   type DataFreshness,
+  type SlateCombo,
   type SlateProjection,
   type SlateResolvedLine,
   type SlateResponse,
@@ -425,9 +426,12 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
 
       {/* Pre-built parlays sit at the top of the page when a slate
           is loaded — they're the highest-signal view of the slate
-          and what most users come here for. */}
-      {lines.length >= 2 && (
+          and what most users come here for. Computed server-side
+          (see backend slateCombos.ts) so every visitor sees the same
+          picks the snapshot/history path uses. */}
+      {data?.combos && data.combos.length > 0 && (
         <BestPicksRail
+          combos={data.combos}
           lines={lines}
           onLoad={(legs) => setParlay(legs)}
           activeKeys={parlay}
@@ -688,196 +692,92 @@ function LineCard({
 }
 
 // "Best Picks" rail — pre-computed parlay combos at sizes 2-6 plus a
-// "Wild Card" longshot. One tap loads the combo into the parlay tray.
-// Strict diversity rule: never two legs from the same player (variance
-// is correlated within a player, especially across PRA / PR / PA combo
-// stats), so each combo touches N distinct players.
+// "Wild Card" longshot. Computed server-side (backend slateCombos.ts)
+// per the slate-builder spec: top-down progressive structure (Best 6
+// is the max slate; smaller cards are subsets), exposure caps to
+// prevent over-concentration on one player/team/game/stat, and a
+// correlation-adjusted combined hit %. Frontend is a pure renderer
+// — every visitor sees the same combos the snapshot writer stores.
 function BestPicksRail({
-  lines,
+  combos,
   onLoad,
   activeKeys,
-  cardKey,
 }: {
+  combos: SlateCombo[];
+  // Lines kept on the props for a future "click leg → scroll to card"
+  // affordance. Not strictly needed today.
   lines: SlateResolvedLine[];
   onLoad: (legs: string[]) => void;
   activeKeys: string[];
   cardKey: (l: SlateResolvedLine) => string;
 }) {
-  type Candidate = {
-    line: SlateResolvedLine;
-    pct: number;
-    edge: number;
-    direction: 'OVER' | 'UNDER';
-  };
-
-  // Filter to lines with a clear directional lean (no coin-flips) and a
-  // resolved projection. OUT players are excluded — we never want a
-  // "best pick" parlay that includes someone who isn't playing.
-  const candidates: Candidate[] = lines
-    .filter((l) => l.injury?.status !== 'Out')
-    .map((l) => {
-      const p = l.projection;
-      if (!p || p.noProjection) return null;
-      const lean = p.edge.lean;
-      if (lean === 'No Clear Edge') return null;
-      const isOver = lean.includes('Over');
-      // Skip lines where the model's lean conflicts with the
-      // available bettable side. Demon (over-only) + UNDER lean
-      // can't be played; Goblin (under-only) + OVER lean can't
-      // be played either. Either way, the parlay rail shouldn't
-      // surface unbettable picks.
-      const dirRestriction = l.direction;
-      if (dirRestriction === 'over' && !isOver) return null;
-      if (dirRestriction === 'under' && isOver) return null;
-      return {
-        line: l,
-        pct: isOver ? p.probability.over : p.probability.under,
-        edge: p.edge.score,
-        direction: (isOver ? 'OVER' : 'UNDER') as 'OVER' | 'UNDER',
-      };
-    })
-    .filter((x): x is Candidate => x !== null);
-
-  function pickDiverse(sorted: Candidate[], n: number): Candidate[] {
-    const seen = new Set<number>();
-    const out: Candidate[] = [];
-    for (const c of sorted) {
-      if (seen.has(c.line.playerId)) continue;
-      out.push(c);
-      seen.add(c.line.playerId);
-      if (out.length === n) break;
-    }
-    return out;
-  }
-
-  // Stricter version of pickDiverse: avoids both same-player AND
-  // same-stat-label collisions. Used by Wild Card to force variety
-  // (otherwise the longshot ends up being 6 Points props from
-  // different players, which isn't really "wild" — just safe).
-  function pickDiverseByStat(sorted: Candidate[], n: number): Candidate[] {
-    const seenPlayers = new Set<number>();
-    const seenStats = new Set<string>();
-    const out: Candidate[] = [];
-    for (const c of sorted) {
-      if (seenPlayers.has(c.line.playerId)) continue;
-      if (seenStats.has(c.line.statLabel)) continue;
-      out.push(c);
-      seenPlayers.add(c.line.playerId);
-      seenStats.add(c.line.statLabel);
-      if (out.length === n) break;
-    }
-    // If strict diversity didn't fill 6 (small slate, few stat types
-    // with strong picks), relax the stat constraint and fill from
-    // remaining candidates by player only.
-    if (out.length < n) {
-      for (const c of sorted) {
-        if (out.includes(c)) continue;
-        if (seenPlayers.has(c.line.playerId)) continue;
-        out.push(c);
-        seenPlayers.add(c.line.playerId);
-        if (out.length === n) break;
-      }
-    }
-    return out;
-  }
-
-  function combinedPct(picks: Candidate[]): number {
-    return picks.reduce((p, c) => p * (c.pct / 100), 1) * 100;
-  }
-
-  // Best N combos: top N by individual hit % (with the diversity rule)
-  const sortedByPct = [...candidates].sort((a, b) => b.pct - a.pct);
-  const combos: { label: string; legs: Candidate[]; tag?: 'wild' | 'safe' }[] = [];
-  for (const n of [2, 3, 4, 5, 6]) {
-    const legs = pickDiverse(sortedByPct, n);
-    if (legs.length === n) combos.push({ label: `Best ${n}`, legs });
-  }
-
-  // Wild Card: a real longshot. NOT a re-shuffle of the Best 6
-  // safest plays. Three things differentiate it:
-  //   1. Pool excludes Goblins (under-only, lower payout) AND the
-  //      very-highest-probability picks (those already live in Best
-  //      6 — no point repeating them with a different sort).
-  //   2. Sort favors model conviction (edge) with a longshot bonus:
-  //      higher edge + moderate probability beats slight edge +
-  //      runaway probability. We score by edge × (105 - pct) which
-  //      peaks around 70-80% pct + edge ≥ 50.
-  //   3. Strict diversity by stat label — a Wild Card with 6 Points
-  //      props isn't 'wild', it's just a Best 6 in disguise. Forcing
-  //      6 different stat types creates the variety pack the user
-  //      actually wants.
-  const wildPool = candidates.filter((c) => {
-    if (c.line.direction === 'under') return false;        // no Goblins
-    if (c.pct >= 90) return false;                          // skip the locks (Best 6 territory)
-    if (c.edge < 40) return false;                          // skip weak edges
-    return true;
-  });
-  const sortedByLongshot = [...wildPool].sort((a, b) => {
-    // Longshot score: high edge × (room above 50%). A 75%-confidence
-    // edge-70 pick beats a 92%-confidence edge-72 pick because the
-    // first one moves the combined-% needle more if it hits.
-    const score = (c: Candidate) => c.edge * (105 - c.pct);
-    const aScore = score(a);
-    const bScore = score(b);
-    if (aScore !== bScore) return bScore - aScore;
-    // Tiebreak: Demons first (higher payout).
-    const aDemon = a.line.direction === 'over' ? 1 : 0;
-    const bDemon = b.line.direction === 'over' ? 1 : 0;
-    return bDemon - aDemon;
-  });
-  const wildLegs = pickDiverseByStat(sortedByLongshot, 6);
-  if (wildLegs.length >= 4) {
-    // Allow 4-6 legs even if we couldn't fill 6 (some slates won't
-    // have enough variety in the longshot zone).
-    combos.push({ label: 'Wild Card', legs: wildLegs, tag: 'wild' });
-  }
-
   if (combos.length === 0) return null;
+
+  function legKey(l: SlateCombo['legs'][number]): string {
+    return `${l.playerId}-${l.statKey}-${l.line}`;
+  }
 
   return (
     <div className="best-picks">
       <div className="best-picks-head">
         <h3>Pre-built parlays</h3>
         <span className="muted small">
-          Tap any card to load it into your tray. All combos use distinct players.
+          Server-built using the StatEdge projection. Best 6 is the max
+          slate; Best 5/4/3/2 are progressive subsets.
         </span>
       </div>
       <div className="best-picks-rail">
         {combos.map((c) => {
-          const keys = c.legs.map((l) => cardKey(l.line));
+          const keys = c.legs.map(legKey);
           const isActive = keys.length > 0
             && keys.every((k) => activeKeys.includes(k))
             && keys.length === activeKeys.length;
-          const pct = combinedPct(c.legs);
           return (
             <button
               key={c.label}
               className={`best-pick-card ${c.tag === 'wild' ? 'wild' : ''} ${isActive ? 'active' : ''}`}
               onClick={() => onLoad(keys)}
-              title={`Load ${c.label} into your parlay tray`}
+              title={`Load ${c.label} (${c.subtitle}) into your parlay tray`}
             >
               <div className="best-pick-head">
-                <span className="best-pick-label">{c.label}</span>
+                <div className="best-pick-titles">
+                  <span className="best-pick-label">{c.label}</span>
+                  <span className="best-pick-subtitle">{c.subtitle}</span>
+                </div>
                 <span className="best-pick-size">{c.legs.length}-leg</span>
               </div>
               <div
                 className="best-pick-pct"
-                title={`Combined hit probability assuming all ${c.legs.length} legs are independent. Multiplies each leg's individual % together — so a 90% × 88% × 75% combo lands at ~59%. ${c.tag === 'wild' ? 'Wild Card is the slate longshot: skips the 90%+ locks (those live in Best 6), skips Goblins (lower payout), keeps only edge ≥ 40 picks in the 60-89% range. Forces stat-type diversity so you get a variety pack — a points play, a rebound play, a 3-PT play — instead of 6 same-stat props masquerading as different picks.' : 'Each leg is from a different player, so prop variance is roughly independent.'}`}
+                title={`Adjusted combined hit %. Multiplies each leg's probability and applies a correlation penalty (${c.correlationRisk} risk this card). Raw uncorrected: ${c.rawCombinedHit.toFixed(1)}%.`}
               >
-                {pct.toFixed(1)}%
+                {c.adjustedCombinedHit.toFixed(1)}%
               </div>
-              <div className="best-pick-pct-label">combined hit</div>
+              <div className="best-pick-pct-label">
+                adjusted hit · {c.correlationRisk} correlation
+              </div>
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
                   <div key={i} className="best-pick-leg">
-                    <span className="best-pick-leg-name">{l.line.playerName}</span>
-                    <span className="best-pick-leg-stat">{l.line.statLabel} {l.line.line}</span>
+                    <span className="best-pick-leg-name">{l.playerName}</span>
+                    <span className="best-pick-leg-stat">
+                      {l.statLabel} {l.line}
+                    </span>
                     <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
-                      {l.direction === 'OVER' ? '↑' : '↓'} {l.pct}%
+                      {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+                    </span>
+                    <span className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}>
+                      {l.confidenceLabel}
                     </span>
                   </div>
                 ))}
               </div>
+              {c.warnings.length > 0 && (
+                <div className="best-pick-warnings">
+                  {c.warnings.map((w, i) => (
+                    <span key={i} className="best-pick-warning">⚠ {w}</span>
+                  ))}
+                </div>
+              )}
               <div className="best-pick-cta">
                 {isActive ? '✓ Loaded' : 'Load parlay →'}
               </div>

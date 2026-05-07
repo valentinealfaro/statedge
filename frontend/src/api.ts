@@ -587,11 +587,45 @@ export type SlateUnresolvedLine = {
   reason: 'no_player_match' | 'unknown_stat' | 'no_recent_games';
 };
 
+export type SlateComboLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  opponentAbbr: string | null;
+  gameKey: string | null;
+  statKey: Last10StatId;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  confidence: number;
+  risk: number;
+  edgeScore: number;
+  projection: number;
+  confidenceLabel: string;
+  slateScore: number;
+  l10Avg: number;
+  vsOppAvg: number | null;
+  injuryStatus: string | null;
+};
+
+export type SlateCombo = {
+  label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6' | 'Wild Card';
+  subtitle: string;
+  tag: 'safe' | 'wild';
+  legs: SlateComboLeg[];
+  rawCombinedHit: number;
+  adjustedCombinedHit: number;
+  correlationRisk: 'None' | 'Low' | 'Medium' | 'High' | 'Very High';
+  warnings: string[];
+};
+
 export type SlateResponse = {
   lines: SlateResolvedLine[];
   unresolved: SlateUnresolvedLine[];
   source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
+  combos: SlateCombo[];
 };
 
 export type ManualSlateLine = {
@@ -741,7 +775,14 @@ export type SlateHistoryLeg = {
   statLabel: string;
   line: number;
   direction: 'OVER' | 'UNDER';
-  pct: number;
+  // Per-leg hit % at lock time. Field name is `probability` on the
+  // new shape; older snapshots wrote `pct` — server normalizes
+  // to `probability` in the graded response, but we keep the
+  // legacy field optional so older /history responses still render.
+  probability: number;
+  confidence?: number;
+  confidenceLabel?: string;
+  pct?: number;     // legacy alias — only present on pre-rewrite snapshots
   // Only present once the day has been graded:
   actual?: number | null;
   outcome?: 'hit' | 'miss' | 'push' | 'no_game' | 'unknown_stat';
@@ -749,9 +790,14 @@ export type SlateHistoryLeg = {
 
 export type SlateHistoryCombo = {
   label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6' | 'Wild Card';
+  subtitle?: string;
   tag: 'safe' | 'wild';
   legs: SlateHistoryLeg[];
-  combinedPct: number;
+  // Predicted hit % at lock time (correlation-adjusted on the new
+  // shape). predictedHit replaces the old `combinedPct` — server
+  // emits the new field; old snapshots are migrated on read.
+  predictedHit: number;
+  combinedPct?: number;   // legacy alias — only on pre-rewrite snapshots
   // Filled in for graded days only:
   status?: 'won' | 'lost' | 'pending';
   hitCount?: number;
