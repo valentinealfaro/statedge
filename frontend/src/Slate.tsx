@@ -895,6 +895,42 @@ function BestPicksRail({
                   )}
                 </div>
               )}
+              {/* Card-level market-disagreement signals. Tells the
+                  user at a glance whether the card found genuine
+                  inefficiency (high disagreement, low trap exposure)
+                  or just stacked safe-looking props. */}
+              {(c.averageEdge !== undefined || c.averageProjectionGap !== undefined) && (
+                <div className="best-pick-signals">
+                  {c.averageEdge !== undefined && (
+                    <div className="best-pick-signal">
+                      <span className="muted small">Avg Edge</span>
+                      <strong className={c.averageEdge >= 10 ? 'pos' : c.averageEdge <= -5 ? 'neg' : ''}>
+                        {c.averageEdge >= 0 ? '+' : ''}{c.averageEdge.toFixed(1)}%
+                      </strong>
+                    </div>
+                  )}
+                  {c.averageProjectionGap !== undefined && (
+                    <div className="best-pick-signal">
+                      <span className="muted small">Proj Gap</span>
+                      <strong>+{c.averageProjectionGap.toFixed(1)}</strong>
+                    </div>
+                  )}
+                  {c.trapExposure && (
+                    <div className="best-pick-signal">
+                      <span className="muted small">Trap</span>
+                      <strong className={`trap-${c.trapExposure.toLowerCase()}`}>{c.trapExposure}</strong>
+                    </div>
+                  )}
+                  {c.marketDisagreementRating && (
+                    <div className="best-pick-signal">
+                      <span className="muted small">Mkt Disagree</span>
+                      <strong className={`disagree-${c.marketDisagreementRating.toLowerCase()}`}>
+                        {c.marketDisagreementRating}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
                   <div key={i} className="best-pick-leg-block">

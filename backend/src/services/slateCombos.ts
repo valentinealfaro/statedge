@@ -195,14 +195,49 @@ export type SlateMode = 'safe' | 'balanced' | 'aggressive';
 function modeScore(mode: SlateMode, c: ComboCandidate): number {
   if (mode === 'safe') return c.slateScore;
   if (mode === 'aggressive') {
+    // Aggressive mode now ranks primarily by MarketDisagreementScore
+    // — the user-facing concept of "how mispriced is this leg" — so
+    // 6-man cards under Aggressive mode read as "the slate's
+    // strongest disagreements with PrizePicks", not "the most
+    // separated picks".
     return (
-      c.projectionDistanceScore * 0.40
-      + c.edgePercent * 0.30
-      + c.edgeScore * 0.20
+      c.marketDisagreementScore * 0.60
+      + c.edgePercent * 0.20
       - c.risk * 0.10
+      + c.edgeScore * 0.10
     );
   }
   return c.evScore;     // balanced (default)
+}
+
+// Per-card identity in Balanced mode: small cards lean safer, big
+// cards lean aggressive. Spec §"6-MAN PHILOSOPHY" — the 6-leg card
+// SHOULD be the most aggressive by design, not balanced. Safe and
+// Aggressive user modes still apply globally (no per-size tilt) so
+// the user can override.
+function effectiveMode(userMode: SlateMode, cardSize: number): SlateMode {
+  if (userMode !== 'balanced') return userMode;
+  if (cardSize >= 6) return 'aggressive';
+  if (cardSize <= 2) return 'safe';
+  return 'balanced';
+}
+
+// MarketDisagreementScore (spec §"NEW MARKET DISAGREEMENT SCORE").
+// Quantifies how aggressively the model disagrees with the market
+// at this line. Used as the primary ranker for aggressive/6-man
+// cards: hunting mispricings, not safety.
+function computeMarketDisagreement(c: {
+  projectionDistanceScore: number;
+  edgePercent: number;
+  confidence: number;
+}): number {
+  // calibrationStrength held at 50 until we have ≥100 graded picks.
+  return (
+    c.projectionDistanceScore * 0.40
+    + c.edgePercent * 0.35
+    + c.confidence * 0.15
+    + 50 * 0.10
+  );
 }
 
 function computeTrapScore(c: {
@@ -471,6 +506,15 @@ export type ComboCandidate = {
   trapScore: number;                // 0-100
   trapTier: TrapTier;
 
+  // MarketDisagreementScore — how aggressively the model disagrees
+  // with the market on this line. Combines projection separation
+  // (the structural gap), edge% (the probability gap), confidence
+  // (how trustworthy the projection is), and calibration strength
+  // (constant 50 until ≥100 graded picks). Used as the primary
+  // ranker for aggressive/6-man cards per spec — those cards should
+  // hunt the strongest disagreements, not the safest probabilities.
+  marketDisagreementScore: number;
+
   // Snapshot fields used by the History grader:
   l10Avg: number;
   vsOppAvg: number | null;
@@ -565,6 +609,12 @@ export type Combo = {
   // Average leg edgePercent on this card — quick at-a-glance signal
   // of how much "free probability" the card is capturing.
   averageEdge?: number;
+  // Spec §"NEW FRONTEND DISPLAY" — card-level signals so users can
+  // tell at a glance whether a card found genuine inefficiency or
+  // just stacked safe-looking props.
+  averageProjectionGap?: number;          // avg |projection − line|
+  trapExposure?: 'Low' | 'Medium' | 'High';
+  marketDisagreementRating?: 'Low' | 'Medium' | 'High';
 };
 
 // Backwards-compat alias for the snapshot grader. Old snapshots in
@@ -742,6 +792,11 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       projectionDistanceScore: projDistScore,
       statVolatility,
     });
+    const marketDisagreementScore = computeMarketDisagreement({
+      projectionDistanceScore: projDistScore,
+      edgePercent,
+      confidence: p.confidence.score,
+    });
 
     const raw: EnrichedCandidate = {
       playerId: l.playerId,
@@ -767,6 +822,7 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       category,
       trapScore,
       trapTier: trapTierFromScore(trapScore),
+      marketDisagreementScore,
       l10Avg: l.last10Avg,
       vsOppAvg: l.vsOpponent?.avg ?? null,
       injuryStatus: injStatus,
@@ -883,6 +939,65 @@ function pickByCaps<T extends ComboCandidate>(
 // the cards using it lose — not all of them. When the slate has
 // fewer eligible picks than the cards need (6+5+4+3+2 = 20 leg
 // slots), this gracefully degrades to allowing reuse.
+// Stats whose default lines are so low they're often efficiently
+// priced: a 0.5 steals OVER hits 60%+ of NBA games naturally, so
+// the market doesn't really mispricethem. Per the spec, an aggressive
+// 6-man card shouldn't load up on these unless the model sees
+// EXTREME edge (≥20%). This filter only fires for aggressive cards.
+const LOW_LINE_DOMINANCE_STATS = new Set<Last10StatId>([
+  'steals',
+  'blocks',
+]);
+const LOW_LINE_THRESHOLDS: Partial<Record<Last10StatId, number>> = {
+  steals: 1.0,        // ≤ 1.0 considered low-line
+  blocks: 1.0,
+  assists: 2.0,
+  rebounds: 2.0,
+};
+
+// Min edge required for a candidate to land on an aggressive card.
+// Spec §"ADD MINIMUM EDGE REQUIREMENTS": +10 minimum, +20 elite.
+const AGGRESSIVE_MIN_EDGE = 10;
+// Edge required to override the low-line dominance block.
+const LOW_LINE_OVERRIDE_EDGE = 20;
+
+// Size-aware picker. Resolves the effective mode for the card size,
+// applies aggressive-only quality gates (min edge + low-line block),
+// then defers to pickWithDiversity for the actual ranked selection.
+function pickAggressiveAware<T extends ComboCandidate>(
+  pool: T[],
+  target: number,
+  caps: Caps,
+  usage: Map<string, number>,
+  userMode: SlateMode,
+): T[] {
+  const eff = effectiveMode(userMode, target);
+  let filtered = pool;
+  if (eff === 'aggressive') {
+    filtered = pool.filter((c) => {
+      // Quality gate 1: min edge floor.
+      if (c.edgePercent < AGGRESSIVE_MIN_EDGE) return false;
+      // Quality gate 2: low-line block. A low-line stat survives
+      // only when the model sees extreme edge (≥20%).
+      const lowLineThreshold = LOW_LINE_THRESHOLDS[c.statKey];
+      if (
+        lowLineThreshold !== undefined
+        && c.line <= lowLineThreshold
+        && c.edgePercent < LOW_LINE_OVERRIDE_EDGE
+      ) {
+        return false;
+      }
+      return true;
+    });
+    // Fallback: if the aggressive filter wipes the pool below
+    // viable, relax to the un-filtered pool. Better to ship a
+    // softer card than an empty one (the user can still see the
+    // average-edge metrics and judge for themselves).
+    if (filtered.length < target) filtered = pool;
+  }
+  return pickWithDiversity(filtered, target, caps, usage, eff);
+}
+
 function pickWithDiversity<T extends ComboCandidate>(
   pool: T[],
   target: number,
@@ -964,16 +1079,16 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-// Card subtitles — updated for the EV engine. Picks are ranked by
-// expected value (edge × confidence × projection separation minus
-// risk), not raw probability. The "best" card isn't the safest —
-// it's the one capturing the most market mispricing.
+// Card subtitles — per-size identity. Spec's "different cards =
+// different identities": Best 2/3 are Safe Core (anchor picks),
+// Best 4 is Balanced EV, Best 5/6 are Aggressive Edge (hunting
+// market mispricings, not stacking safe props).
 const SUBTITLES: Record<Combo['label'], string> = {
-  'Best 2': 'Best Edge · 2-leg',
-  'Best 3': 'Best Edge · 3-leg',
-  'Best 4': 'Best Edge · 4-leg',
-  'Best 5': 'Best Edge · 5-leg',
-  'Best 6': 'Best Edge · 6-leg — strongest mispricings',
+  'Best 2': 'Safe Core · highest probability',
+  'Best 3': 'Safe Core · balanced anchor',
+  'Best 4': 'Balanced EV · risk-adjusted edge',
+  'Best 5': 'Aggressive Edge · projection gaps',
+  'Best 6': 'Aggressive Edge · strongest market mispricings',
   'Wild Card': 'Higher Risk · Higher Upside',
 };
 
@@ -1032,9 +1147,8 @@ function makeCombo(
     }
   }
 
-  // Trap exposure — surface a warning when ≥1 leg is in High or
-  // Extreme trap territory. Doesn't block the card but tells users
-  // a leg looks public-driven.
+  // Trap exposure — count of legs at High or Extreme trap tier.
+  // Surface as both a warning and a card-level metric.
   const trappy = legs.filter(
     (l) => l.trapTier === 'High Trap Risk' || l.trapTier === 'Extreme Trap Risk',
   );
@@ -1042,6 +1156,26 @@ function makeCombo(
     warnings.push(
       `${trappy.length} leg${trappy.length === 1 ? '' : 's'} flagged as possible public-trap line — interpret with caution.`,
     );
+  }
+  // Trap exposure rating: 0 trap legs = Low; 1 = Medium; 2+ = High.
+  const trapExposure: Combo['trapExposure'] =
+    trappy.length === 0 ? 'Low' : trappy.length === 1 ? 'Medium' : 'High';
+
+  // Card-level signals (spec §"NEW FRONTEND DISPLAY"). These render
+  // on the card chrome so the user can see at a glance whether the
+  // slate found genuine inefficiency or just stacked safe-looking
+  // props. Empty cards leave them undefined.
+  let averageProjectionGap: number | undefined;
+  let marketDisagreementRating: Combo['marketDisagreementRating'];
+  if (legs.length > 0) {
+    const sumGap = legs.reduce((s, l) => s + (l.projectionDistance ?? 0), 0);
+    averageProjectionGap = round1(sumGap / legs.length);
+    const sumMd = legs.reduce((s, l) => s + (l.marketDisagreementScore ?? 0), 0);
+    const avgMd = sumMd / legs.length;
+    // Tier: <40 Low, 40-60 Medium, ≥60 High. Calibrated against the
+    // expected range of marketDisagreementScore on real slates.
+    marketDisagreementRating =
+      avgMd >= 60 ? 'High' : avgMd >= 40 ? 'Medium' : 'Low';
   }
 
   return {
@@ -1057,6 +1191,9 @@ function makeCombo(
     expectedValue: expectedValue !== undefined ? round2(expectedValue) : undefined,
     evVerdict,
     averageEdge,
+    averageProjectionGap,
+    trapExposure,
+    marketDisagreementRating,
   };
 }
 
@@ -1077,20 +1214,25 @@ export function buildCombos(
 ): SlateCombosResult {
   const allCandidates = buildCandidates(lines);
   const eligible = allCandidates
-    .filter((c) => passesEligibility(c, ELIGIBLE))
-    .sort((a, b) => modeScore(mode, b) - modeScore(mode, a));
+    .filter((c) => passesEligibility(c, ELIGIBLE));
 
   // Build cards LARGEST → SMALLEST so the strongest mode-aligned
-  // picks land on Best 6 first. Each subsequent card prefers picks
-  // not yet used on a bigger card (diversity-first); when the slate
-  // is too small for full independence, the shared `usage` map
-  // drives graceful sharing.
+  // picks land on Best 6 first. Each card uses its EFFECTIVE mode
+  // — in Balanced mode, big cards (Best 6) lean Aggressive Edge
+  // and small cards (Best 2) lean Safe Core, per the spec's
+  // "different cards = different identities" insight. Safe and
+  // Aggressive user-modes apply globally without size tilt.
+  //
+  // Aggressive cards get the additional 6-man filters: minimum
+  // edge floor (≥10%) and a low-line dominance block. These quality
+  // gates produce cards that genuinely feel like market-disagreement
+  // signals, not "6 safe-looking props".
   const usage = new Map<string, number>();
-  const best6 = pickWithDiversity(eligible, 6, CAPS_LARGE, usage, mode);
-  const best5 = pickWithDiversity(eligible, 5, CAPS_LARGE, usage, mode);
-  const best4 = pickWithDiversity(eligible, 4, CAPS_LARGE, usage, mode);
-  const best3 = pickWithDiversity(eligible, 3, CAPS_TIGHT, usage, mode);
-  const best2 = pickWithDiversity(eligible, 2, CAPS_TIGHT, usage, mode);
+  const best6 = pickAggressiveAware(eligible, 6, CAPS_LARGE, usage, mode);
+  const best5 = pickAggressiveAware(eligible, 5, CAPS_LARGE, usage, mode);
+  const best4 = pickAggressiveAware(eligible, 4, CAPS_LARGE, usage, mode);
+  const best3 = pickAggressiveAware(eligible, 3, CAPS_TIGHT, usage, mode);
+  const best2 = pickAggressiveAware(eligible, 2, CAPS_TIGHT, usage, mode);
 
   const combos: Combo[] = [];
   // Order matches what the rail renders left-to-right (Best 2 → 6).

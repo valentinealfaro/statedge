@@ -2530,6 +2530,43 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 500;
 }
 
+/* Card-level market-disagreement signals. Sits below the EV verdict;
+   four compact stats so the user can read the card's identity
+   without expanding it. Avg Edge, Proj Gap, Trap, Mkt Disagree. */
+.best-pick-signals {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.best-pick-signal {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.best-pick-signal .muted {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.best-pick-signal strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-1);
+  letter-spacing: -0.2px;
+}
+.best-pick-signal strong.pos { color: var(--hot); }
+.best-pick-signal strong.neg { color: var(--cold); }
+.best-pick-signal strong.trap-low      { color: var(--hot); }
+.best-pick-signal strong.trap-medium   { color: var(--warn); }
+.best-pick-signal strong.trap-high     { color: var(--cold); }
+.best-pick-signal strong.disagree-high   { color: var(--hot); }
+.best-pick-signal strong.disagree-medium { color: var(--brand-blue); }
+.best-pick-signal strong.disagree-low    { color: var(--text-3); }
+
 /* Per-leg EV bar — second row under the leg's main row. Edge %,
    category chip, trap warning when the leg looks public-driven. */
 .best-pick-leg-evbar {

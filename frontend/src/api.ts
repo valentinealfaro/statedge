@@ -641,6 +641,7 @@ export type SlateComboLeg = {
   category?: SlatePickCategory;
   trapScore?: number;
   trapTier?: SlateTrapTier;
+  marketDisagreementScore?: number;
   l10Avg: number;
   vsOppAvg: number | null;
   injuryStatus: string | null;
@@ -702,6 +703,9 @@ export type SlateCombo = {
   expectedValue?: number;          // EV per $1 staked: positive = +EV
   evVerdict?: 'Positive EV' | 'Neutral EV' | 'Negative EV';
   averageEdge?: number;            // avg leg edge% on this card
+  averageProjectionGap?: number;   // avg |projection − line| across legs
+  trapExposure?: 'Low' | 'Medium' | 'High';
+  marketDisagreementRating?: 'Low' | 'Medium' | 'High';
 };
 
 export type SlateResponse = {

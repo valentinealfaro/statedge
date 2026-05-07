@@ -432,6 +432,52 @@ describe('buildCombos EV engine', () => {
   });
 });
 
+describe('buildCombos per-card identity in Balanced mode', () => {
+  test('Best 6 in Balanced mode picks the high-edge candidates first', () => {
+    // strongSlate(20, 80): probabilities 80→61, edges +25→+6.
+    // Aggressive filter requires edge ≥10, so picks 0-9 pass and
+    // 10-19 fail. Best 6 should land on the top-10 high-edge picks.
+    const slate = strongSlate(20, 80);
+    const { combos } = buildCombos(slate);
+    const best6 = combos.find((c) => c.label === 'Best 6');
+    expect(best6).toBeDefined();
+    expect(best6!.legs.length).toBe(6);
+    // Every leg on Best 6 should have edge ≥10 (the aggressive floor).
+    for (const leg of best6!.legs) {
+      expect(leg.edgePercent).toBeGreaterThanOrEqual(10);
+    }
+  });
+
+  test('marketDisagreementScore is computed on every candidate', () => {
+    const { combos } = buildCombos(strongSlate(8, 75));
+    for (const c of combos) {
+      for (const leg of c.legs) {
+        expect(typeof leg.marketDisagreementScore).toBe('number');
+      }
+    }
+  });
+
+  test('card-level summaries: averageProjectionGap, trapExposure, marketDisagreementRating', () => {
+    const { combos } = buildCombos(strongSlate(8, 75));
+    for (const c of combos) {
+      if (c.legs.length === 0) continue;
+      expect(typeof c.averageProjectionGap).toBe('number');
+      expect(['Low', 'Medium', 'High']).toContain(c.trapExposure);
+      expect(['Low', 'Medium', 'High']).toContain(c.marketDisagreementRating);
+    }
+  });
+
+  test('Best 6 subtitle reflects Aggressive Edge identity', () => {
+    const { combos } = buildCombos(strongSlate(20, 75));
+    const best6 = combos.find((c) => c.label === 'Best 6')!;
+    const best2 = combos.find((c) => c.label === 'Best 2')!;
+    // Subtitles encode per-size identity: Best 2 = Safe Core,
+    // Best 6 = Aggressive Edge. Spec's biggest UX shift.
+    expect(best6.subtitle.toLowerCase()).toContain('aggressive');
+    expect(best2.subtitle.toLowerCase()).toContain('safe core');
+  });
+});
+
 describe('buildCombos slate modes', () => {
   test('default mode is "balanced"', () => {
     // Calling without an explicit mode should equal balanced.

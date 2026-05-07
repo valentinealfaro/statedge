@@ -56,6 +56,7 @@ const baseLeg = {
   category: 'Value' as const,
   trapScore: 10,
   trapTier: 'Normal' as const,
+  marketDisagreementScore: 50,
   l10Avg: 26,
   vsOppAvg: null,
   injuryStatus: null,
