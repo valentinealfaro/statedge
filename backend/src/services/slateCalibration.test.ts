@@ -107,6 +107,50 @@ describe('computeCalibration', () => {
     expect(labels).toEqual(['50-59%', '60-69%', '70-79%', '80-89%', '90-100%']);
   });
 
+  test('tolerates legacy snapshots that use `pct` instead of `probability`', () => {
+    // Pre-rewrite snapshots stored the predicted hit % under `pct`.
+    // Without legacy-shape tolerance, these legs surface as undefined
+    // probabilities, the bucket math NaN-cascades, and the JSON
+    // response carries `null` numerics that crash the frontend.
+    const legacyDay: CalibrationInput = {
+      date: '2026-05-01',
+      results: [
+        {
+          label: 'Best 6',
+          tag: 'safe',
+          legs: [
+            // Legacy shape: pct present, probability missing.
+            {
+              playerId: 1,
+              playerName: 'Legacy Player',
+              team: 'NYK',
+              opponentAbbr: 'PHI',
+              statKey: 'points',
+              statLabel: 'Points',
+              line: 22.5,
+              direction: 'OVER',
+              pct: 70,
+              actual: 28,
+              outcome: 'hit',
+            } as unknown as GradedLeg,
+          ],
+          predictedHit: 70,
+          status: 'won',
+          hitCount: 1,
+          missCount: 0,
+          pendingCount: 0,
+        },
+      ],
+    };
+    const r = computeCalibration([legacyDay]);
+    expect(r.legsAnalyzed).toBe(1);
+    expect(r.overall.predictedAvg).toBe(70);
+    expect(r.overall.actualHitRate).toBe(100);
+    // Crucially: no NaN. Math.round(NaN * ...) is NaN; JSON would
+    // serialize that as null and crash the client's .toFixed().
+    expect(Number.isFinite(r.overall.gap)).toBe(true);
+  });
+
   test('range start/end track first and last graded date', () => {
     const r = computeCalibration([
       snap('2026-05-01', [leg({ playerId: 1 })]),

@@ -24,6 +24,14 @@ function fmtRange(start: string | null, end: string | null): string {
   return `${start} → ${end}`;
 }
 
+// Defensive coercion — JSON serialization turns NaN/Infinity into null,
+// which would crash .toFixed(). If any numeric field comes through as
+// null/undefined/NaN we treat it as 0 rather than letting the page
+// blank.
+function n(x: number | null | undefined): number {
+  return typeof x === 'number' && Number.isFinite(x) ? x : 0;
+}
+
 function gapClass(gap: number): string {
   if (gap >= 5) return 'gap over';        // overconfident
   if (gap <= -5) return 'gap under';      // under-sold
@@ -119,24 +127,27 @@ export function SlateCalibration() {
 
 function OverallBanner({ b }: { b: CalibrationBucket }) {
   if (b.sampleSize === 0) return null;
+  const pred = n(b.predictedAvg);
+  const actual = n(b.actualHitRate);
+  const gap = n(b.gap);
   return (
     <div className="slate-calibration-overall">
       <div className="slate-calibration-overall-row">
         <span className="slate-calibration-overall-label">Overall</span>
         <span className="slate-calibration-overall-pred">
-          predicted <strong>{b.predictedAvg.toFixed(1)}%</strong>
+          predicted <strong>{pred.toFixed(1)}%</strong>
         </span>
         <span className="slate-calibration-overall-actual">
-          actual <strong>{b.actualHitRate.toFixed(1)}%</strong>
+          actual <strong>{actual.toFixed(1)}%</strong>
         </span>
-        <span className={`slate-calibration-overall-gap ${gapClass(b.gap)}`}>
-          {gapLabel(b.gap)}
+        <span className={`slate-calibration-overall-gap ${gapClass(gap)}`}>
+          {gapLabel(gap)}
         </span>
       </div>
       <div className="muted small">
-        {b.gap >= 5
+        {gap >= 5
           ? 'The model is overconfident — picks claimed higher hit rate than they delivered.'
-          : b.gap <= -5
+          : gap <= -5
           ? 'The model is under-selling — picks delivered better than claimed.'
           : 'The model is well-calibrated overall — predictions track actuals within ±5 points.'}
       </div>
@@ -166,20 +177,25 @@ function BucketTable({
           <span>Actual</span>
           <span>Gap</span>
         </div>
-        {populated.map((b) => (
-          <div key={b.label} className="slate-calibration-row">
-            <span className="slate-calibration-bucket-label">{b.label}</span>
-            <span className={b.sampleSize < SMALL_SAMPLE ? 'small-n' : ''}>
-              {b.sampleSize}
-              {b.sampleSize < SMALL_SAMPLE && <span className="small-n-flag" title="Small sample — interpret with caution">*</span>}
-            </span>
-            <span>{b.predictedAvg.toFixed(1)}%</span>
-            <span>{b.actualHitRate.toFixed(1)}%</span>
-            <span className={gapClass(b.gap)}>
-              {b.gap >= 0 ? '+' : ''}{b.gap.toFixed(1)}
-            </span>
-          </div>
-        ))}
+        {populated.map((b) => {
+          const pred = n(b.predictedAvg);
+          const actual = n(b.actualHitRate);
+          const gap = n(b.gap);
+          return (
+            <div key={b.label} className="slate-calibration-row">
+              <span className="slate-calibration-bucket-label">{b.label}</span>
+              <span className={b.sampleSize < SMALL_SAMPLE ? 'small-n' : ''}>
+                {b.sampleSize}
+                {b.sampleSize < SMALL_SAMPLE && <span className="small-n-flag" title="Small sample — interpret with caution">*</span>}
+              </span>
+              <span>{pred.toFixed(1)}%</span>
+              <span>{actual.toFixed(1)}%</span>
+              <span className={gapClass(gap)}>
+                {gap >= 0 ? '+' : ''}{gap.toFixed(1)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

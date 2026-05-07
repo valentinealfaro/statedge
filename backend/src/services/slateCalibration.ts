@@ -99,7 +99,12 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
     if (!rangeStart || snap.date < rangeStart) rangeStart = snap.date;
     if (!rangeEnd || snap.date > rangeEnd) rangeEnd = snap.date;
 
-    // Dedup within the day on (player, stat, line, direction).
+    // Dedup within the day on (player, stat, line, direction). Old
+    // snapshots (pre-rewrite) stored `pct` instead of `probability`;
+    // we accept either so the calibration view works across schema
+    // generations. Without this, undefined values cascade to NaN and
+    // eventually serialize as null in the JSON response, crashing
+    // the frontend on .toFixed().
     const seen = new Set<string>();
     for (const combo of combos) {
       for (const leg of combo.legs as GradedLeg[]) {
@@ -108,12 +113,19 @@ function collectDedupedLegs(snapshots: CalibrationInput[]): {
           leg.outcome !== 'miss' &&
           leg.outcome !== 'push'
         ) continue;
+        const lp = leg as { probability?: number; pct?: number };
+        const probability =
+          typeof lp.probability === 'number' ? lp.probability
+          : typeof lp.pct === 'number' ? lp.pct
+          : null;
+        if (probability === null || !Number.isFinite(probability)) continue;
+
         const key = `${leg.playerId}-${leg.statKey}-${leg.line}-${leg.direction}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
         legs.push({
-          probability: leg.probability,
+          probability,
           statKey: leg.statKey,
           confidenceLabel: leg.confidenceLabel ?? null,
           outcome: leg.outcome,
