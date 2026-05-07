@@ -5,11 +5,19 @@ import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slate
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
   getDailySlateFromDb,
+  getPlayerGameLogsBulkFromDb,
+  getSlateSnapshotFromDb,
   isDbConfigured,
+  listSlateSnapshotsFromDb,
   setDailySlateInDb,
+  setSlateResolvedInDb,
+  snapshotSlateCombosInDb,
   type StoredSlateLine,
 } from '../db.js';
+import { currentSeason } from '../nba/client.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
+import { buildCombos, type Combo } from '../services/slateCombos.js';
+import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
 
 export const slateRouter: Router = Router();
 
@@ -412,6 +420,21 @@ slateRouter.get('/today', async (_req, res) => {
       direction: l.direction ?? 'both',
     }));
     const resolved = await resolveSlate(raw, 'manual');
+
+    // Lock today's pre-built parlays into slate_results on first fetch.
+    // ON CONFLICT DO NOTHING in the helper means subsequent fetches
+    // leave the snapshot untouched — every visitor sees the same
+    // combos all day, and we have a stable record to grade later.
+    // Best-effort: failure here must not break the slate response.
+    try {
+      const combos = buildCombos(resolved.lines);
+      if (combos.length > 0) {
+        await snapshotSlateCombosInDb(stored.date, combos);
+      }
+    } catch (snapErr) {
+      console.warn('slate/today combo snapshot failed:', (snapErr as Error).message);
+    }
+
     res.json({
       slate: { date: stored.date, count: stored.lines.length, updatedAt: stored.updatedAt },
       resolved,
@@ -469,3 +492,199 @@ slateRouter.post('/today', async (req, res) => {
     res.status(500).json({ error: 'slate today write failed' });
   }
 });
+
+// -----------------------------------------------------------------
+// History: past pre-built parlays with win/loss against actual stats.
+//
+// Snapshots are written by /slate/today on first fetch each day. They
+// stay ungraded until someone opens the History tab — at which point
+// each entry whose games are final gets resolved against the cached
+// player game logs and persisted back to slate_results.results.
+//
+// Two endpoints:
+//   GET /slate/history          → list of recent days (lazy-grades on read)
+//   GET /slate/history/:date    → single day with full leg detail
+// -----------------------------------------------------------------
+
+// Age threshold (in calendar days) past which we'll attempt to grade
+// a snapshot. Tonight's slate has no actuals yet, so we skip it; once
+// today rolls into yesterday (>=1 day old) we try to look up game logs.
+function shouldAttemptGrade(date: string, todayEt: string): boolean {
+  return date < todayEt;
+}
+
+function todayEtDate(): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date());
+}
+
+// Grade a snapshot's combos against player_game_logs for the given
+// date. Returns the GradedCombo[] and a flag indicating whether every
+// leg has a final-game value (so we know whether to persist results).
+async function gradeSnapshot(
+  date: string,
+  combos: Combo[],
+): Promise<{ graded: GradedCombo[]; allResolved: boolean }> {
+  // Collect every player_id we need to look up so we can do a single
+  // bulk DB roundtrip rather than fanning out one query per leg.
+  const playerIds = new Set<number>();
+  for (const c of combos) for (const l of c.legs) playerIds.add(l.playerId);
+
+  const gamesByPlayer = await getPlayerGameLogsBulkFromDb(
+    Array.from(playerIds),
+    currentSeason(),
+  );
+
+  const graded = combos.map((c) => gradeCombo(c, gamesByPlayer, date));
+  // "Resolved" means no leg is still pending (no_game). If even one
+  // leg is missing actuals, we treat the day as not-yet-final and skip
+  // persisting — next viewer will retry. This handles late-night games
+  // and game-log sync lag gracefully.
+  const allResolved = graded.every((g) => g.pendingCount === 0);
+  return { graded, allResolved };
+}
+
+slateRouter.get('/history', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ days: [] });
+    return;
+  }
+  try {
+    const rows = await listSlateSnapshotsFromDb(30);
+    const today = todayEtDate();
+
+    // Lazy-grade any unresolved past day. Done sequentially to bound
+    // DB load — 30 days × ~6 legs/combo is small enough that this is
+    // fine, and gating by allResolved means after the first viewer per
+    // day, subsequent calls just return the cached graded result.
+    const days: Array<{
+      date: string;
+      status: 'pending' | 'resolved';
+      combos: GradedCombo[] | Combo[];
+      resolvedAt: string | null;
+    }> = [];
+
+    for (const row of rows) {
+      const combos = (row.combos as Combo[]) ?? [];
+
+      // Already graded → return cached results as-is.
+      if (row.results && row.resolvedAt) {
+        days.push({
+          date: row.date,
+          status: 'resolved',
+          combos: row.results as GradedCombo[],
+          resolvedAt: row.resolvedAt,
+        });
+        continue;
+      }
+
+      // Not yet ripe (today or future) → ship the ungraded combos.
+      if (!shouldAttemptGrade(row.date, today)) {
+        days.push({
+          date: row.date,
+          status: 'pending',
+          combos,
+          resolvedAt: null,
+        });
+        continue;
+      }
+
+      // Old enough to grade — try it.
+      try {
+        const { graded, allResolved } = await gradeSnapshot(row.date, combos);
+        if (allResolved) {
+          await setSlateResolvedInDb(row.date, graded);
+          days.push({
+            date: row.date,
+            status: 'resolved',
+            combos: graded,
+            resolvedAt: new Date().toISOString(),
+          });
+        } else {
+          // Game logs haven't fully synced for this date yet — return
+          // the partially-graded view but don't persist (next viewer
+          // will retry once the sync catches up).
+          days.push({
+            date: row.date,
+            status: 'pending',
+            combos: graded,
+            resolvedAt: null,
+          });
+        }
+      } catch (err) {
+        console.warn('slate/history grade failed for', row.date, (err as Error).message);
+        days.push({
+          date: row.date,
+          status: 'pending',
+          combos,
+          resolvedAt: null,
+        });
+      }
+    }
+
+    res.json({ days });
+  } catch (err) {
+    console.error('slate/history failed', err);
+    res.status(500).json({ error: 'history fetch failed' });
+  }
+});
+
+// Single-day detail view. Same lazy-grade behavior as the list endpoint.
+slateRouter.get('/history/:date', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'history requires DB' });
+    return;
+  }
+  const date = req.params.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    return;
+  }
+  try {
+    const row = await getSlateSnapshotFromDb(date);
+    if (!row) {
+      res.status(404).json({ error: 'no snapshot for that date' });
+      return;
+    }
+    const combos = (row.combos as Combo[]) ?? [];
+
+    if (row.results && row.resolvedAt) {
+      res.json({
+        date: row.date,
+        status: 'resolved' as const,
+        combos: row.results as GradedCombo[],
+        resolvedAt: row.resolvedAt,
+      });
+      return;
+    }
+
+    const today = todayEtDate();
+    if (!shouldAttemptGrade(row.date, today)) {
+      res.json({
+        date: row.date,
+        status: 'pending' as const,
+        combos,
+        resolvedAt: null,
+      });
+      return;
+    }
+
+    const { graded, allResolved } = await gradeSnapshot(row.date, combos);
+    if (allResolved) {
+      await setSlateResolvedInDb(row.date, graded);
+    }
+    res.json({
+      date: row.date,
+      status: allResolved ? ('resolved' as const) : ('pending' as const),
+      combos: graded,
+      resolvedAt: allResolved ? new Date().toISOString() : null,
+    });
+  } catch (err) {
+    console.error('slate/history/:date failed', err);
+    res.status(500).json({ error: 'history detail failed' });
+  }
+});
+

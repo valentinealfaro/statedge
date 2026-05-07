@@ -954,3 +954,122 @@ export async function setDailySlateInDb(lines: StoredSlateLine[]): Promise<{
   );
   return { date, count: lines.length };
 }
+
+// -----------------------------------------------------------------
+// Slate results — snapshotted pre-built parlays per ET date plus the
+// graded outcome once games are final. Schema lives in db/schema.sql;
+// we ensureSlateResultsTable on every read/write so a fresh DB doesn't
+// 500 if migrations haven't been run yet.
+// -----------------------------------------------------------------
+
+async function ensureSlateResultsTable(): Promise<void> {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS slate_results (
+      slate_date   DATE PRIMARY KEY,
+      combos       JSONB NOT NULL,
+      results      JSONB,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at  TIMESTAMPTZ
+    )
+  `);
+}
+
+export type SlateSnapshotRow = {
+  date: string;
+  combos: unknown;            // Combo[] from services/slateCombos.ts
+  results: unknown | null;    // GradedCombo[] from services/slateGrade.ts
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+// Look up a single day's snapshot (combos + maybe-graded results).
+export async function getSlateSnapshotFromDb(
+  date: string,
+): Promise<SlateSnapshotRow | null> {
+  await ensureSlateResultsTable();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    combos: unknown;
+    results: unknown | null;
+    created_at: Date;
+    resolved_at: Date | null;
+  }>(
+    `SELECT slate_date::text, combos, results, created_at, resolved_at
+       FROM slate_results
+      WHERE slate_date = $1`,
+    [date],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    date: r.slate_date,
+    combos: r.combos,
+    results: r.results,
+    createdAt: r.created_at.toISOString(),
+    resolvedAt: r.resolved_at ? r.resolved_at.toISOString() : null,
+  };
+}
+
+// List recent snapshots (newest first). Used by the History tab to
+// render the day-picker. Bounded by `limit` to keep the response light.
+export async function listSlateSnapshotsFromDb(
+  limit = 30,
+): Promise<SlateSnapshotRow[]> {
+  await ensureSlateResultsTable();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    combos: unknown;
+    results: unknown | null;
+    created_at: Date;
+    resolved_at: Date | null;
+  }>(
+    `SELECT slate_date::text, combos, results, created_at, resolved_at
+       FROM slate_results
+      ORDER BY slate_date DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows.map((r) => ({
+    date: r.slate_date,
+    combos: r.combos,
+    results: r.results,
+    createdAt: r.created_at.toISOString(),
+    resolvedAt: r.resolved_at ? r.resolved_at.toISOString() : null,
+  }));
+}
+
+// Lock today's combos. ON CONFLICT DO NOTHING so the very first call
+// of the day wins — subsequent calls (other visitors, refreshes) leave
+// the snapshot untouched. This is what makes the snapshot deterministic
+// per-day even though the upstream slate may shift slightly throughout
+// the day.
+export async function snapshotSlateCombosInDb(
+  date: string,
+  combos: unknown,
+): Promise<{ inserted: boolean }> {
+  await ensureSlateResultsTable();
+  const { rowCount } = await getPool().query(
+    `INSERT INTO slate_results (slate_date, combos)
+     VALUES ($1, $2::jsonb)
+     ON CONFLICT (slate_date) DO NOTHING`,
+    [date, JSON.stringify(combos)],
+  );
+  return { inserted: (rowCount ?? 0) > 0 };
+}
+
+// Fill in graded results for a previously-locked snapshot. Idempotent:
+// safe to re-grade the same date if the resolver finds new finalized
+// games on a second pass.
+export async function setSlateResolvedInDb(
+  date: string,
+  results: unknown,
+): Promise<void> {
+  await ensureSlateResultsTable();
+  await getPool().query(
+    `UPDATE slate_results
+        SET results = $2::jsonb,
+            resolved_at = NOW()
+      WHERE slate_date = $1`,
+    [date, JSON.stringify(results)],
+  );
+}

@@ -112,3 +112,22 @@ CREATE TABLE IF NOT EXISTS team_game_logs (
   fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (team_id, season)
 );
+
+-- Snapshot of the pre-built parlays (Best 2/3/4/5/6 + Wild Card) that
+-- were generated and shown on /slate for a given calendar day. Locked
+-- on the first /slate/today fetch each day so every visitor sees the
+-- same combos and we have a stable record to grade later.
+--
+-- `combos` is the array as snapshotted (each combo has label + legs[]).
+-- `results` is the graded outcome (per-leg actuals + parlay W/L), filled
+-- in lazily when a user opens the History tab after games are final.
+-- `resolved_at` is null until results have been written.
+CREATE TABLE IF NOT EXISTS slate_results (
+  slate_date   DATE PRIMARY KEY,
+  combos       JSONB NOT NULL,
+  results      JSONB,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS slate_results_date_idx ON slate_results (slate_date DESC);

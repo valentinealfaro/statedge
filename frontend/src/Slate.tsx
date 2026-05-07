@@ -21,6 +21,7 @@ import { NavBar } from './NavBar';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
+import { SlateHistory } from './SlateHistory';
 import { SlateManualEntry } from './SlateManualEntry';
 import { SlatePaywall } from './SlatePaywall';
 import { computeHitProbability } from './slateMath';
@@ -61,6 +62,12 @@ export function Slate() {
   // promise; the receipts ('hit X/10' per leg) keep users honest.
   // Pre-populated from ?legs= URL param so shared links work.
   const [searchParams, setSearchParams] = useSearchParams();
+  // Tab: 'today' shows the live prop board; 'history' shows past
+  // pre-built parlays graded against actuals. Synced to ?tab= so the
+  // History view is shareable / bookmarkable.
+  const [tab, setTab] = useState<'today' | 'history'>(() =>
+    searchParams.get('tab') === 'history' ? 'history' : 'today',
+  );
   const [parlay, setParlay] = useState<string[]>(() => {
     const raw = searchParams.get('legs');
     if (!raw) return [];
@@ -106,6 +113,20 @@ export function Slate() {
       { replace: true },
     );
   }, [parlay, setSearchParams]);
+
+  // Mirror the active tab to ?tab= so deep links to /slate?tab=history
+  // land directly on the history view.
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (tab === 'history') sp.set('tab', 'history');
+        else sp.delete('tab');
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [tab, setSearchParams]);
 
   // We no longer auto-fire the PrizePicks pull on mount — it usually
   // 403s because of their Cloudflare bot layer, and the manual-entry
@@ -266,6 +287,128 @@ export function Slate() {
         score the combined hit probability.
       </p>
 
+      {/* Top-level tabs — Today's prop board vs History (past pre-built
+          parlays graded against actual stats). Default lands on Today. */}
+      <div className="slate-tabs" role="tablist" aria-label="Slate view">
+        <button
+          role="tab"
+          aria-selected={tab === 'today'}
+          className={`slate-tab ${tab === 'today' ? 'active' : ''}`}
+          onClick={() => setTab('today')}
+        >
+          Today
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'history'}
+          className={`slate-tab ${tab === 'history' ? 'active' : ''}`}
+          onClick={() => setTab('history')}
+        >
+          History
+        </button>
+      </div>
+
+      {tab === 'history' && <SlateHistory />}
+
+      {tab === 'today' && (
+        <SlateTodayBody
+          lines={lines}
+          loading={loading}
+          error={error}
+          autoTried={autoTried}
+          data={data}
+          freshness={freshness}
+          isPro={isPro}
+          favorites={favorites}
+          parlay={parlay}
+          setParlay={setParlay}
+          toggleParlay={toggleParlay}
+          cardKey={cardKey}
+          savedParlays={savedParlays}
+          removeParlay={removeParlay}
+          sorted={sorted}
+          outCount={outCount}
+          hideOut={hideOut}
+          setHideOut={setHideOut}
+          setFilter={setFilter}
+          setTeamFilter={setTeamFilter}
+          setStatFilter={setStatFilter}
+          onManualResult={(r) => { setData(r); setError(null); setErrorSource(null); }}
+        />
+      )}
+
+      {/* The parlay tray sits outside the tab so adding a leg from the
+          Today board persists if the user toggles to History and back. */}
+      {tab === 'today' && parlay.length > 0 && lines.length > 0 && (
+        <ParlayTray
+          legs={lines.filter((l) => parlay.includes(cardKey(l)))}
+          onRemove={(l) => removeFromParlay(cardKey(l))}
+          onClear={clearParlay}
+          onSave={(name) => saveParlay(name, parlay)}
+          canSave={isPro}
+          canAnalyze={isPro}
+        />
+      )}
+    </div>
+  );
+}
+
+// Body of the "Today" tab — extracted so the tabs split is a clean
+// switch rather than a deeply-indented conditional. All the existing
+// Today behavior moves here; the page wrapper above just chooses
+// which body to render.
+type SlateTodayBodyProps = {
+  lines: SlateResolvedLine[];
+  loading: boolean;
+  error: string | null;
+  autoTried: boolean;
+  data: SlateResponse | null;
+  freshness: DataFreshness | null;
+  isPro: boolean;
+  favorites: FavoritesAPI;
+  parlay: string[];
+  setParlay: (legs: string[]) => void;
+  toggleParlay: (l: SlateResolvedLine) => void;
+  cardKey: (l: SlateResolvedLine) => string;
+  savedParlays: SavedParlay[];
+  removeParlay: (id: string) => void;
+  sorted: SlateResolvedLine[];
+  outCount: number;
+  hideOut: boolean;
+  setHideOut: (b: boolean) => void;
+  setFilter: (f: 'all' | 'over' | 'under' | 'strong') => void;
+  setTeamFilter: (s: string) => void;
+  setStatFilter: (s: string) => void;
+  onManualResult: (r: SlateResponse) => void;
+};
+
+function SlateTodayBody(props: SlateTodayBodyProps) {
+  const {
+    lines,
+    loading,
+    error,
+    autoTried,
+    data,
+    isPro,
+    favorites,
+    parlay,
+    setParlay,
+    toggleParlay,
+    cardKey,
+    savedParlays,
+    removeParlay,
+    sorted,
+    outCount,
+    hideOut,
+    setFilter,
+    setTeamFilter,
+    setStatFilter,
+    setHideOut,
+    onManualResult,
+  } = props;
+
+  return (
+    <>
       {/* Pinned favorites — your starred players' props at the top
           of the page so you don't have to scroll the full slate to
           find the names you actually care about. Hidden if you
@@ -295,7 +438,7 @@ export function Slate() {
       {/* Always render — admin panel + today's-games rail + empty
           state all live in here, and the admin needs the panel
           accessible even after a slate has been published. */}
-      <SlateManualEntry onResult={(r) => { setData(r); setError(null); setErrorSource(null); }} />
+      <SlateManualEntry onResult={onManualResult} />
 
       {error && (
         <div className="slate-error">
@@ -367,18 +510,7 @@ export function Slate() {
       {data && data.unresolved.length > 0 && (
         <UnresolvedSection unresolved={data.unresolved} />
       )}
-
-      {parlay.length > 0 && lines.length > 0 && (
-        <ParlayTray
-          legs={lines.filter((l) => parlay.includes(cardKey(l)))}
-          onRemove={(l) => removeFromParlay(cardKey(l))}
-          onClear={clearParlay}
-          onSave={(name) => saveParlay(name, parlay)}
-          canSave={isPro}
-          canAnalyze={isPro}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

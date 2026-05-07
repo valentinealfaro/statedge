@@ -730,6 +730,55 @@ export async function postSlateImage(file: File): Promise<SlateResponse> {
   return (await res.json()) as SlateResponse;
 }
 
+// --- Slate history (past pre-built parlays + win/loss vs actuals) ---
+
+export type SlateHistoryLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  opponentAbbr: string | null;
+  statKey: Last10StatId;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  pct: number;
+  // Only present once the day has been graded:
+  actual?: number | null;
+  outcome?: 'hit' | 'miss' | 'push' | 'no_game' | 'unknown_stat';
+};
+
+export type SlateHistoryCombo = {
+  label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6' | 'Wild Card';
+  tag: 'safe' | 'wild';
+  legs: SlateHistoryLeg[];
+  combinedPct: number;
+  // Filled in for graded days only:
+  status?: 'won' | 'lost' | 'pending';
+  hitCount?: number;
+  missCount?: number;
+  pendingCount?: number;
+};
+
+export type SlateHistoryDay = {
+  date: string;             // YYYY-MM-DD
+  status: 'pending' | 'resolved';
+  combos: SlateHistoryCombo[];
+  resolvedAt: string | null;
+};
+
+export async function getSlateHistory(): Promise<SlateHistoryDay[]> {
+  const res = await fetch(`${API_BASE}/api/slate/history`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { days: SlateHistoryDay[] };
+  return data.days;
+}
+
+export async function getSlateHistoryDay(date: string): Promise<SlateHistoryDay> {
+  const res = await fetch(`${API_BASE}/api/slate/history/${encodeURIComponent(date)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as SlateHistoryDay;
+}
+
 // --- ESPN today's games + game summary ---
 
 export type EspnGameTeam = {
