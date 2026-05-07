@@ -2245,8 +2245,18 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .best-picks-rail {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+@media (max-width: 980px) {
+  .best-picks-rail {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 620px) {
+  .best-picks-rail {
+    grid-template-columns: 1fr;
+  }
 }
 .best-pick-card {
   display: flex;
