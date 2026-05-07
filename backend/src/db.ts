@@ -1038,6 +1038,54 @@ export async function listSlateSnapshotsFromDb(
   }));
 }
 
+// Like getDailySlateFromDb but takes an explicit date. Used by the
+// history backfill path when a deep link to /slate/history/:date hits
+// a date that has no snapshot yet — we still need the raw lines from
+// daily_slate to materialize one.
+export async function getDailySlateByDateFromDb(
+  date: string,
+): Promise<{ date: string; lines: StoredSlateLine[] } | null> {
+  await ensureDailySlateTable();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    lines: StoredSlateLine[];
+  }>(
+    `SELECT slate_date::text, lines FROM daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return { date: r.slate_date, lines: r.lines };
+}
+
+// Backfill source for the History tab. Returns past `daily_slate` rows
+// (the raw published lines) that don't yet have a `slate_results`
+// snapshot. The /slate/history handler resolves each one with an
+// `asOfDate` filter and writes a snapshot, so days that pre-date the
+// History feature still show up. Excludes today's date — today's
+// snapshot is owned by the live /slate/today fetch path.
+export async function listDailySlatesMissingSnapshotFromDb(
+  todayEt: string,
+  limit: number,
+): Promise<Array<{ date: string; lines: StoredSlateLine[] }>> {
+  await ensureDailySlateTable();
+  await ensureSlateResultsTable();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    lines: StoredSlateLine[];
+  }>(
+    `SELECT ds.slate_date::text, ds.lines
+       FROM daily_slate ds
+       LEFT JOIN slate_results sr ON sr.slate_date = ds.slate_date
+      WHERE sr.slate_date IS NULL
+        AND ds.slate_date < $1::date
+      ORDER BY ds.slate_date DESC
+      LIMIT $2`,
+    [todayEt, limit],
+  );
+  return rows.map((r) => ({ date: r.slate_date, lines: r.lines }));
+}
+
 // Lock today's combos. ON CONFLICT DO NOTHING so the very first call
 // of the day wins — subsequent calls (other visitors, refreshes) leave
 // the snapshot untouched. This is what makes the snapshot deterministic

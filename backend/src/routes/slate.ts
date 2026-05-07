@@ -4,10 +4,12 @@ import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
+  getDailySlateByDateFromDb,
   getDailySlateFromDb,
   getPlayerGameLogsBulkFromDb,
   getSlateSnapshotFromDb,
   isDbConfigured,
+  listDailySlatesMissingSnapshotFromDb,
   listSlateSnapshotsFromDb,
   setDailySlateInDb,
   setSlateResolvedInDb,
@@ -547,14 +549,60 @@ async function gradeSnapshot(
   return { graded, allResolved };
 }
 
+// Materialize a slate_results snapshot from a stored daily_slate row.
+// Used to retroactively populate the history view for days that had
+// a published slate before the History feature existed (or any day
+// where the live snapshot path was missed). asOfDate makes the
+// resolver only see games strictly before the slate date, so the
+// projection isn't contaminated by the very game we're about to grade.
+async function backfillSnapshotForDate(
+  date: string,
+  storedLines: StoredSlateLine[],
+): Promise<void> {
+  const raw: RawLine[] = storedLines.map((l) => ({
+    playerName: l.playerName,
+    statLabel: l.statLabel,
+    line: l.line,
+    team: l.team,
+    opponentAbbr: l.opponentAbbr ?? null,
+    direction: l.direction ?? 'both',
+  }));
+  const resolved = await resolveSlate(raw, 'manual', date);
+  const combos = buildCombos(resolved.lines);
+  // Snapshot even when the combos array is empty so we don't keep
+  // re-attempting the same backfill on every history hit. An empty
+  // snapshot just renders as "No pre-built parlays were generated
+  // for this date" in the UI.
+  await snapshotSlateCombosInDb(date, combos);
+}
+
 slateRouter.get('/history', async (_req, res) => {
   if (!isDbConfigured()) {
     res.json({ days: [] });
     return;
   }
   try {
-    const rows = await listSlateSnapshotsFromDb(30);
     const today = todayEtDate();
+
+    // Backfill: any past date in daily_slate that's missing a snapshot
+    // gets one materialized now. Bounded to 30 days so a long-running
+    // app with months of daily_slate rows doesn't melt on first hit.
+    // Failures here are logged, not surfaced — the rest of the history
+    // view still works against whatever snapshots we already have.
+    try {
+      const missing = await listDailySlatesMissingSnapshotFromDb(today, 30);
+      for (const m of missing) {
+        try {
+          await backfillSnapshotForDate(m.date, m.lines);
+        } catch (err) {
+          console.warn('slate/history backfill failed for', m.date, (err as Error).message);
+        }
+      }
+    } catch (err) {
+      console.warn('slate/history backfill scan failed:', (err as Error).message);
+    }
+
+    const rows = await listSlateSnapshotsFromDb(30);
 
     // Lazy-grade any unresolved past day. Done sequentially to bound
     // DB load — 30 days × ~6 legs/combo is small enough that this is
@@ -644,7 +692,26 @@ slateRouter.get('/history/:date', async (req, res) => {
     return;
   }
   try {
-    const row = await getSlateSnapshotFromDb(date);
+    let row = await getSlateSnapshotFromDb(date);
+
+    // Snapshot missing → check if the underlying daily_slate row
+    // exists and backfill from it. Only meaningful for past dates;
+    // today's snapshot is owned by /slate/today.
+    if (!row) {
+      const today = todayEtDate();
+      if (date < today) {
+        const stored = await getDailySlateByDateFromDb(date);
+        if (stored && stored.lines.length > 0) {
+          try {
+            await backfillSnapshotForDate(date, stored.lines);
+            row = await getSlateSnapshotFromDb(date);
+          } catch (err) {
+            console.warn('slate/history/:date backfill failed for', date, (err as Error).message);
+          }
+        }
+      }
+    }
+
     if (!row) {
       res.status(404).json({ error: 'no snapshot for that date' });
       return;

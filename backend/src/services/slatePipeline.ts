@@ -134,10 +134,17 @@ function mapInjuryStatus(s: string | undefined): InjuryStatus {
 /**
  * Resolve a batch of raw lines into ResolvedLine + UnresolvedLine arrays.
  * One DB round-trip for the player table, one for the bulk game logs.
+ *
+ * `asOfDate` (YYYY-MM-DD) filters each player's games to those strictly
+ * before that date. Used by the history backfill so resolving a past
+ * slate doesn't leak the very game we're about to grade against —
+ * without it, the L10 average for "yesterday's slate" would include
+ * yesterday's game and the projection becomes circular.
  */
 export async function resolveSlate(
   raw: RawLine[],
   source: SlateResponse['source'],
+  asOfDate?: string,
 ): Promise<SlateResponse> {
   const candidates: PlayerCandidate[] = await listAllPlayerCandidatesFromDb();
 
@@ -204,7 +211,15 @@ export async function resolveSlate(
 
   const resolved: ResolvedLine[] = [];
   for (const p of pending) {
-    const games = logs.get(p.playerId) ?? [];
+    let games = logs.get(p.playerId) ?? [];
+    // Backfill mode: only consider games strictly before the slate
+    // date. Required so resolving a past slate doesn't see the game
+    // we're about to grade. games are newest-first so this is a
+    // simple filter; the slice(0, 10) below still produces the right
+    // L10 window.
+    if (asOfDate) {
+      games = games.filter((g) => g.date < asOfDate);
+    }
     if (games.length === 0) {
       unresolved.push({
         rawText: p.raw.playerName,
