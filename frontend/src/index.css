@@ -2596,6 +2596,36 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 500;
 }
 
+/* Insane / Power Play lottery payout banner. Headline number on
+   Insane-mode cards: the target $1→$X payout if every leg hits.
+   Visually loud because users on Insane mode picked it precisely to
+   see this. Demon-leg count surfaces the "stacked" payout source. */
+.best-pick-lottery {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: linear-gradient(90deg,
+    rgba(255, 152, 0, 0.18),
+    rgba(229, 57, 53, 0.18));
+  border: 1px solid rgba(255, 152, 0, 0.45);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+}
+.best-pick-lottery .lottery-payout {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ff9800;
+}
+.best-pick-lottery .lottery-target {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.best-pick-lottery .lottery-demons {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
 /* Card-level market-disagreement signals. Sits below the EV verdict;
    four compact stats so the user can read the card's identity
    without expanding it. Avg Edge, Proj Gap, Trap, Mkt Disagree. */

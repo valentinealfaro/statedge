@@ -680,6 +680,12 @@ export type SlateComboLeg = {
   originalProbability?: number;
   lineRaised?: boolean;
   lineRaiseReason?: string;
+
+  // PrizePicks side-restriction passthrough. isDemon = over-only
+  // (payout-boosted, harder line); isGoblin = under-only (cheaper
+  // payout, easier line). Both undefined/false = standard prop.
+  isDemon?: boolean;
+  isGoblin?: boolean;
 };
 
 export type WildCardKind =
@@ -710,6 +716,13 @@ export type SlateCombo = {
   payoutMultiplier?: number;       // PrizePicks payout for this card size
   expectedValue?: number;          // EV per $1 staked: positive = +EV
   evVerdict?: 'Positive EV' | 'Neutral EV' | 'Negative EV';
+  // Which PrizePicks play type the payout estimate is based on.
+  // 'flex' = standard partial-win card (shown by Safe / Balanced /
+  // Aggressive); 'power' = all-or-nothing Power Play (only Insane).
+  playType?: 'flex' | 'power';
+  // Number of Demon (over-only, payout-boosted) legs on the card —
+  // surfaces "6 Demons stacked → ~143×" copy on Insane cards.
+  demonCount?: number;
   averageEdge?: number;            // avg leg edge% on this card
   averageProjectionGap?: number;   // avg |projection − line| across legs
   trapExposure?: 'Low' | 'Medium' | 'High';

@@ -895,11 +895,32 @@ function BestPicksRail({
               <div className="best-pick-pct-label">
                 adjusted hit · {c.correlationRisk} correlation
               </div>
-              {/* EV verdict + payout. Positive EV means the card's
-                  expected return per $1 staked beats break-even.
-                  Surfacing this prevents the "5.8x payout, 18%
-                  combined hit = bad value" trap. */}
-              {c.evVerdict && c.expectedValue !== undefined && (
+              {/* Insane mode: lottery-payout banner. Power Play +
+                  Demon-stacked target payout is the headline number
+                  on these cards — users picked Insane explicitly to
+                  chase a 100×+ ticket, so make the payout the loudest
+                  thing on the card. */}
+              {c.playType === 'power' && c.payoutMultiplier !== undefined && (
+                <div
+                  className="best-pick-lottery"
+                  title={`Power Play (all-or-nothing) target payout. ${c.demonCount ? `${c.demonCount} Demon leg${c.demonCount === 1 ? '' : 's'} stacked at 1.25× each. ` : ''}$1 stake → $${Math.round(c.payoutMultiplier)} if every leg hits. Hit rate is intentionally low — this is a lottery ticket.`}
+                >
+                  <span className="lottery-payout">~{Math.round(c.payoutMultiplier)}×</span>
+                  <span className="lottery-target"> target · $1 → ${Math.round(c.payoutMultiplier)}</span>
+                  {c.demonCount && c.demonCount > 0 ? (
+                    <span className="lottery-demons">
+                      {' '}· {c.demonCount} Demon{c.demonCount === 1 ? '' : 's'} stacked
+                    </span>
+                  ) : null}
+                </div>
+              )}
+              {/* EV verdict + payout (standard Flex Play modes only).
+                  Positive EV means the card's expected return per $1
+                  staked beats break-even. Surfacing this prevents the
+                  "5.8x payout, 18% combined hit = bad value" trap.
+                  Suppressed on Power Play / Insane because the
+                  lottery banner above carries the same information. */}
+              {c.playType !== 'power' && c.evVerdict && c.expectedValue !== undefined && (
                 <div className={`best-pick-ev ${c.evVerdict.toLowerCase().replace(' ', '-')}`}
                   title={`Expected value per $1 staked. Win prob ${c.adjustedCombinedHit.toFixed(1)}% × payout ${c.payoutMultiplier ?? '?'}× − $1 = ${c.expectedValue >= 0 ? '+' : ''}${c.expectedValue.toFixed(2)}. Average leg edge vs implied break-even: ${c.averageEdge !== undefined ? (c.averageEdge >= 0 ? '+' : '') + c.averageEdge.toFixed(1) : '—'}%.`}
                 >
@@ -1886,7 +1907,7 @@ function SlateModeSelector({
     { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
     { id: 'balanced',   label: 'Balanced',   hint: 'Recommended for most users · all card sizes',       meter: 2 },
     { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
-    { id: 'insane',     label: 'Insane',     hint: 'Maximum upside · extreme edge required · 4-6 leg',   meter: 5 },
+    { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~100×+ target · Power Play + Demons',   meter: 5 },
     { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
   ];
   const showAutoBadge = mode === 'auto' && resolvedMode !== undefined;
@@ -1920,8 +1941,10 @@ function SlateModeSelector({
       )}
       {mode === 'insane' && (
         <div className="slate-mode-insane-warn">
-          ⚠ Insane mode targets maximum upside. Higher variance, lower hit
-          probability, no Best 2/3 cards. Picks must clear +18% edge.
+          🎟 Lottery-ticket mode. Cards target <strong>~38×</strong> (5-leg)
+          and <strong>~143×</strong> (6-leg) using PrizePicks Power Play +
+          Demon-stacked legs. Hit rate is intentionally low — most cards
+          will miss. Pick this only if a $1 → $143 ticket is what you want.
         </div>
       )}
     </div>

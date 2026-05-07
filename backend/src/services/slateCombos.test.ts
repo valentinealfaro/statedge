@@ -554,39 +554,50 @@ describe('buildCombos slate modes', () => {
     expect(safe.combos.find((c) => c.label === 'Best 6')).toBeUndefined();
   });
 
-  test('Insane mode skips Best 2 and Best 3 — focuses on big upside cards', () => {
-    // Need a strong slate to support Insane mode (edge ≥18 floor).
-    // strongSlate(20, 80) gives edges +25 down to +6; 7 picks pass
-    // the +18 cutoff which is enough to populate Best 4/5/6.
+  test('Insane mode emits only the lottery card sizes (5 + 6 leg)', () => {
+    // Insane is a lottery-ticket mode targeting Power Play 5/6-leg
+    // cards (~38× and ~143× with Demon stacking). The smaller card
+    // sizes don't pay enough to be "insane" so they're suppressed.
     const { combos } = buildCombos(strongSlate(20, 80), 'insane');
     expect(combos.find((c) => c.label === 'Best 2')).toBeUndefined();
     expect(combos.find((c) => c.label === 'Best 3')).toBeUndefined();
-    expect(combos.find((c) => c.label === 'Best 4')).toBeDefined();
+    expect(combos.find((c) => c.label === 'Best 4')).toBeUndefined();
+    expect(combos.find((c) => c.label === 'Best 5')).toBeDefined();
+    expect(combos.find((c) => c.label === 'Best 6')).toBeDefined();
   });
 
-  test('Insane mode requires edge ≥18 on every leg', () => {
-    const slate = strongSlate(20, 80);
-    const { combos } = buildCombos(slate, 'insane');
+  test('Insane mode tags cards with playType=power and reports a payout estimate', () => {
+    // Power Play (all-or-nothing) is the only structure that gives
+    // ~100× payouts on PrizePicks, so Insane cards must use it. The
+    // payout estimate is also Demon-stacked when applicable.
+    const { combos } = buildCombos(strongSlate(20, 80), 'insane');
     for (const c of combos) {
-      if (c.tag === 'wild') continue;     // Wild Card has its own rules
-      for (const leg of c.legs) {
-        // Filter is +18 with un-filtered fallback — at least the
-        // primary picks should clear the bar in a realistic slate.
-        // We just verify the constraint isn't ignored: if any pick
-        // is below +18, the rest of the slate didn't have ≥6
-        // qualifying picks for that card size.
-        if (leg.edgePercent < 18) {
-          // Fallback path fired — sanity-check that the slate was
-          // genuinely too thin for the size.
-          const eligibleAtFloor = slate.filter((l) => {
-            const p = l.projection;
-            if (!p) return false;
-            const edge = p.probability.over - 55;
-            return edge >= 18;
-          }).length;
-          expect(eligibleAtFloor).toBeLessThan(c.legs.length);
-        }
-      }
+      if (c.tag === 'wild') continue;
+      expect(c.playType).toBe('power');
+      expect(c.payoutMultiplier).toBeDefined();
+      // 5-leg Power base = 20×, 6-leg Power base = 37.5× — the
+      // estimated payout should be at least the base, never below.
+      const base = c.legs.length === 6 ? 37.5 : 20;
+      expect(c.payoutMultiplier!).toBeGreaterThanOrEqual(base);
+    }
+  });
+
+  test('Insane mode prefers Demon legs to stack the payout multiplier', () => {
+    // Build a slate where half the lines are Demons (over-only) at
+    // identical model strength. Insane should over-index on Demons
+    // because the per-leg payout boost is the whole point of the mode.
+    const slate = strongSlate(20, 75).map((l, i) => ({
+      ...l,
+      direction: (i % 2 === 0 ? 'over' : 'both') as 'over' | 'both',
+    }));
+    const { combos } = buildCombos(slate, 'insane');
+    const best6 = combos.find((c) => c.label === 'Best 6');
+    if (best6) {
+      const demonsOnCard = best6.legs.filter((l) => l.isDemon).length;
+      // With half the slate as Demons and Insane scoring boosting
+      // them by 25, Demons should dominate the card.
+      expect(demonsOnCard).toBeGreaterThanOrEqual(4);
+      expect(best6.demonCount).toBe(demonsOnCard);
     }
   });
 

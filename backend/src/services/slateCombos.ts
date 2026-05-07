@@ -103,6 +103,61 @@ export const PRIZEPICKS_PAYOUTS: Record<number, number> = {
   6: 8.4,
 };
 
+// PrizePicks Power Play (all-or-nothing) payouts. Higher max than Flex
+// Play because there's no partial-win refund. Insane mode targets
+// these — the user explicitly accepts losing in exchange for a real
+// shot at a 100×+ payout.
+//
+// 2-leg power = 3×    (parity with Flex)
+// 3-leg power = 6×    (vs 5× Flex)
+// 4-leg power = 10×   (parity)
+// 5-leg power = 20×   (vs 7× Flex)
+// 6-leg power = 37.5× (vs 8.4× Flex — the big difference)
+//
+// With six Demons stacked at 1.25× per leg the 6-leg estimate becomes
+// 37.5 × 1.25^6 ≈ 143×, which is the "$1 → $143" lottery target the
+// Insane spec is built around.
+export const PRIZEPICKS_POWER_PLAY_PAYOUTS: Record<number, number> = {
+  2: 3,
+  3: 6,
+  4: 10,
+  5: 20,
+  6: 37.5,
+};
+
+// Per-leg payout multiplier applied when the leg is a PrizePicks
+// Demon (over-only, harder line). Industry standard ranges 1.25×–2×;
+// we use 1.25× as a conservative estimate so the displayed lottery
+// payout doesn't overstate what the user will actually see in-app.
+const DEMON_LEG_MULTIPLIER = 1.25;
+// Goblin legs (under-only, easier line) pay LESS — we don't surface
+// these on Insane cards but if one slips in, factor in the discount
+// so the estimated payout stays honest.
+const GOBLIN_LEG_MULTIPLIER = 0.85;
+
+// Estimate a card's PrizePicks payout, factoring in Demon/Goblin
+// per-leg multipliers and the user's chosen play type. Insane uses
+// Power Play (all-or-nothing); other modes show the Flex Play rate
+// users see on the standard PrizePicks card. Returns undefined when
+// the card size has no payout in the table (e.g. Wild Card with 0/1
+// legs).
+export function estimateCardPayout(
+  legs: ComboCandidate[],
+  playType: 'flex' | 'power',
+): number | undefined {
+  const cardSize = legs.length;
+  const table =
+    playType === 'power' ? PRIZEPICKS_POWER_PLAY_PAYOUTS : PRIZEPICKS_PAYOUTS;
+  const base = table[cardSize];
+  if (base === undefined) return undefined;
+  let stack = 1;
+  for (const leg of legs) {
+    if (leg.isDemon) stack *= DEMON_LEG_MULTIPLIER;
+    else if (leg.isGoblin) stack *= GOBLIN_LEG_MULTIPLIER;
+  }
+  return base * stack;
+}
+
 // Average per-leg implied across the card sizes — used as the
 // baseline for ranking individual candidates BEFORE we know which
 // card they'll land on. Cards compute their own implied at build
@@ -320,9 +375,13 @@ const MODE_CONFIG: Record<ResolvedSlateMode, {
     label: 'Aggressive',
   },
   insane: {
-    minEdge: 18,
-    preferredEdge: 25,
-    allowedSizes: new Set([4, 5, 6]),        // skip 2/3 (anchor)
+    // Lottery-ticket mode. Modest edge floor (8) — Demon-stacked
+    // payouts compensate for marginal model edge, and Insane users
+    // are explicitly buying upside, not safety. Power Play base
+    // payouts plus 1.25× per Demon target ~100× on 6-leg cards.
+    minEdge: 8,
+    preferredEdge: 15,
+    allowedSizes: new Set([5, 6]),           // 5/6-leg only — that's where the payout lives
     label: 'Insane',
   },
 };
@@ -340,14 +399,19 @@ function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
     );
   }
   if (mode === 'insane') {
-    // Insane: even heavier on raw projection separation + edge,
-    // willing to pay more risk for ceiling. The risk penalty drops
-    // to 0.05 because Insane intentionally embraces variance.
+    // Insane: lottery-ticket mode. Hunts Demon (over-only, payout-
+    // boosted) lines aggressively because every Demon stacked on the
+    // card multiplies the final payout (1.25^n on top of Power Play
+    // base). Six Demons on a 6-leg Power Play card targets ~143×.
+    // Risk penalty stays low — Insane users explicitly accept losing
+    // for a real shot at a 100×+ win.
+    const demonBoost = c.isDemon ? 25 : c.isGoblin ? -15 : 0;
     return (
-      c.projectionDistanceScore * 0.50
-      + c.edgePercent * 0.35
-      + c.edgeScore * 0.15
+      c.projectionDistanceScore * 0.40
+      + c.edgePercent * 0.30
+      + c.edgeScore * 0.10
       - c.risk * 0.05
+      + demonBoost
     );
   }
   return c.evScore;     // balanced (default)
@@ -798,6 +862,14 @@ export type ComboCandidate = {
   // this to render the spec'd "Hit X of last 10 and has hit this line
   // against the current opponent" copy underneath the leg.
   wildCardReason?: string;
+
+  // PrizePicks side-restriction passthrough. A Demon line is over-only
+  // and pays a per-leg payout boost (~1.25× standard) — Insane mode
+  // hunts these aggressively to stack lottery-style payouts. A Goblin
+  // line is under-only and pays less (~0.85×). Standard lines have
+  // both sides bookable and pay the table rate.
+  isDemon?: boolean;
+  isGoblin?: boolean;
 };
 
 // Wild Card variants. 'standard' = passes the strict historical gate
@@ -849,6 +921,15 @@ export type Combo = {
   payoutMultiplier?: number;
   expectedValue?: number;          // EV per $1 staked (e.g. +0.42 = +42%)
   evVerdict?: 'Positive EV' | 'Neutral EV' | 'Negative EV';
+  // Which PrizePicks play type the payout estimate is based on.
+  // 'flex' (default) is the partial-win mode users see on the
+  // standard card; 'power' is all-or-nothing, used by Insane mode
+  // because that's the only path to ~100× payouts on PrizePicks.
+  playType?: 'flex' | 'power';
+  // Number of Demon legs on the card. Insane mode hunts these for
+  // the per-leg payout boost; surfacing the count lets the UI render
+  // "6 Demons stacked → ~143×" copy.
+  demonCount?: number;
   // Average leg edgePercent on this card — quick at-a-glance signal
   // of how much "free probability" the card is capturing.
   averageEdge?: number;
@@ -1100,6 +1181,8 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       vsOpponentHitRate: Math.round(vsOpponentHitRate),
       statVolatility,
       archetype: l.archetype?.archetype,
+      isDemon: l.direction === 'over',
+      isGoblin: l.direction === 'under',
       context: {
         seasonAvg: p.factorBreakdown.seasonAvg ?? l.last10Avg,
         last5Avg: p.factorBreakdown.last5Avg,
@@ -1223,12 +1306,15 @@ const LOW_LINE_THRESHOLDS: Partial<Record<Last10StatId, number>> = {
 };
 
 // Edge floor for the low-line dominance override per mode. Aggressive
-// allows low lines only when edge ≥20; Insane is even stricter (≥30).
+// allows low lines only when edge ≥20; Insane skips the block entirely
+// because lottery-mode users want maximum payout regardless of stat
+// volatility. Low lines often resolve to Demons, which carry the
+// per-leg payout boost we're hunting for.
 const LOW_LINE_OVERRIDE_BY_MODE: Record<ResolvedSlateMode, number> = {
   safe: 999,                  // never matters — Safe doesn't use the block
   balanced: 999,
   aggressive: 20,
-  insane: 30,
+  insane: 0,                  // no floor — let any low-line edge through
 };
 
 // Mode-aware picker. Resolves the effective mode for the card size,
@@ -1362,10 +1448,23 @@ const SUBTITLES: Record<Combo['label'], string> = {
   'Wild Card': 'Higher Risk · Higher Upside',
 };
 
+// Insane-mode override copy. Lottery-ticket framing: low hit rate,
+// huge upside. The numbers reference Power Play + Demon-stacked
+// payouts (~143× target on a 6-leg, ~38× on a 5-leg).
+const INSANE_SUBTITLES: Record<Combo['label'], string> = {
+  'Best 2': 'Lottery · 2-leg Power Play',
+  'Best 3': 'Lottery · 3-leg Power Play',
+  'Best 4': 'Lottery · 4-leg Power Play',
+  'Best 5': 'Lottery · ~38× target with Demon stack',
+  'Best 6': 'Lottery · ~143× target with Demon stack',
+  'Wild Card': 'Lottery · maximum-upside fallback',
+};
+
 function makeCombo(
   label: Combo['label'],
   legs: ComboCandidate[],
   tag: Combo['tag'],
+  userMode: ResolvedSlateMode = 'balanced',
 ): Combo {
   const { raw, adjusted, risk } = combinedHits(legs);
   const warnings: string[] = [];
@@ -1388,7 +1487,13 @@ function makeCombo(
     label === 'Wild Card'
       ? Math.max(2, Math.min(6, legs.length))
       : (Number(label.split(' ')[1]) || legs.length);
-  const payoutMultiplier = PRIZEPICKS_PAYOUTS[cardSize];
+  // Insane mode targets PrizePicks Power Play (all-or-nothing) — the
+  // only PrizePicks structure where 6-leg cards can pay ~37.5×+ before
+  // Demon stacking. Other modes show Flex Play rates (8.4× on 6-leg)
+  // because that's what users actually see on the standard card.
+  const playType: 'flex' | 'power' = userMode === 'insane' ? 'power' : 'flex';
+  const payoutMultiplier = estimateCardPayout(legs, playType);
+  const demonCount = legs.filter((l) => l.isDemon).length;
   let expectedValue: number | undefined;
   let evVerdict: Combo['evVerdict'];
   let averageEdge: number | undefined;
@@ -1504,17 +1609,21 @@ function makeCombo(
 
   return {
     label,
-    subtitle: SUBTITLES[label],
+    subtitle:
+      userMode === 'insane' ? INSANE_SUBTITLES[label] : SUBTITLES[label],
     tag,
     legs,
     rawCombinedHit: raw,
     adjustedCombinedHit: adjusted,
     correlationRisk: risk,
     warnings,
-    payoutMultiplier,
+    payoutMultiplier:
+      payoutMultiplier !== undefined ? round2(payoutMultiplier) : undefined,
     expectedValue: expectedValue !== undefined ? round2(expectedValue) : undefined,
     evVerdict,
     averageEdge,
+    playType,
+    demonCount,
     averageProjectionGap,
     trapExposure,
     marketDisagreementRating,
@@ -1594,11 +1703,11 @@ export function buildCombos(
 
   const combos: Combo[] = [];
   // Order matches what the rail renders left-to-right (Best 2 → 6).
-  if (best2.length === 2) combos.push(makeCombo('Best 2', stripAll(best2), 'safe'));
-  if (best3.length === 3) combos.push(makeCombo('Best 3', stripAll(best3), 'safe'));
-  if (best4.length === 4) combos.push(makeCombo('Best 4', stripAll(best4), 'safe'));
-  if (best5.length === 5) combos.push(makeCombo('Best 5', stripAll(best5), 'safe'));
-  if (best6.length >= 2) combos.push(makeCombo('Best 6', stripAll(best6), 'safe'));
+  if (best2.length === 2) combos.push(makeCombo('Best 2', stripAll(best2), 'safe', resolvedMode));
+  if (best3.length === 3) combos.push(makeCombo('Best 3', stripAll(best3), 'safe', resolvedMode));
+  if (best4.length === 4) combos.push(makeCombo('Best 4', stripAll(best4), 'safe', resolvedMode));
+  if (best5.length === 5) combos.push(makeCombo('Best 5', stripAll(best5), 'safe', resolvedMode));
+  if (best6.length >= 2) combos.push(makeCombo('Best 6', stripAll(best6), 'safe', resolvedMode));
 
   // Wild Card — riskier but still data-supported. Walks a priority
   // chain (spec §"Wild Card Fallback Priority Order"):
@@ -1925,7 +2034,7 @@ export function buildCombos(
 
   // Emit the Wild Card combo with its kind metadata. Even the
   // no_edge case is emitted so the rail always has the slot.
-  const wildCombo = makeCombo('Wild Card', wildCard.legs, 'wild');
+  const wildCombo = makeCombo('Wild Card', wildCard.legs, 'wild', resolvedMode);
   wildCombo.subtitle = wildCard.subtitle;
   wildCombo.wildCardKind = wildCard.kind;
   if ('closestCandidates' in wildCard && wildCard.closestCandidates) {
