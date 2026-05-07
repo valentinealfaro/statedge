@@ -834,6 +834,20 @@ function BestPicksRail({
               <div className="best-pick-pct-label">
                 adjusted hit · {c.correlationRisk} correlation
               </div>
+              {/* EV verdict + payout. Positive EV means the card's
+                  expected return per $1 staked beats break-even.
+                  Surfacing this prevents the "5.8x payout, 18%
+                  combined hit = bad value" trap. */}
+              {c.evVerdict && c.expectedValue !== undefined && (
+                <div className={`best-pick-ev ${c.evVerdict.toLowerCase().replace(' ', '-')}`}
+                  title={`Expected value per $1 staked. Win prob ${c.adjustedCombinedHit.toFixed(1)}% × payout ${c.payoutMultiplier ?? '?'}× − $1 = ${c.expectedValue >= 0 ? '+' : ''}${c.expectedValue.toFixed(2)}. Average leg edge vs implied break-even: ${c.averageEdge !== undefined ? (c.averageEdge >= 0 ? '+' : '') + c.averageEdge.toFixed(1) : '—'}%.`}
+                >
+                  {c.evVerdict} · {c.expectedValue >= 0 ? '+' : ''}{c.expectedValue.toFixed(2)} EV
+                  {c.payoutMultiplier !== undefined && (
+                    <span className="best-pick-ev-payout"> · {c.payoutMultiplier}× payout</span>
+                  )}
+                </div>
+              )}
               <div className="best-pick-legs">
                 {c.legs.map((l, i) => (
                   <div key={i} className="best-pick-leg-block">
@@ -858,6 +872,36 @@ function BestPicksRail({
                         {l.confidenceLabel}
                       </span>
                     </div>
+                    {/* EV-engine per-leg metadata: edge%, category,
+                        trap badge (when flagged). Edge% tells the user
+                        how mispriced this leg is vs implied. Category
+                        labels Safe Core / Value / Ceiling / Contrarian.
+                        Trap badge only appears for High/Extreme tiers. */}
+                    {(l.edgePercent !== undefined || l.category) && (
+                      <div className="best-pick-leg-evbar">
+                        {l.edgePercent !== undefined && (
+                          <span
+                            className={`best-pick-leg-edge ${l.edgePercent >= 5 ? 'pos' : l.edgePercent <= -5 ? 'neg' : 'flat'}`}
+                            title="Edge % vs implied break-even. Positive = market underpricing."
+                          >
+                            {l.edgePercent >= 0 ? '+' : ''}{l.edgePercent.toFixed(0)}% edge
+                          </span>
+                        )}
+                        {l.category && (
+                          <span className={`best-pick-leg-cat cat-${l.category.toLowerCase().replace(' ', '-')}`}>
+                            {l.category}
+                          </span>
+                        )}
+                        {(l.trapTier === 'High Trap Risk' || l.trapTier === 'Extreme Trap Risk') && (
+                          <span
+                            className="best-pick-leg-trap"
+                            title={`Possible public-trap line: recent spike + line inflation. Trap score ${l.trapScore ?? '—'}. Interpret with caution.`}
+                          >
+                            ⚠ {l.trapTier}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {/* Wild Card legs surface their historical evidence
                         + a one-line "why this is a Wild Card" narrative
                         so the user can read the support, not just the %. */}

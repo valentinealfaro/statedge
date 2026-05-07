@@ -68,6 +68,160 @@ function confidenceLabel(score: number): string {
 }
 
 // -----------------------------------------------------------------
+// EV Engine — per the StatEdge EV / market-inefficiency spec.
+//
+// PrizePicks Power Play payouts. Implied per-leg probability is the
+// `n`-th root of (1 / payout): if all legs are equally probable and
+// independent, this is the per-leg break-even rate at which a card's
+// EV is zero. Anything above this is positive expected value.
+//
+// 2-leg payout=3x  → implied per-leg ≈ 57.7%
+// 3-leg payout=5x  → implied per-leg ≈ 58.5%
+// 4-leg payout=10x → implied per-leg ≈ 56.2%
+// 5-leg payout=20x → implied per-leg ≈ 54.9%
+// 6-leg payout=25x → implied per-leg ≈ 52.2%
+// -----------------------------------------------------------------
+export const PRIZEPICKS_PAYOUTS: Record<number, number> = {
+  2: 3,
+  3: 5,
+  4: 10,
+  5: 20,
+  6: 25,
+};
+
+// Average per-leg implied across the card sizes — used as the
+// baseline for ranking individual candidates BEFORE we know which
+// card they'll land on. Cards compute their own implied at build
+// time using the size-specific payout.
+const BASELINE_IMPLIED_PROB = 55;
+
+export function impliedPerLegProb(cardSize: number): number {
+  const payout = PRIZEPICKS_PAYOUTS[cardSize];
+  if (!payout) return BASELINE_IMPLIED_PROB;
+  return Math.pow(1 / payout, 1 / cardSize) * 100;
+}
+
+// EV scoring formula per spec §"NEW EV SCORING FORMULA". Replaces
+// pure-probability ranking with risk-adjusted expected-value
+// ranking. Components:
+//   - edgePercent (0.40)           — model prob − implied break-even
+//   - confidence (0.20)            — projection confidence
+//   - calibrationStrength (0.15)   — how trustworthy this bucket is
+//   - projectionDistanceScore (0.15) — projection / σ separation
+//   - risk (-0.10)                 — penalize fragile picks
+function computeEvScore(c: {
+  edgePercent: number;
+  confidence: number;
+  calibrationStrength: number;
+  projectionDistanceScore: number;
+  risk: number;
+}): number {
+  return (
+    c.edgePercent * 0.40
+    + c.confidence * 0.20
+    + c.calibrationStrength * 0.15
+    + c.projectionDistanceScore * 0.15
+    - c.risk * 0.10
+  );
+}
+
+// Projection separation as a 0-100 score. Tiers from spec
+// §"Projection Distance Tiers" but normalized by stddev so the
+// thresholds make sense across stat categories (Points runs 25-30,
+// Steals runs 0-2). 0σ → 0; 1σ → 50; 2σ+ → 100.
+function projectionDistanceScore(
+  projection: number,
+  line: number,
+  direction: 'OVER' | 'UNDER',
+  blendedStdDev: number,
+): number {
+  if (blendedStdDev <= 0) return 0;
+  const distance =
+    direction === 'OVER' ? projection - line : line - projection;
+  if (distance <= 0) return 0;
+  return Math.min(100, (distance / blendedStdDev) * 50);
+}
+
+// Pick category — spec §"NEW PICK CATEGORIES". Each candidate falls
+// into one of four buckets. Order matters: most-specific first.
+export type PickCategory = 'Safe Core' | 'Value' | 'Ceiling' | 'Contrarian';
+
+function pickCategory(c: {
+  probability: number;
+  edgePercent: number;
+  projectionDistanceScore: number;
+  statVolatility: number;
+}): PickCategory {
+  // Ceiling: large projection separation + tolerable variance —
+  // upside-driven, willing to accept lower probability.
+  if (c.projectionDistanceScore >= 75) return 'Ceiling';
+  // Contrarian: meaningful edge but the market is offering a low
+  // probability (proxy for "public is fading the model").
+  if (c.edgePercent >= 15 && c.probability < 65) return 'Contrarian';
+  // Safe Core: high probability + low variance. The traditional
+  // anchor pick.
+  if (c.probability >= 72 && c.statVolatility < 0.30) return 'Safe Core';
+  // Default: Value. Edge-positive but not extreme on either axis.
+  return 'Value';
+}
+
+// Trap detection — spec §"TRAP SCORE ENGINE". Combines four
+// signals; we don't have public-sentiment data so that component is
+// proxied with stat volatility (a high-variance recent-spike player
+// is the typical public-trap candidate anyway).
+export type TrapTier = 'Normal' | 'Slight Trap Risk' | 'High Trap Risk' | 'Extreme Trap Risk';
+
+function trapTierFromScore(score: number): TrapTier {
+  if (score >= 76) return 'Extreme Trap Risk';
+  if (score >= 51) return 'High Trap Risk';
+  if (score >= 26) return 'Slight Trap Risk';
+  return 'Normal';
+}
+
+function computeTrapScore(c: {
+  direction: 'OVER' | 'UNDER';
+  line: number;
+  projection: number;
+  l10Avg: number;
+  seasonAvg: number;
+  last5Avg: number | null;
+  statVolatility: number;
+}): number {
+  // Recent overreaction — L5 avg vs L10/season baseline. A 50%+
+  // jump signals a hot streak the public chases.
+  let recentOverreactionScore = 0;
+  if (c.last5Avg !== null) {
+    const baseline = (c.seasonAvg + c.l10Avg) / 2;
+    if (baseline > 0) {
+      const spike = (c.last5Avg - baseline) / baseline;
+      if (spike > 0.5) recentOverreactionScore = 100;
+      else if (spike > 0.3) recentOverreactionScore = 70;
+      else if (spike > 0.15) recentOverreactionScore = 40;
+    }
+  }
+  // Line inflation — line set above projection (for OVER) or below
+  // (for UNDER). Means the market priced in expectation the model
+  // doesn't share. Most damaging when paired with a recent spike.
+  const inflation =
+    c.direction === 'OVER' ? c.line - c.projection : c.projection - c.line;
+  let lineInflationScore = 0;
+  if (inflation > 0.5) lineInflationScore = 100;
+  else if (inflation > 0) lineInflationScore = 60;
+  else if (inflation > -0.5) lineInflationScore = 30;
+  // Public-bias signals — proxied by stat volatility (no public data).
+  // Highly volatile players attract recency-bias action.
+  const publicBiasSignals = Math.min(100, c.statVolatility * 200);
+  // Variance — high CV = unstable, easy to misprice in either direction.
+  const variance = Math.min(100, c.statVolatility * 200);
+  return Math.round(
+    recentOverreactionScore * 0.30
+    + lineInflationScore * 0.30
+    + publicBiasSignals * 0.20
+    + variance * 0.20,
+  );
+}
+
+// -----------------------------------------------------------------
 // Correlation derivation. Two stats are "correlated" (and so blocked
 // from co-occurring on the same card for a given player) when they
 // share a base box-score component — a bad scoring night drags
@@ -273,8 +427,22 @@ export type ComboCandidate = {
   projection: number;         // model's projected stat value
   confidenceLabel: string;
 
-  // Derived ranking score (spec §"Pick Ranking Formula"):
+  // Derived ranking score (legacy "safest pick" formula). Kept
+  // alongside evScore so Safe-mode rankings can fall back to this.
   slateScore: number;
+
+  // EV-engine fields (StatEdge EV spec). edgePercent is the
+  // difference between our model probability and a baseline implied
+  // probability — positive means we think the market underprices
+  // this leg. evScore is the new primary ranker for the slate
+  // builder; replaces slateScore for "Balanced EV" mode.
+  edgePercent: number;
+  evScore: number;
+  projectionDistance: number;       // |projection − line|
+  projectionDistanceScore: number;  // 0-100 (normalized by σ)
+  category: PickCategory;
+  trapScore: number;                // 0-100
+  trapTier: TrapTier;
 
   // Snapshot fields used by the History grader:
   l10Avg: number;
@@ -357,6 +525,19 @@ export type Combo = {
   // user can review even when nothing qualifies.
   wildCardKind?: WildCardKind;
   closestCandidates?: ComboCandidate[];
+
+  // EV-engine card metadata. payoutMultiplier is the PrizePicks
+  // payout for this card size (2-leg=3x, 3-leg=5x, 4-leg=10x, etc).
+  // expectedValue is winProb × payout − stake (per $1 staked):
+  // positive = +EV; near-zero = neutral; negative = −EV. The UI
+  // surfaces this so users can see "is this card actually worth
+  // playing, or just safe?".
+  payoutMultiplier?: number;
+  expectedValue?: number;          // EV per $1 staked (e.g. +0.42 = +42%)
+  evVerdict?: 'Positive EV' | 'Neutral EV' | 'Negative EV';
+  // Average leg edgePercent on this card — quick at-a-glance signal
+  // of how much "free probability" the card is capturing.
+  averageEdge?: number;
 };
 
 // Backwards-compat alias for the snapshot grader. Old snapshots in
@@ -494,6 +675,47 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
         injStatus === 'Questionable' || injStatus === 'Day-To-Day',
     });
 
+    // EV-engine derivations. Edge% is the per-leg model − implied
+    // gap; positive means we think the market underprices this leg.
+    // The baseline implied (~55%) is the rough break-even across
+    // PrizePicks card sizes; per-card EV uses the size-specific
+    // implied at combo-build time.
+    const edgePercent = probability - BASELINE_IMPLIED_PROB;
+    const projectionDistance = Math.abs(p.projection.final - l.line);
+    const projDistScore = projectionDistanceScore(
+      p.projection.final,
+      l.line,
+      direction,
+      p.factorBreakdown.blendedStdDev,
+    );
+    // calibrationStrength is treated as neutral (50) until we have
+    // ≥100 graded picks to derive a real per-bucket figure. The
+    // formula's static contribution (50 × 0.15 = 7.5) doesn't change
+    // ranking; just keeps the formula in spec-shape for later.
+    const evScore = computeEvScore({
+      edgePercent,
+      confidence: p.confidence.score,
+      calibrationStrength: 50,
+      projectionDistanceScore: projDistScore,
+      risk: p.risk.score,
+    });
+    const seasonAvg = p.factorBreakdown.seasonAvg ?? l.last10Avg;
+    const trapScore = computeTrapScore({
+      direction,
+      line: l.line,
+      projection: p.projection.final,
+      l10Avg: l.last10Avg,
+      seasonAvg,
+      last5Avg: p.factorBreakdown.last5Avg,
+      statVolatility,
+    });
+    const category = pickCategory({
+      probability,
+      edgePercent,
+      projectionDistanceScore: projDistScore,
+      statVolatility,
+    });
+
     const raw: EnrichedCandidate = {
       playerId: l.playerId,
       playerName: l.playerName,
@@ -511,6 +733,13 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       projection: p.projection.final,
       confidenceLabel: confidenceLabel(p.confidence.score),
       slateScore,
+      edgePercent,
+      evScore,
+      projectionDistance,
+      projectionDistanceScore: projDistScore,
+      category,
+      trapScore,
+      trapTier: trapTierFromScore(trapScore),
       l10Avg: l.last10Avg,
       vsOppAvg: l.vsOpponent?.avg ?? null,
       injuryStatus: injStatus,
@@ -633,10 +862,15 @@ function pickWithDiversity<T extends ComboCandidate>(
   caps: Caps,
   usage: Map<string, number>,
 ): T[] {
+  // Primary sort: evScore (EV-engine ranker). The "safest pick wins"
+  // legacy slateScore is the tiebreaker so cards are still
+  // deterministic when evScores tie. Per the StatEdge EV spec, this
+  // is the philosophical shift from "safest" → "most mispriced".
   const sorted = [...pool].sort((a, b) => {
     const ua = usage.get(comboKey(a)) ?? 0;
     const ub = usage.get(comboKey(b)) ?? 0;
     if (ua !== ub) return ua - ub;
+    if (a.evScore !== b.evScore) return b.evScore - a.evScore;
     return b.slateScore - a.slateScore;
   });
   const picked = pickByCaps(sorted, target, caps);
@@ -699,18 +933,17 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-// Card subtitles. Cards are now built independently (no shared picks
-// when the slate has enough candidates), so the safest picks anchor
-// Best 6 and smaller cards use different picks. Subtitles emphasize
-// that each card is its own ticket — submit them in parallel and one
-// bad leg only knocks out the cards that included it.
+// Card subtitles — updated for the EV engine. Picks are ranked by
+// expected value (edge × confidence × projection separation minus
+// risk), not raw probability. The "best" card isn't the safest —
+// it's the one capturing the most market mispricing.
 const SUBTITLES: Record<Combo['label'], string> = {
-  'Best 2': 'Compact Ticket',
-  'Best 3': 'Balanced Ticket',
-  'Best 4': 'Mid Ticket',
-  'Best 5': 'Wide Ticket',
-  'Best 6': 'Max Ticket — anchors the safest picks',
-  'Wild Card': 'Higher Risk',
+  'Best 2': 'Best Edge · 2-leg',
+  'Best 3': 'Best Edge · 3-leg',
+  'Best 4': 'Best Edge · 4-leg',
+  'Best 5': 'Best Edge · 5-leg',
+  'Best 6': 'Best Edge · 6-leg — strongest mispricings',
+  'Wild Card': 'Higher Risk · Higher Upside',
 };
 
 function makeCombo(
@@ -731,6 +964,55 @@ function makeCombo(
   if (legs.some((l) => l.injuryStatus === 'Questionable' || l.injuryStatus === 'Day-To-Day')) {
     warnings.push('Injury uncertainty detected.');
   }
+
+  // EV-engine card metadata. Use the size-specific PrizePicks payout.
+  // Wild Card and the not-yet-fully-built cards (legs.length < target)
+  // borrow the closest payout tier.
+  const cardSize =
+    label === 'Wild Card'
+      ? Math.max(2, Math.min(6, legs.length))
+      : (Number(label.split(' ')[1]) || legs.length);
+  const payoutMultiplier = PRIZEPICKS_PAYOUTS[cardSize];
+  let expectedValue: number | undefined;
+  let evVerdict: Combo['evVerdict'];
+  let averageEdge: number | undefined;
+  if (payoutMultiplier !== undefined && legs.length > 0) {
+    // EV per $1 staked = (winProb × payout) − 1. Use the
+    // correlation-adjusted combined hit since that's the realistic
+    // expectation; raw assumes independence the legs may not have.
+    const winProb = adjusted / 100;
+    expectedValue = winProb * payoutMultiplier - 1;
+    if (expectedValue >= 0.10) evVerdict = 'Positive EV';
+    else if (expectedValue >= -0.05) evVerdict = 'Neutral EV';
+    else evVerdict = 'Negative EV';
+
+    // Average leg edge — quick "how mispriced is this card?" signal
+    // shown on the card chrome. Computed against the size-specific
+    // implied-per-leg probability for accuracy.
+    const impliedThis = impliedPerLegProb(cardSize);
+    const sumEdge = legs.reduce((s, l) => s + (l.probability - impliedThis), 0);
+    averageEdge = round1(sumEdge / legs.length);
+
+    // Negative EV gets a warning so users see the trade-off plainly.
+    if (evVerdict === 'Negative EV') {
+      warnings.push(
+        `Negative EV — payout ${payoutMultiplier}× × ${(adjusted).toFixed(0)}% combined hit doesn't beat the implied break-even.`,
+      );
+    }
+  }
+
+  // Trap exposure — surface a warning when ≥1 leg is in High or
+  // Extreme trap territory. Doesn't block the card but tells users
+  // a leg looks public-driven.
+  const trappy = legs.filter(
+    (l) => l.trapTier === 'High Trap Risk' || l.trapTier === 'Extreme Trap Risk',
+  );
+  if (trappy.length > 0) {
+    warnings.push(
+      `${trappy.length} leg${trappy.length === 1 ? '' : 's'} flagged as possible public-trap line — interpret with caution.`,
+    );
+  }
+
   return {
     label,
     subtitle: SUBTITLES[label],
@@ -740,7 +1022,15 @@ function makeCombo(
     adjustedCombinedHit: adjusted,
     correlationRisk: risk,
     warnings,
+    payoutMultiplier,
+    expectedValue: expectedValue !== undefined ? round2(expectedValue) : undefined,
+    evVerdict,
+    averageEdge,
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 // -----------------------------------------------------------------

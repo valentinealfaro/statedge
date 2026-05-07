@@ -608,6 +608,13 @@ export type SlateUnresolvedLine = {
   reason: 'no_player_match' | 'unknown_stat' | 'no_recent_games';
 };
 
+export type SlatePickCategory = 'Safe Core' | 'Value' | 'Ceiling' | 'Contrarian';
+export type SlateTrapTier =
+  | 'Normal'
+  | 'Slight Trap Risk'
+  | 'High Trap Risk'
+  | 'Extreme Trap Risk';
+
 export type SlateComboLeg = {
   playerId: number;
   playerName: string;
@@ -625,6 +632,15 @@ export type SlateComboLeg = {
   projection: number;
   confidenceLabel: string;
   slateScore: number;
+  // EV-engine fields. Optional because legacy snapshots don't carry
+  // them — the UI falls back gracefully.
+  edgePercent?: number;
+  evScore?: number;
+  projectionDistance?: number;
+  projectionDistanceScore?: number;
+  category?: SlatePickCategory;
+  trapScore?: number;
+  trapTier?: SlateTrapTier;
   l10Avg: number;
   vsOppAvg: number | null;
   injuryStatus: string | null;
@@ -681,6 +697,11 @@ export type SlateCombo = {
   // view with near-miss picks for transparency.
   wildCardKind?: WildCardKind;
   closestCandidates?: SlateComboLeg[];
+  // EV-engine card metadata.
+  payoutMultiplier?: number;       // PrizePicks payout for this card size
+  expectedValue?: number;          // EV per $1 staked: positive = +EV
+  evVerdict?: 'Positive EV' | 'Neutral EV' | 'Negative EV';
+  averageEdge?: number;            // avg leg edge% on this card
 };
 
 export type SlateResponse = {

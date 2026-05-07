@@ -2462,6 +2462,65 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-top: -1px;
 }
 
+/* Card-level EV verdict (Positive / Neutral / Negative). Sits below
+   the combined-hit %; tells the user whether the payout justifies
+   the win probability. */
+.best-pick-ev {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.best-pick-ev.positive-ev { color: var(--hot); }
+.best-pick-ev.neutral-ev  { color: var(--brand-blue); }
+.best-pick-ev.negative-ev { color: var(--cold); }
+.best-pick-ev-payout {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* Per-leg EV bar — second row under the leg's main row. Edge %,
+   category chip, trap warning when the leg looks public-driven. */
+.best-pick-leg-evbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding-left: 2px;
+  margin-top: -1px;
+  font-size: 10px;
+}
+.best-pick-leg-edge {
+  font-weight: 700;
+}
+.best-pick-leg-edge.pos { color: var(--hot); }
+.best-pick-leg-edge.neg { color: var(--cold); }
+.best-pick-leg-edge.flat { color: var(--text-3); }
+.best-pick-leg-cat {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.best-pick-leg-cat.cat-safe-core   { background: var(--hot-bg); color: var(--hot); }
+.best-pick-leg-cat.cat-value       { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
+.best-pick-leg-cat.cat-ceiling     { background: rgba(255,184,107,0.12); color: var(--warn); }
+.best-pick-leg-cat.cat-contrarian  { background: rgba(124,77,255,0.12); color: var(--brand-purple); }
+.best-pick-leg-trap {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(239,106,106,0.12);
+  color: var(--cold);
+}
+
 /* Empty Wild Card tile — surfaces "no qualifying picks" copy without
    pretending to be a clickable card. */
 .best-pick-card.empty-wild {

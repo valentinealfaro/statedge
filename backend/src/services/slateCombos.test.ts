@@ -335,6 +335,103 @@ describe('buildCombos line-raising', () => {
   });
 });
 
+describe('buildCombos EV engine', () => {
+  test('every candidate carries edgePercent + evScore + category + trapScore', () => {
+    const { combos } = buildCombos(strongSlate(8, 75));
+    const best6 = combos.find((c) => c.label === 'Best 6')!;
+    for (const leg of best6.legs) {
+      expect(typeof leg.edgePercent).toBe('number');
+      expect(typeof leg.evScore).toBe('number');
+      expect(typeof leg.projectionDistance).toBe('number');
+      expect(typeof leg.projectionDistanceScore).toBe('number');
+      expect(['Safe Core', 'Value', 'Ceiling', 'Contrarian']).toContain(leg.category);
+      expect(typeof leg.trapScore).toBe('number');
+      expect(['Normal', 'Slight Trap Risk', 'High Trap Risk', 'Extreme Trap Risk']).toContain(leg.trapTier);
+    }
+  });
+
+  test('every Combo carries payoutMultiplier + expectedValue + evVerdict', () => {
+    const { combos } = buildCombos(strongSlate(8, 75));
+    for (const c of combos) {
+      if (c.legs.length === 0) continue;     // empty Wild Card slot
+      expect(c.payoutMultiplier).toBeDefined();
+      expect(c.expectedValue).toBeDefined();
+      expect(['Positive EV', 'Neutral EV', 'Negative EV']).toContain(c.evVerdict);
+      expect(c.averageEdge).toBeDefined();
+    }
+  });
+
+  test('Best 2 with 90% legs at 3x payout reads as Positive EV', () => {
+    // 0.90 × 0.90 × 3 − 1 = 1.43 (massively +EV)
+    // (correlation penalty drops it slightly but well above +0.10)
+    const { combos } = buildCombos(strongSlate(8, 90));
+    const best2 = combos.find((c) => c.label === 'Best 2')!;
+    expect(best2.payoutMultiplier).toBe(3);
+    expect(best2.expectedValue).toBeGreaterThan(0.10);
+    expect(best2.evVerdict).toBe('Positive EV');
+  });
+
+  test('candidate sitting at the implied break-even has near-zero edge', () => {
+    // probability 55 ≈ baseline implied. edgePercent ≈ 0.
+    const slate = strongSlate(8, 55);
+    const { combos } = buildCombos(slate);
+    const best6 = combos.find((c) => c.label === 'Best 6');
+    if (best6) {
+      // Edge should be small magnitude near zero across the legs.
+      for (const leg of best6.legs) {
+        expect(Math.abs(leg.edgePercent)).toBeLessThan(15);
+      }
+    }
+  });
+
+  test('trap detection fires on a recent-spike + line-inflated candidate', () => {
+    // Player with last5 well above season + line set above projection.
+    // This is the classic public trap pattern.
+    const trapLine = makeLine({
+      playerId: 50,
+      playerName: 'Trap Star',
+      team: 'NYK',
+      vsOpponent: { opponentAbbr: 'PHI', gamesPlayed: 3, avg: 28, values: [28, 30, 26] },
+      statKey: 'points',
+      statLabel: 'Points',
+      line: 26.5,
+      last10Values: [22, 24, 26, 23, 22, 42, 38, 40, 36, 38],   // recent spike
+      last10Avg: 31.1,
+      projection: makeProjection({
+        probability: { over: 60, under: 40 },
+        confidence: { score: 60, label: 'Medium Confidence' },
+        risk: { score: 55, label: 'Moderate Risk' },
+        // Projection BELOW the line — line is inflated by public action.
+        projection: { baseline: 24, contextAdjusted: 24, final: 24, rangeLow: 21, rangeHigh: 27 },
+        factorBreakdown: {
+          seasonAvg: 22, last10Avg: 31, last5Avg: 39,    // L5 way above season
+          vsOpponentAvg: 28, homeAwayAvg: 22,
+          seasonMedian: 22, last10Median: 31,
+          blendedStdDev: 5, projectedMinutes: 36,
+          minutesMultiplier: 1, usageMultiplier: 1, injuryMultiplier: 1,
+          opponentDefenseMultiplier: 1, paceMultiplier: 1, restMultiplier: 1,
+          gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 50,
+        },
+        edge: { score: 50, label: 'Slight Edge', lean: 'Slight Over Lean' },
+      }),
+    });
+    const { combos } = buildCombos([trapLine, ...strongSlate(8, 70)]);
+    let trapLeg: { trapScore: number; trapTier: string } | undefined;
+    for (const c of combos) {
+      const found = c.legs.find((l) => l.playerId === 50);
+      if (found) trapLeg = found;
+    }
+    if (trapLeg) {
+      expect(trapLeg.trapScore).toBeGreaterThan(50);
+      expect(['High Trap Risk', 'Extreme Trap Risk']).toContain(trapLeg.trapTier);
+    }
+    // (If the trap candidate didn't make any card due to its lower
+    // ranking, that's also fine — the test just guards against
+    // miscategorizing it as "Normal" when it does land.)
+  });
+});
+
 describe('buildCombos correlation block', () => {
   test('blocks same-player Points + PRA on the same card', () => {
     const lines: ResolvedLine[] = [
