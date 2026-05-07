@@ -2462,6 +2462,57 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-top: -1px;
 }
 
+/* Slate-mode selector — three buttons above the rail. Active state
+   uses the brand-blue accent. Hint text below the label only shows
+   on the active option (compact on mobile). */
+.slate-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.slate-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--motion-fast), color var(--motion-fast),
+              background var(--motion-fast);
+}
+.slate-mode-btn:hover {
+  color: var(--text-1);
+  border-color: var(--border-default);
+}
+.slate-mode-btn.active {
+  border-color: var(--brand-blue);
+  background:
+    linear-gradient(135deg, rgba(91,141,239,0.08), rgba(124,77,255,0.06)),
+    var(--surface-1);
+  color: var(--text-1);
+}
+.slate-mode-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+.slate-mode-hint {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+}
+@media (max-width: 720px) {
+  .slate-mode-hint { display: none; }
+  .slate-mode-btn { padding: 8px 10px; }
+}
+
 /* Card-level EV verdict (Positive / Neutral / Negative). Sits below
    the combined-hit %; tells the user whether the payout justifies
    the win probability. */

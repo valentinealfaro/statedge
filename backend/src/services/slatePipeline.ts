@@ -130,6 +130,10 @@ export type SlateResponse = {
   // share one source of truth. Empty when the slate doesn't have
   // enough eligible candidates (spec §"Limited slate" warning).
   combos: Combo[];
+  // Slate strategy mode reflected in `combos`. Only set on responses
+  // from /slate/today (the route that honors ?mode=). Other entry
+  // points always use 'balanced' (the default).
+  mode?: 'safe' | 'balanced' | 'aggressive';
 };
 
 function round2(n: number): number {

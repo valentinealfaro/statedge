@@ -19,8 +19,15 @@ import {
 import { currentSeason } from '../nba/client.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
 import { computeCalibration } from '../services/slateCalibration.js';
-import type { Combo } from '../services/slateCombos.js';
+import { buildCombos, type Combo, type SlateMode } from '../services/slateCombos.js';
 import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
+
+// Parse + validate the ?mode= query param. Unknown / missing values
+// fall back to 'balanced' (the EV-engine default).
+function parseSlateMode(q: unknown): SlateMode {
+  if (q === 'safe' || q === 'balanced' || q === 'aggressive') return q;
+  return 'balanced';
+}
 
 export const slateRouter: Router = Router();
 
@@ -383,7 +390,7 @@ async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
 // visitors see tonight's lines without anyone having to publish.
 // We auto-resolve on GET so the response carries fully populated
 // cards (with model probabilities) ready to render.
-slateRouter.get('/today', async (_req, res) => {
+slateRouter.get('/today', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });
     return;
@@ -423,13 +430,24 @@ slateRouter.get('/today', async (_req, res) => {
       direction: l.direction ?? 'both',
     }));
     const resolved = await resolveSlate(raw, 'manual');
+    // resolveSlate's combos field is built in 'balanced' mode (the
+    // default). We always snapshot the balanced-mode combos so the
+    // historical record is consistent regardless of which mode the
+    // requester selected. The user-facing response then either reuses
+    // those (mode=balanced) or rebuilds in the requested mode.
+    const requestedMode = parseSlateMode(req.query.mode);
+    const responseCombos =
+      requestedMode === 'balanced'
+        ? resolved.combos
+        : buildCombos(resolved.lines, requestedMode).combos;
 
-    // Snapshot today's pre-built parlays into slate_results.
-    // upsertIfPending=true means we keep refreshing the snapshot
-    // throughout the day so the History tab reflects the latest
-    // algorithm. Once any leg has been graded against actuals
-    // (resolved_at IS NOT NULL), the row freezes — past picks stay
-    // locked to what was actually shown when the games happened.
+    // Snapshot today's pre-built parlays (always balanced mode) into
+    // slate_results. upsertIfPending=true means we keep refreshing
+    // the snapshot throughout the day so the History tab reflects
+    // the latest algorithm. Once any leg has been graded against
+    // actuals (resolved_at IS NOT NULL), the row freezes — past
+    // picks stay locked to what was actually shown when the games
+    // happened.
     //
     // Best-effort: failure here must not break the slate response.
     try {
@@ -444,7 +462,7 @@ slateRouter.get('/today', async (_req, res) => {
 
     res.json({
       slate: { date: stored.date, count: stored.lines.length, updatedAt: stored.updatedAt },
-      resolved,
+      resolved: { ...resolved, combos: responseCombos, mode: requestedMode },
     });
   } catch (err) {
     console.error('slate/today GET failed', err);

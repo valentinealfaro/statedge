@@ -710,6 +710,9 @@ export type SlateResponse = {
   source: 'prizepicks_auto' | 'image_upload' | 'manual';
   fetchedAt: string;
   combos: SlateCombo[];
+  // Slate strategy mode reflected in `combos`. Only set on responses
+  // from /slate/today (the route that honors ?mode=).
+  mode?: 'safe' | 'balanced' | 'aggressive';
 };
 
 export type ManualSlateLine = {
@@ -754,11 +757,19 @@ export async function postTodaySlate(
 // hasn't set today's lines yet — caller should fall back to localStorage
 // or show a paste box. The response carries fully-resolved cards so
 // /slate can render immediately without a second round-trip.
-export async function getTodaySlate(): Promise<{
+// Strategy mode the user picks. Backend re-ranks the candidate pool
+// per mode; the snapshot always uses 'balanced' so history stays
+// consistent regardless of which mode each visitor chose.
+export type SlateMode = 'safe' | 'balanced' | 'aggressive';
+
+export async function getTodaySlate(mode: SlateMode = 'balanced'): Promise<{
   slate: { date: string; count: number; updatedAt: string } | null;
   resolved: SlateResponse | null;
 }> {
-  const res = await fetch(`${API_BASE}/api/slate/today`);
+  const url = mode === 'balanced'
+    ? `${API_BASE}/api/slate/today`
+    : `${API_BASE}/api/slate/today?mode=${mode}`;
+  const res = await fetch(url);
   if (!res.ok) return { slate: null, resolved: null };
   return (await res.json()) as {
     slate: { date: string; count: number; updatedAt: string } | null;

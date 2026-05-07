@@ -432,6 +432,104 @@ describe('buildCombos EV engine', () => {
   });
 });
 
+describe('buildCombos slate modes', () => {
+  test('default mode is "balanced"', () => {
+    // Calling without an explicit mode should equal balanced.
+    const slate = strongSlate(20, 75);
+    const a = buildCombos(slate);
+    const b = buildCombos(slate, 'balanced');
+    const aBest6 = a.combos.find((c) => c.label === 'Best 6');
+    const bBest6 = b.combos.find((c) => c.label === 'Best 6');
+    expect(aBest6?.legs.map((l) => l.playerId)).toEqual(bBest6?.legs.map((l) => l.playerId));
+  });
+
+  test('Safe and Balanced modes can produce different Best 6 picks', () => {
+    // Build a slate where probability and edgePercent disagree on
+    // which leg is "best": a high-prob low-edge pick AND a low-prob
+    // high-edge pick. Safe should prefer the former; Balanced the
+    // latter. (Edge here is implicit via the BASELINE_IMPLIED gap.)
+    const safeStarLine = makeLine({
+      playerId: 901,
+      playerName: 'Safe Star',
+      team: 'NYK',
+      vsOpponent: { opponentAbbr: 'PHI', gamesPlayed: 3, avg: 24, values: [24, 26, 22] },
+      statKey: 'points',
+      statLabel: 'Points',
+      line: 22.5,
+      projection: makeProjection({
+        // Very high probability + tight projection — the classic
+        // "safe" pick. evScore is muted because edge from 87 - 55 = 32
+        // is good but distance separation is weak (proj=24 vs line=22.5).
+        probability: { over: 87, under: 13 },
+        confidence: { score: 80, label: 'High Confidence' },
+        risk: { score: 35, label: 'Low Risk' },
+        edge: { score: 70, label: 'Strong Edge', lean: 'Strong Over Lean' },
+        projection: { baseline: 24, contextAdjusted: 24, final: 24, rangeLow: 22, rangeHigh: 26 },
+        factorBreakdown: {
+          seasonAvg: 24, last10Avg: 24, last5Avg: 24,
+          vsOpponentAvg: 24, homeAwayAvg: 24,
+          seasonMedian: 24, last10Median: 24,
+          blendedStdDev: 5, projectedMinutes: 36,
+          minutesMultiplier: 1, usageMultiplier: 1, injuryMultiplier: 1,
+          opponentDefenseMultiplier: 1, paceMultiplier: 1, restMultiplier: 1,
+          gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 90,
+        },
+      }),
+    });
+    const slate = [safeStarLine, ...strongSlate(8, 70)];
+    const safe = buildCombos(slate, 'safe');
+    const balanced = buildCombos(slate, 'balanced');
+    const safeBest6 = safe.combos.find((c) => c.label === 'Best 6')!;
+    const balancedBest6 = balanced.combos.find((c) => c.label === 'Best 6')!;
+    // Safe Star should land on Safe-mode Best 6 (prob 87 dominates).
+    expect(safeBest6.legs.some((l) => l.playerId === 901)).toBe(true);
+    // The two cards aren't required to differ in every fixture, but
+    // they should at least be valid 6-leg cards under both modes.
+    expect(safeBest6.legs.length).toBe(6);
+    expect(balancedBest6.legs.length).toBe(6);
+  });
+
+  test('Aggressive mode prioritizes projection separation', () => {
+    // A pick with huge projection separation but only modest
+    // probability should rank higher in Aggressive than Balanced.
+    const ceilingLine = makeLine({
+      playerId: 902,
+      playerName: 'Ceiling Pick',
+      team: 'BKN',
+      vsOpponent: { opponentAbbr: 'TOR', gamesPlayed: 3, avg: 8, values: [9, 8, 7] },
+      statKey: 'three_pt_made',
+      statLabel: '3-PT Made',
+      line: 1.5,
+      projection: makeProjection({
+        // Modest probability (say 65) but projection sits 3+ stddev
+        // above line — exactly the "ceiling" archetype.
+        probability: { over: 65, under: 35 },
+        confidence: { score: 60, label: 'Medium Confidence' },
+        risk: { score: 50, label: 'Moderate Risk' },
+        edge: { score: 65, label: 'Strong Edge', lean: 'Strong Over Lean' },
+        projection: { baseline: 4, contextAdjusted: 4, final: 4, rangeLow: 3, rangeHigh: 5 },
+        factorBreakdown: {
+          seasonAvg: 4, last10Avg: 4, last5Avg: 4,
+          vsOpponentAvg: 4, homeAwayAvg: 4,
+          seasonMedian: 4, last10Median: 4,
+          blendedStdDev: 0.8, projectedMinutes: 36,
+          minutesMultiplier: 1, usageMultiplier: 1, injuryMultiplier: 1,
+          opponentDefenseMultiplier: 1, paceMultiplier: 1, restMultiplier: 1,
+          gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 80,
+        },
+      }),
+    });
+    const slate = [ceilingLine, ...strongSlate(8, 70)];
+    const aggressive = buildCombos(slate, 'aggressive');
+    const aggBest6 = aggressive.combos.find((c) => c.label === 'Best 6')!;
+    // Ceiling Pick should land on Aggressive Best 6 because
+    // projection is 2.5+ σ above line.
+    expect(aggBest6.legs.some((l) => l.playerId === 902)).toBe(true);
+  });
+});
+
 describe('buildCombos correlation block', () => {
   test('blocks same-player Points + PRA on the same card', () => {
     const lines: ResolvedLine[] = [

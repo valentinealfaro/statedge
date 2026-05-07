@@ -178,6 +178,33 @@ function trapTierFromScore(score: number): TrapTier {
   return 'Normal';
 }
 
+// Slate strategy mode (spec §"ADD SLATE TYPES"). Each mode swaps
+// the candidate ranker so the cards reflect a different angle on
+// the same underlying pool. balanced is the default — ranks by
+// evScore (the EV-engine ranker). The other two are alternate
+// lenses the user can opt into.
+//
+// Per-leg score functions (higher is better) — used as the primary
+// sort key in pickWithDiversity:
+//   - safe        legacy slateScore (probability-heavy, lower variance)
+//   - balanced    evScore (default; market-mispricing focused)
+//   - aggressive  projectionDistanceScore + edge — favors big
+//                 separations / ceiling outcomes
+export type SlateMode = 'safe' | 'balanced' | 'aggressive';
+
+function modeScore(mode: SlateMode, c: ComboCandidate): number {
+  if (mode === 'safe') return c.slateScore;
+  if (mode === 'aggressive') {
+    return (
+      c.projectionDistanceScore * 0.40
+      + c.edgePercent * 0.30
+      + c.edgeScore * 0.20
+      - c.risk * 0.10
+    );
+  }
+  return c.evScore;     // balanced (default)
+}
+
 function computeTrapScore(c: {
   direction: 'OVER' | 'UNDER';
   line: number;
@@ -861,15 +888,19 @@ function pickWithDiversity<T extends ComboCandidate>(
   target: number,
   caps: Caps,
   usage: Map<string, number>,
+  mode: SlateMode,
 ): T[] {
-  // Primary sort: evScore (EV-engine ranker). The "safest pick wins"
-  // legacy slateScore is the tiebreaker so cards are still
-  // deterministic when evScores tie. Per the StatEdge EV spec, this
-  // is the philosophical shift from "safest" → "most mispriced".
+  // Primary sort: mode-specific score (Safe → slateScore,
+  // Balanced → evScore, Aggressive → projection separation + edge).
+  // Tiebreakers fall back through evScore then slateScore so cards
+  // stay deterministic when the primary score ties.
   const sorted = [...pool].sort((a, b) => {
     const ua = usage.get(comboKey(a)) ?? 0;
     const ub = usage.get(comboKey(b)) ?? 0;
     if (ua !== ub) return ua - ub;
+    const sa = modeScore(mode, a);
+    const sb = modeScore(mode, b);
+    if (sa !== sb) return sb - sa;
     if (a.evScore !== b.evScore) return b.evScore - a.evScore;
     return b.slateScore - a.slateScore;
   });
@@ -1040,22 +1071,26 @@ export type SlateCombosResult = {
   combos: Combo[];
 };
 
-export function buildCombos(lines: ResolvedLine[]): SlateCombosResult {
+export function buildCombos(
+  lines: ResolvedLine[],
+  mode: SlateMode = 'balanced',
+): SlateCombosResult {
   const allCandidates = buildCandidates(lines);
   const eligible = allCandidates
     .filter((c) => passesEligibility(c, ELIGIBLE))
-    .sort((a, b) => b.slateScore - a.slateScore);
+    .sort((a, b) => modeScore(mode, b) - modeScore(mode, a));
 
-  // Build cards LARGEST → SMALLEST so the safest 6 picks land on
-  // Best 6 first. Each subsequent card prefers picks not yet used on
-  // a bigger card (diversity-first); when the slate is too small for
-  // full independence, the shared `usage` map drives graceful sharing.
+  // Build cards LARGEST → SMALLEST so the strongest mode-aligned
+  // picks land on Best 6 first. Each subsequent card prefers picks
+  // not yet used on a bigger card (diversity-first); when the slate
+  // is too small for full independence, the shared `usage` map
+  // drives graceful sharing.
   const usage = new Map<string, number>();
-  const best6 = pickWithDiversity(eligible, 6, CAPS_LARGE, usage);
-  const best5 = pickWithDiversity(eligible, 5, CAPS_LARGE, usage);
-  const best4 = pickWithDiversity(eligible, 4, CAPS_LARGE, usage);
-  const best3 = pickWithDiversity(eligible, 3, CAPS_TIGHT, usage);
-  const best2 = pickWithDiversity(eligible, 2, CAPS_TIGHT, usage);
+  const best6 = pickWithDiversity(eligible, 6, CAPS_LARGE, usage, mode);
+  const best5 = pickWithDiversity(eligible, 5, CAPS_LARGE, usage, mode);
+  const best4 = pickWithDiversity(eligible, 4, CAPS_LARGE, usage, mode);
+  const best3 = pickWithDiversity(eligible, 3, CAPS_TIGHT, usage, mode);
+  const best2 = pickWithDiversity(eligible, 2, CAPS_TIGHT, usage, mode);
 
   const combos: Combo[] = [];
   // Order matches what the rail renders left-to-right (Best 2 → 6).

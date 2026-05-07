@@ -6,10 +6,12 @@ import {
   getDataFreshness,
   getSlateAuto,
   getSlateInsight,
+  getTodaySlate,
   postSlateImage,
   type BackendVersion,
   type DataFreshness,
   type SlateCombo,
+  type SlateMode,
   type SlateProjection,
   type SlateResolvedLine,
   type SlateResponse,
@@ -37,6 +39,18 @@ export function Slate() {
   const isPro = plan === 'pro' || isAdmin;
   const { items: savedParlays, save: saveParlay, remove: removeParlay } = useSavedParlays();
   const [data, setData] = useState<SlateResponse | null>(null);
+  // User-chosen slate strategy mode. Persisted to localStorage so the
+  // pick survives reloads. Defaults to 'balanced' (the EV-engine
+  // default) on first visit.
+  const [slateMode, setSlateModeState] = useState<SlateMode>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('statedge.slate.mode') : null;
+    if (saved === 'safe' || saved === 'balanced' || saved === 'aggressive') return saved;
+    return 'balanced';
+  });
+  function setSlateMode(m: SlateMode): void {
+    setSlateModeState(m);
+    try { localStorage.setItem('statedge.slate.mode', m); } catch { /* ignore */ }
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorSource, setErrorSource] = useState<'auto' | 'upload' | null>(null);
@@ -148,6 +162,26 @@ export function Slate() {
       })
       .catch(() => setBackendStale(true));
   }, []);
+
+  // Mode change → refetch /slate/today with the new mode so the rail
+  // re-ranks. SlateManualEntry handles the initial load (always
+  // 'balanced'); we only kick in for subsequent mode flips.
+  const initialModeRef = useRef(true);
+  useEffect(() => {
+    if (initialModeRef.current) {
+      initialModeRef.current = false;
+      return;
+    }
+    if (!data) return;            // nothing to re-rank yet
+    let alive = true;
+    getTodaySlate(slateMode)
+      .then((today) => {
+        if (!alive) return;
+        if (today.resolved) setData(today.resolved);
+      })
+      .catch(() => { /* keep current data on transient errors */ });
+    return () => { alive = false; };
+  }, [slateMode]);    // eslint-disable-line react-hooks/exhaustive-deps
 
   // Background refresh: only meaningful for the PrizePicks auto-pull
   // path — manual-entry and uploaded slates are static by design. PP
@@ -349,6 +383,8 @@ export function Slate() {
           setTeamFilter={setTeamFilter}
           setStatFilter={setStatFilter}
           onManualResult={(r) => { setData(r); setError(null); setErrorSource(null); }}
+          slateMode={slateMode}
+          setSlateMode={setSlateMode}
         />
       )}
 
@@ -395,6 +431,8 @@ type SlateTodayBodyProps = {
   setTeamFilter: (s: string) => void;
   setStatFilter: (s: string) => void;
   onManualResult: (r: SlateResponse) => void;
+  slateMode: SlateMode;
+  setSlateMode: (m: SlateMode) => void;
 };
 
 function SlateTodayBody(props: SlateTodayBodyProps) {
@@ -420,6 +458,8 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
     setStatFilter,
     setHideOut,
     onManualResult,
+    slateMode,
+    setSlateMode,
   } = props;
 
   return (
@@ -442,15 +482,22 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
           is loaded — they're the highest-signal view of the slate
           and what most users come here for. Computed server-side
           (see backend slateCombos.ts) so every visitor sees the same
-          picks the snapshot/history path uses. */}
+          picks the snapshot/history path uses.
+          Strategy mode selector lets users pick the angle: Safe
+          (highest probability, lowest variance), Balanced (default,
+          best risk-adjusted EV), or Aggressive (largest projection
+          separation, ceiling outcomes). */}
       {data?.combos && data.combos.length > 0 && (
-        <BestPicksRail
-          combos={data.combos}
-          lines={lines}
-          onLoad={(legs) => setParlay(legs)}
-          activeKeys={parlay}
-          cardKey={cardKey}
-        />
+        <>
+          <SlateModeSelector mode={slateMode} onChange={setSlateMode} />
+          <BestPicksRail
+            combos={data.combos}
+            lines={lines}
+            onLoad={(legs) => setParlay(legs)}
+            activeKeys={parlay}
+            cardKey={cardKey}
+          />
+        </>
       )}
 
       {/* Always render — admin panel + today's-games rail + empty
@@ -1751,6 +1798,41 @@ function TrendChip({
 // etc next to the projection so users can read the variance profile
 // at a glance. Backend classifies based on stat CV, minutes CV, and
 // boom/bust tail rates over the player's last 20 games.
+// Strategy mode selector. Three buttons (Safe / Balanced / Aggressive)
+// with copy that explains the angle. Defaults to Balanced (the EV-
+// engine default). Persists to localStorage so the user's choice
+// survives reloads.
+function SlateModeSelector({
+  mode,
+  onChange,
+}: {
+  mode: SlateMode;
+  onChange: (m: SlateMode) => void;
+}) {
+  const opts: Array<{ id: SlateMode; label: string; hint: string }> = [
+    { id: 'safe',       label: 'Safe',       hint: 'Highest probability · lowest variance' },
+    { id: 'balanced',   label: 'Balanced EV', hint: 'Default — best risk-adjusted edge' },
+    { id: 'aggressive', label: 'Aggressive',  hint: 'Largest projection separation · ceiling' },
+  ];
+  return (
+    <div className="slate-mode-selector" role="tablist" aria-label="Slate strategy">
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          role="tab"
+          aria-selected={mode === o.id}
+          className={`slate-mode-btn ${mode === o.id ? 'active' : ''}`}
+          onClick={() => onChange(o.id)}
+          title={o.hint}
+        >
+          <span className="slate-mode-label">{o.label}</span>
+          <span className="slate-mode-hint">{o.hint}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ArchetypeChip({
   archetype,
 }: {
