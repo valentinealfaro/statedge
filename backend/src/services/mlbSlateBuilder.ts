@@ -23,6 +23,7 @@
 // All the hooks for those are reserved as future-extension points.
 
 import type { ResolvedMlbLine } from './mlbSlatePipeline.js';
+import { buildMlbWildCard, type MlbWildCardCombo } from './mlbWildCardBuilder.js';
 
 // User-facing modes — same as NBA. 'auto' resolves to one of the
 // underlying modes based on slate quality.
@@ -142,6 +143,10 @@ export type MlbSlateResult = {
     combo: MlbCombo | null;
     reason: string;
   }>;
+  // Wild Card slot. Always populated (the builder falls through to a
+  // 'no_edge' tier with closest candidates when no real Wild Card
+  // qualifies — never blank, never trash).
+  wildCard: MlbWildCardCombo;
 };
 
 // ---------- Auto-mode resolver ----------
@@ -369,7 +374,17 @@ export function buildMlbSlate(
     });
   }
 
-  return { resolvedMode, combos: slots };
+  // Wild Card slot. Track which players we've already placed in
+  // safe/balanced/aggressive/insane cards so the Wild Card surfaces
+  // genuinely different picks rather than duplicating our top legs.
+  const usedPlayers = new Set<number>();
+  for (const slot of slots) {
+    if (!slot.combo) continue;
+    for (const leg of slot.combo.legs) usedPlayers.add(leg.playerId);
+  }
+  const wildCard = buildMlbWildCard(lines, usedPlayers);
+
+  return { resolvedMode, combos: slots, wildCard };
 }
 
 // ---------- Re-exports for tests ----------

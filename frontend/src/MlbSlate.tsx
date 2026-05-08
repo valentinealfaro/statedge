@@ -18,6 +18,7 @@ import { useState } from 'react';
 import {
   buildMlbSlateRequest,
   type MlbSlateResponse,
+  type MlbWildCardCombo,
   type RawMlbSlateLine,
 } from './api';
 import { NavBar } from './NavBar';
@@ -158,9 +159,84 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
         {data.combos.map((slot) => (
           <ComboCard key={slot.size} slot={slot} />
         ))}
+        <WildCardCard wildCard={data.wildCard} />
       </div>
 
       <p className="mlb-disclaimer">{data.disclaimer}</p>
+    </div>
+  );
+}
+
+// Wild Card card — different visual treatment from the size-numbered
+// cards because it's NOT a size slot, it's a tier-classified extra.
+// Renders empty-state cleanly when the chain falls through to no_edge.
+function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
+  const kindLabel =
+    wildCard.kind === 'standard' ? 'Standard'
+    : wildCard.kind === 'near_miss' ? 'Near Miss'
+    : wildCard.kind === 'momentum' ? 'Momentum'
+    : wildCard.kind === 'matchup_spike' ? 'Matchup Spike'
+    : wildCard.kind === 'high_variance' ? 'High Variance'
+    : 'No Edge';
+  const kindClass = `wild-kind-${wildCard.kind.replace('_', '-')}`;
+
+  if (wildCard.kind === 'no_edge') {
+    return (
+      <div className="mlb-slate-card mlb-wild-card empty">
+        <div className="mlb-slate-card-head">
+          <span className="mlb-slate-card-label">Wild Card</span>
+          <span className={`mlb-wild-kind ${kindClass}`}>{kindLabel}</span>
+        </div>
+        <p className="mlb-slate-card-empty-reason">
+          {wildCard.subtitle}. No tier qualified — closest candidates by
+          projection separation are below.
+        </p>
+        {wildCard.closestCandidates && wildCard.closestCandidates.length > 0 && (
+          <ul className="mlb-slate-legs">
+            {wildCard.closestCandidates.map((leg, i) => (
+              <li key={i} className="mlb-slate-leg">
+                <div className="mlb-slate-leg-row">
+                  <span className="mlb-slate-leg-name">{leg.playerName}</span>
+                  <span className="mlb-slate-leg-stat">
+                    {leg.statLabel} {leg.direction === 'OVER' ? '↑' : '↓'} {leg.line}
+                  </span>
+                  <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
+                </div>
+                <div className="mlb-slate-leg-edge">{leg.wildCardReason}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mlb-slate-card mlb-wild-card">
+      <div className="mlb-slate-card-head">
+        <span className="mlb-slate-card-label">Wild Card</span>
+        <span className={`mlb-wild-kind ${kindClass}`}>{kindLabel}</span>
+        <span className="mlb-slate-card-subtitle">{wildCard.subtitle}</span>
+      </div>
+      <div className="mlb-slate-card-summary">
+        <Stat label="Combined hit" value={`${wildCard.rawCombinedHit.toFixed(1)}%`} />
+        <Stat label="Avg edge" value={`${wildCard.averageEdge >= 0 ? '+' : ''}${wildCard.averageEdge.toFixed(1)}%`} />
+        <Stat label="Avg trap" value={`${wildCard.averageTrap.toFixed(0)}/100`} />
+      </div>
+      <ul className="mlb-slate-legs">
+        {wildCard.legs.map((leg, i) => (
+          <li key={i} className="mlb-slate-leg">
+            <div className="mlb-slate-leg-row">
+              <span className="mlb-slate-leg-name">{leg.playerName}</span>
+              <span className="mlb-slate-leg-stat">
+                {leg.statLabel} {leg.direction === 'OVER' ? '↑' : '↓'} {leg.line}
+              </span>
+              <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
+            </div>
+            <div className="mlb-slate-leg-edge">{leg.wildCardReason}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

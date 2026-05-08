@@ -5439,6 +5439,58 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--text-2);
 }
 
+/* Wild Card section — tier-classified extra slot. Different visual
+   treatment from the size-numbered cards (purple-leaning border) so
+   users see at a glance it's a different kind of pick. */
+.mlb-wild-card {
+  border-color: rgba(156, 39, 176, 0.40);
+  background:
+    linear-gradient(135deg, rgba(156, 39, 176, 0.05), rgba(91, 141, 239, 0.03)),
+    var(--surface-1);
+}
+.mlb-wild-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.mlb-wild-kind.wild-kind-standard {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+  border-color: rgba(76, 175, 80, 0.40);
+}
+.mlb-wild-kind.wild-kind-near-miss {
+  background: rgba(33, 150, 243, 0.15);
+  color: #64b5f6;
+  border-color: rgba(33, 150, 243, 0.40);
+}
+.mlb-wild-kind.wild-kind-momentum {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ffa726;
+  border-color: rgba(255, 152, 0, 0.40);
+}
+.mlb-wild-kind.wild-kind-matchup-spike {
+  background: rgba(156, 39, 176, 0.15);
+  color: #ba68c8;
+  border-color: rgba(156, 39, 176, 0.40);
+}
+.mlb-wild-kind.wild-kind-high-variance {
+  background: rgba(229, 57, 53, 0.15);
+  color: #ef5350;
+  border-color: rgba(229, 57, 53, 0.40);
+}
+.mlb-wild-kind.wild-kind-no-edge {
+  background: var(--surface-2);
+  color: var(--text-3);
+  border-color: var(--border-subtle);
+}
+
 /* MLB calibration bucket table — predicted vs observed accuracy
    per probability bucket / stat type / risk tier / card type. */
 .mlb-bucket-table {

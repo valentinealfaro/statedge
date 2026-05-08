@@ -1431,6 +1431,27 @@ export type MlbSlateCombo = {
   weakestLegReason: string;
 };
 
+export type MlbWildCardKind =
+  | 'standard'
+  | 'near_miss'
+  | 'momentum'
+  | 'matchup_spike'
+  | 'high_variance'
+  | 'no_edge';
+
+export type MlbWildCardLeg = MlbSlateLeg & { wildCardReason: string };
+
+export type MlbWildCardCombo = {
+  label: 'Wild Card';
+  kind: MlbWildCardKind;
+  subtitle: string;
+  legs: MlbWildCardLeg[];
+  rawCombinedHit: number;
+  averageEdge: number;
+  averageTrap: number;
+  closestCandidates?: MlbWildCardLeg[];
+};
+
 export type MlbSlateResponse = {
   resolvedMode: 'safe' | 'balanced' | 'aggressive' | 'insane';
   requestedMode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
@@ -1441,6 +1462,7 @@ export type MlbSlateResponse = {
     combo: MlbSlateCombo | null;
     reason: string;
   }>;
+  wildCard: MlbWildCardCombo;
   unresolved: Array<{ raw: RawMlbSlateLine; reason: string }>;
   disclaimer: string;
 };

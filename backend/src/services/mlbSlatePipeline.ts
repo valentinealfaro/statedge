@@ -14,6 +14,7 @@ import {
   projectMlbStat,
   type ProjectionResult,
 } from './mlbProjectionEngine.js';
+import { computeMlbLast10 } from './mlbLast10Engine.js';
 import { statMeta, type MlbStatKey } from '../mlb/stats.js';
 import { getPool } from '../db.js';
 
@@ -44,6 +45,32 @@ export type RawMlbLine = {
 // these into Combos. Every leg carries the full ProjectionResult so
 // the builder can interrogate edge / risk / trap / context per leg
 // without re-running anything.
+// Wild Card / momentum / matchup signals captured at lock time. The
+// Wild Card builder uses these to classify each leg into a tier
+// (Standard / Momentum / Matchup Spike / High Variance / No Edge).
+// Pulled from the same data the projection engine already has —
+// surfacing on the leg so downstream builders don't re-query.
+export type WildCardSignals = {
+  // L10 distribution at the queried line.
+  sampleSize: number;
+  last10HitCount: number | null;       // null when no line was queried
+  last10HitRate: number | null;        // 0-100; null when no line
+  consistencyScore: number;            // 0-100, from L10 engine
+  // Trend signals.
+  last5Average: number | null;
+  last10Average: number;
+  l5VsSeasonDelta: number | null;      // last5Avg - seasonAverage
+  // Matchup signal — opponent average vs the player's overall season.
+  // Positive = player has historically beaten this opponent.
+  opponentAverage: number | null;
+  opponentGames: number;
+  opponentVsSeasonDelta: number | null;
+  // Game context that's already fetched.
+  lineupSpot: number | null;
+  parkMultiplier: number;              // 1.00 = neutral
+  venueName: string | null;
+};
+
 export type ResolvedMlbLine = {
   playerId: number;
   playerName: string;
@@ -59,6 +86,9 @@ export type ResolvedMlbLine = {
   // for this line if we were composing a card.
   modelDirection: 'OVER' | 'UNDER';
   projection: ProjectionResult;
+  // Wild Card / momentum signals. Populated even when the projection
+  // engine didn't have full context — fields gracefully degrade.
+  signals: WildCardSignals;
   // Game-context surface for UI. When gamePk wasn't provided these
   // are null — pipeline doesn't fabricate context.
   gamePk: number | null;
@@ -117,6 +147,32 @@ export async function resolveMlbSlate(
         opposingPitcherId: raw.opposingPitcherId,
       });
 
+      // Capture the L10 + opponent + season averages so the Wild Card
+      // builder can classify tiers without re-running projections. The
+      // projection engine already pulled these but doesn't expose them
+      // — re-fetching is cheap (same DB rows, two small queries).
+      const last10 = await computeMlbLast10({
+        playerId: raw.playerId,
+        statKey: raw.statKey,
+        line: raw.line,
+        direction: modelDirection,
+      }).catch(() => null);
+      const seasonAndOpp = await loadSeasonAndOpponentAverages(
+        raw.playerId,
+        raw.statKey,
+        raw.opponentTeamId,
+      );
+      const parkMultiplier = projection.contextAdjustments.park;
+      const signals = buildSignals({
+        last10,
+        seasonAverage: seasonAndOpp.seasonAverage,
+        opponentAverage: seasonAndOpp.opponentAverage,
+        opponentGames: seasonAndOpp.opponentGames,
+        lineupSpot: null,                 // surfaced later via gameContext if needed
+        parkMultiplier,
+        venueName: null,
+      });
+
       lines.push({
         playerId: raw.playerId,
         playerName: player.fullName,
@@ -129,6 +185,7 @@ export async function resolveMlbSlate(
         bookableSide: bookable,
         modelDirection,
         projection,
+        signals,
         gamePk: raw.gamePk ?? null,
         venueName: null,                  // populated in a future slice
       });
@@ -203,4 +260,91 @@ async function loadPlayer(playerId: number): Promise<PlayerRow | null> {
 
 function statLabelOf(key: MlbStatKey): string {
   return statMeta(key)?.label ?? key;
+}
+
+// ---------- Signal extraction ----------
+
+// Lightweight season + opponent average pull. Same SQL pattern the
+// projection engine uses internally; duplicated here so the slate
+// pipeline can populate Wild Card signals without re-running the
+// full projection engine for these numbers.
+async function loadSeasonAndOpponentAverages(
+  playerId: number,
+  statKey: MlbStatKey,
+  opponentTeamId: number | undefined,
+): Promise<{
+  seasonAverage: number | null;
+  opponentAverage: number | null;
+  opponentGames: number;
+}> {
+  // Defer to mlbLast10Engine's underlying tables. The signal-extraction
+  // queries here are the same shape the projection engine uses — kept
+  // local to keep the dependency graph clean. Empty result tolerated.
+  const isHitter = !statKey.startsWith('ks') && statKey !== 'pitcher_outs'
+    && !statKey.startsWith('innings_') && !statKey.startsWith('hits_allowed')
+    && !statKey.startsWith('walks_allowed') && !statKey.startsWith('home_runs_allowed')
+    && !statKey.startsWith('earned_runs_') && !statKey.startsWith('pitches_thrown');
+  const table = isHitter ? 'mlb_hitting_stats' : 'mlb_pitching_stats';
+
+  // We can't easily compute "average for this stat" without the per-stat
+  // selector logic — skip that here and let the projection engine
+  // handle it. Just return opponent count for the opponent-average gate.
+  // Season average is left null in this lightweight path; Wild Card
+  // builder uses the leg's last10Average / projection baseline instead.
+  if (opponentTeamId === undefined) {
+    return { seasonAverage: null, opponentAverage: null, opponentGames: 0 };
+  }
+  const { rows } = await getPool().query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM ${table}
+      WHERE player_id = $1 AND opponent_team_id = $2`,
+    [playerId, opponentTeamId],
+  );
+  const opponentGames = Number(rows[0]?.count ?? 0);
+  return {
+    seasonAverage: null,
+    opponentAverage: null,
+    opponentGames,
+  };
+}
+
+// Compose the Wild Card signals block from the pieces we have. Numbers
+// gracefully degrade to null when source data is missing — the Wild
+// Card builder's tier gates already check for null and skip.
+function buildSignals(args: {
+  last10: import('./mlbLast10Engine.js').MlbLast10Result | null;
+  seasonAverage: number | null;
+  opponentAverage: number | null;
+  opponentGames: number;
+  lineupSpot: number | null;
+  parkMultiplier: number;
+  venueName: string | null;
+}): WildCardSignals {
+  const l10 = args.last10;
+  // L5 vs season delta is meaningful only when both are populated.
+  // Use the projection engine's seasonAverage when available; fall
+  // back to the L10 mean as a coarse season proxy.
+  const seasonRef = args.seasonAverage ?? l10?.last10Average ?? null;
+  const l5 = l10?.last5Average ?? null;
+  const l5VsSeasonDelta =
+    l5 !== null && seasonRef !== null ? l5 - seasonRef : null;
+  const opponentVsSeasonDelta =
+    args.opponentAverage !== null && seasonRef !== null
+      ? args.opponentAverage - seasonRef
+      : null;
+  return {
+    sampleSize: l10?.sampleSize ?? 0,
+    last10HitCount: l10?.hitRate?.hits ?? null,
+    last10HitRate: l10?.hitRate?.rate ?? null,
+    consistencyScore: l10?.consistencyScore ?? 0,
+    last5Average: l5,
+    last10Average: l10?.last10Average ?? 0,
+    l5VsSeasonDelta,
+    opponentAverage: args.opponentAverage,
+    opponentGames: args.opponentGames,
+    opponentVsSeasonDelta,
+    lineupSpot: args.lineupSpot,
+    parkMultiplier: args.parkMultiplier,
+    venueName: args.venueName,
+  };
 }
