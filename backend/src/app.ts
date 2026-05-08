@@ -43,7 +43,12 @@ export function createApp(): Express {
     next();
   });
 
-  app.use(express.json());
+  // Raise JSON body limit from the 100KB default. PrizePicks MLB
+  // slates can run 500-1000 lines in pipe format — well past the
+  // default. 4MB ceiling is generous; the slate route also caps the
+  // resolved-line count separately to keep request processing within
+  // Vercel's serverless function timeout.
+  app.use(express.json({ limit: '4mb' }));
 
   app.get('/', (_req, res) => {
     res.json({

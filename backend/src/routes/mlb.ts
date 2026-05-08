@@ -362,6 +362,21 @@ mlbRouter.post('/slate', async (req, res) => {
     });
     return;
   }
+  // Hard cap on slate size. Each leg does ~4-5 sequential DB queries
+  // (player lookup + projection + last10 + season/opponent averages)
+  // which adds up past Vercel's serverless timeout on big pastes.
+  // PrizePicks rarely posts more than ~500 MLB lines on a single
+  // night — anything well above that is usually duplicates or cross-
+  // sport pollution. Surface a clean error rather than time out.
+  const MLB_SLATE_MAX_LINES = 500;
+  if (resolvedLines.length > MLB_SLATE_MAX_LINES) {
+    res.status(413).json({
+      error: `Slate too large: ${resolvedLines.length} lines received, max ${MLB_SLATE_MAX_LINES}. Trim to MLB-only and dedupe — PrizePicks rarely posts more than ~500 MLB props in a night.`,
+      received: resolvedLines.length,
+      maxLines: MLB_SLATE_MAX_LINES,
+    });
+    return;
+  }
   const mode: MlbSlateMode =
     body.mode === 'safe' || body.mode === 'balanced' || body.mode === 'aggressive'
       || body.mode === 'insane' || body.mode === 'auto'
