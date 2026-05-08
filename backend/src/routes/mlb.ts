@@ -997,6 +997,66 @@ mlbRouter.get('/standings', async (req, res) => {
   }
 });
 
+// GET /api/mlb/team/:teamId/last-5
+//
+// The five most-recent games for a team, with W/L results. Powers
+// the "Last 5" strip on the game-detail page (mirrors ESPN).
+mlbRouter.get('/team/:teamId/last-5', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const teamId = Number(req.params.teamId);
+  if (!Number.isFinite(teamId) || teamId <= 0) {
+    res.status(400).json({ error: 'teamId must be a positive integer' });
+    return;
+  }
+  try {
+    const { rows } = await getPool().query<{
+      id: number;
+      game_date: Date;
+      home_team_id: number | null;
+      away_team_id: number | null;
+      home_score: number | null;
+      away_score: number | null;
+      home_abbr: string | null;
+      away_abbr: string | null;
+    }>(
+      `SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
+              g.home_score, g.away_score,
+              ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr
+         FROM mlb_games g
+         LEFT JOIN mlb_teams ht ON ht.id = g.home_team_id
+         LEFT JOIN mlb_teams at ON at.id = g.away_team_id
+        WHERE (g.home_team_id = $1 OR g.away_team_id = $1)
+          AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
+        ORDER BY g.game_date DESC
+        LIMIT 5`,
+      [teamId],
+    );
+    const games = rows.map((r) => {
+      const isHome = r.home_team_id === teamId;
+      const opp = isHome ? r.away_abbr : r.home_abbr;
+      const myScore = isHome ? r.home_score : r.away_score;
+      const oppScore = isHome ? r.away_score : r.home_score;
+      const result = (myScore ?? 0) > (oppScore ?? 0) ? 'W' : (myScore ?? 0) < (oppScore ?? 0) ? 'L' : 'T';
+      const date = r.game_date;
+      return {
+        gameId: r.id,
+        date: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`,
+        opponent: opp,
+        isHome,
+        result,
+        score: `${myScore ?? '—'}-${oppScore ?? '—'}`,
+      };
+    });
+    res.json({ teamId, games });
+  } catch (err) {
+    console.error('mlb/team/last-5 failed', err);
+    res.status(500).json({ error: 'mlb team last-5 failed' });
+  }
+});
+
 // GET /api/mlb/calibration?windowDays=30
 //
 // Returns predicted-vs-actual buckets across the rolling window.

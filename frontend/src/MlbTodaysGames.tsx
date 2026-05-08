@@ -9,6 +9,7 @@
 // see sportsbook consensus alongside the model's projections.
 
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getMlbToday, type MlbTodayGame, type MlbTodayResponse } from './api';
 
 export function MlbTodaysGames() {
@@ -75,7 +76,11 @@ function GameCard({ game }: { game: MlbTodayGame }) {
   const isFinal = game.status.abstractGameState === 'Final';
 
   return (
-    <div className={`mlb-today-game ${isLive ? 'live' : ''} ${isFinal ? 'final' : ''}`}>
+    <Link
+      to={`/mlb/game/${game.gamePk}`}
+      className={`mlb-today-game ${isLive ? 'live' : ''} ${isFinal ? 'final' : ''}`}
+      style={{ textDecoration: 'none', color: 'inherit', display: 'block', cursor: 'pointer' }}
+    >
       <div className="mlb-today-game-status">{status}</div>
 
       <div className="mlb-today-row">
@@ -121,7 +126,20 @@ function GameCard({ game }: { game: MlbTodayGame }) {
       )}
 
       {game.venue && <div className="mlb-today-venue">{game.venue}</div>}
-    </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 11,
+          color: '#7aa2ff',
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+        }}
+      >
+        View matchup · same-game parlay →
+      </div>
+    </Link>
   );
 }
 

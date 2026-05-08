@@ -1810,6 +1810,27 @@ export type MlbTodayResponse = {
   disclaimer: string;
 };
 
+export type MlbTeamLast5 = {
+  teamId: number;
+  games: Array<{
+    gameId: number;
+    date: string;
+    opponent: string | null;
+    isHome: boolean;
+    result: 'W' | 'L' | 'T';
+    score: string;
+  }>;
+};
+
+export async function getMlbTeamLast5(teamId: number): Promise<MlbTeamLast5> {
+  const res = await fetch(`${API_BASE}/api/mlb/team/${teamId}/last-5`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbTeamLast5;
+}
+
 export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
   const url = date
     ? `${API_BASE}/api/mlb/today?date=${date}`
