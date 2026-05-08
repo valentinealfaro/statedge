@@ -1981,6 +1981,21 @@ export type MlbLivePlayerStats = {
   homeRunsAllowed: number | null;
 };
 
+export type MlbLiveInning = {
+  num: number | null;
+  ordinalNum: string | null;
+  away: { runs: number | null; hits: number | null; errors: number | null };
+  home: { runs: number | null; hits: number | null; errors: number | null };
+};
+
+export type MlbLiveWinProbabilityEntry = {
+  atBatIndex: number;
+  inning: number;
+  halfInning: 'top' | 'bottom';
+  home: number;
+  away: number;
+};
+
 export type MlbLiveFeed = {
   gamePk: number;
   state: 'pregame' | 'live' | 'final';
@@ -1990,6 +2005,15 @@ export type MlbLiveFeed = {
   runners: { first: string | null; second: string | null; third: string | null };
   atBat: { batter: string | null; pitcher: string | null };
   score: { away: number | null; home: number | null };
+  totals: {
+    away: { runs: number | null; hits: number | null; errors: number | null };
+    home: { runs: number | null; hits: number | null; errors: number | null };
+  };
+  innings: MlbLiveInning[];
+  winProbability: {
+    current: { home: number; away: number } | null;
+    history: MlbLiveWinProbabilityEntry[];
+  };
   currentPlay: {
     inning: number | null;
     halfInning: 'top' | 'bottom' | null;

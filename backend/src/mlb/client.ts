@@ -1086,7 +1086,16 @@ export type MlbLiveFeed = {
         batter?: { fullName?: string };
         pitcher?: { fullName?: string };
       };
-      teams?: { home?: { runs?: number }; away?: { runs?: number } };
+      teams?: {
+        home?: { runs?: number; hits?: number; errors?: number; leftOnBase?: number };
+        away?: { runs?: number; hits?: number; errors?: number; leftOnBase?: number };
+      };
+      innings?: Array<{
+        num?: number;
+        ordinalNum?: string;
+        home?: { runs?: number; hits?: number; errors?: number; leftOnBase?: number };
+        away?: { runs?: number; hits?: number; errors?: number; leftOnBase?: number };
+      }>;
     };
     boxscore?: {
       teams: {
@@ -1096,6 +1105,53 @@ export type MlbLiveFeed = {
     };
   };
 };
+
+// Win-probability snapshots — one entry per at-bat. MLB exposes
+// these at /api/v1/game/{gamePk}/winProbability separately from
+// feed/live so the live route can fetch in parallel without
+// inflating the 2MB feed payload.
+export type MlbWinProbabilityEntry = {
+  atBatIndex: number;
+  inning: number;
+  halfInning: 'top' | 'bottom';
+  homeWinProbability: number;          // 0-100
+  awayWinProbability: number;          // 0-100
+  homeTeamWinProbabilityAdded: number; // delta added by this play
+};
+
+type RawWinProbabilityEntry = {
+  atBatIndex?: number;
+  about?: {
+    inning?: number;
+    halfInning?: string;
+  };
+  homeTeamWinProbability?: number;
+  awayTeamWinProbability?: number;
+  homeTeamWinProbabilityAdded?: number;
+};
+
+export async function getWinProbabilityHistory(
+  gamePk: number,
+): Promise<MlbWinProbabilityEntry[]> {
+  try {
+    const data = await fetchJson<RawWinProbabilityEntry[]>(
+      `/game/${gamePk}/winProbability`,
+    );
+    if (!Array.isArray(data)) return [];
+    return data
+      .filter((d) => d.atBatIndex !== undefined && d.about?.inning !== undefined)
+      .map((d) => ({
+        atBatIndex: d.atBatIndex!,
+        inning: d.about!.inning!,
+        halfInning: (d.about?.halfInning ?? 'top') as 'top' | 'bottom',
+        homeWinProbability: d.homeTeamWinProbability ?? 50,
+        awayWinProbability: d.awayTeamWinProbability ?? 50,
+        homeTeamWinProbabilityAdded: d.homeTeamWinProbabilityAdded ?? 0,
+      }));
+  } catch {
+    return [];
+  }
+}
 
 // statsapi.mlb.com hosts the live feed under /api/v1.1 (different
 // version than the rest). We hit it with a one-off URL since our

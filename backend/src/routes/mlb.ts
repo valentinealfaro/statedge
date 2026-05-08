@@ -21,6 +21,7 @@ import {
   getLiveGameFeed,
   getTeamInjuredList,
   getTodaysMlbGames,
+  getWinProbabilityHistory,
   MLB_DISCLAIMER,
   type MlbTodayGame,
   type EspnMlbOdds,
@@ -1589,7 +1590,14 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
   res.setHeader('X-Live-Cache', 'MISS');
 
   try {
-    const feed = await getLiveGameFeed(gamePk);
+    // Parallel fetch: feed/live (the heavy 2MB payload) +
+    // /winProbability (small array of per-AB snapshots). The cache
+    // absorbs concurrent users so this only fires once per 12s
+    // regardless of how many watchers are on the page.
+    const [feed, winProbHistory] = await Promise.all([
+      getLiveGameFeed(gamePk),
+      getWinProbabilityHistory(gamePk),
+    ]);
     const status = feed.gameData.status;
     const linescore = feed.liveData.linescore ?? {};
     const plays = feed.liveData.plays ?? { allPlays: [] };
@@ -1700,6 +1708,42 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
       }
     }
 
+    // Linescore: per-inning R/H/E for both sides + cumulative totals.
+    // The boxscore-style table users expect on every game page.
+    const innings = (linescore.innings ?? []).map((inn) => ({
+      num: inn.num ?? null,
+      ordinalNum: inn.ordinalNum ?? null,
+      away: {
+        runs: inn.away?.runs ?? null,
+        hits: inn.away?.hits ?? null,
+        errors: inn.away?.errors ?? null,
+      },
+      home: {
+        runs: inn.home?.runs ?? null,
+        hits: inn.home?.hits ?? null,
+        errors: inn.home?.errors ?? null,
+      },
+    }));
+
+    // Win-probability history (one entry per at-bat). Slim format
+    // ready for inline SVG line chart on the frontend.
+    const winProbability = {
+      // Latest entry — what to display as "current".
+      current: winProbHistory.length > 0
+        ? {
+            home: winProbHistory[winProbHistory.length - 1]!.homeWinProbability,
+            away: winProbHistory[winProbHistory.length - 1]!.awayWinProbability,
+          }
+        : null,
+      history: winProbHistory.map((e) => ({
+        atBatIndex: e.atBatIndex,
+        inning: e.inning,
+        halfInning: e.halfInning,
+        home: e.homeWinProbability,
+        away: e.awayWinProbability,
+      })),
+    };
+
     const payload = {
       gamePk,
       state,
@@ -1727,6 +1771,21 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
         away: linescore.teams?.away?.runs ?? null,
         home: linescore.teams?.home?.runs ?? null,
       },
+      // Cumulative runs/hits/errors at the team level.
+      totals: {
+        away: {
+          runs:   linescore.teams?.away?.runs ?? null,
+          hits:   linescore.teams?.away?.hits ?? null,
+          errors: linescore.teams?.away?.errors ?? null,
+        },
+        home: {
+          runs:   linescore.teams?.home?.runs ?? null,
+          hits:   linescore.teams?.home?.hits ?? null,
+          errors: linescore.teams?.home?.errors ?? null,
+        },
+      },
+      innings,
+      winProbability,
       currentPlay,
       recentPlays,
       playerStats,

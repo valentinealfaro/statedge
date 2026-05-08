@@ -86,16 +86,24 @@ export function MlbGameDetail() {
 }
 
 function GameView({ game }: { game: MlbTodayGame }) {
+  // Share one live-feed fetch across PlayByPlay + Linescore +
+  // WinProbability + SameGameParlay so we don't poll the live
+  // endpoint four times per cycle. Backend has a 12s cache so even
+  // un-shared fetches would coalesce upstream, but sharing here
+  // saves the function-invocation count on Vercel.
+  const liveFeed = useLiveGameFeed(game.gamePk);
   return (
     <>
       <GameHeader game={game} />
       {/* Live play-by-play floats to the top while the game is in
           progress — that's what users want to see first. Pregame and
           final games don't render anything for this section. */}
-      <PlayByPlay game={game} />
+      <PlayByPlay game={game} liveFeed={liveFeed} />
+      <Linescore game={game} feed={liveFeed} />
+      <WinProbability game={game} feed={liveFeed} />
       <GameOddsAndPredictor game={game} />
       <ProbablePitchers game={game} />
-      <SameGameParlay game={game} />
+      <SameGameParlay game={game} liveFeed={liveFeed} />
       <Lineups game={game} />
       <Leaders game={game} />
       <Injuries game={game} />
@@ -103,6 +111,33 @@ function GameView({ game }: { game: MlbTodayGame }) {
       <LastFiveStrip game={game} />
     </>
   );
+}
+
+// Single source of truth for the live game feed. Polls every 30s
+// while the game is live, 90s pregame/final. Backend has a 12s
+// cache so consecutive client calls within that window are free.
+function useLiveGameFeed(gamePk: number): MlbLiveFeed | null {
+  const [feed, setFeed] = useState<MlbLiveFeed | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMlbGameLive(gamePk)
+      .then((f) => { if (!cancelled) setFeed(f); })
+      .catch(() => { /* silent — pregame/final still render fine */ });
+    return () => { cancelled = true; };
+  }, [gamePk, tick]);
+
+  useEffect(() => {
+    const live = feed?.state === 'live';
+    const pollMs = live ? 30_000 : 90_000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, pollMs);
+    return () => window.clearInterval(interval);
+  }, [feed?.state]);
+
+  return feed;
 }
 
 // Phase B preview hook — single fetch, shared across the three sections
@@ -337,11 +372,16 @@ function gradeLeg(
   return 'PROGRESS';
 }
 
-function SameGameParlay({ game }: { game: MlbTodayGame }) {
+function SameGameParlay({
+  game,
+  liveFeed,
+}: {
+  game: MlbTodayGame;
+  liveFeed: MlbLiveFeed | null;
+}) {
   const [sgp, setSgp] = useState<MlbGameSgp | null>(null);
-  const [live, setLive] = useState<MlbLiveFeed | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
+  const live = liveFeed;     // alias kept for downstream code
 
   // Dedicated per-game SGP endpoint. Resolves every line from this
   // matchup (50-150 typical) and returns the top 10 by edge%, NOT
@@ -356,25 +396,6 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [game.gamePk]);
-
-  // Pull live feed for grading. Re-poll every 15s when game is live;
-  // pregame/final fetches once. The backend has a 12s server-side
-  // cache so polling is cheap regardless of concurrent users.
-  useEffect(() => {
-    let cancelled = false;
-    getMlbGameLive(game.gamePk)
-      .then((f) => { if (!cancelled) setLive(f); })
-      .catch(() => { /* silent — pregame/final still grade fine */ });
-    return () => { cancelled = true; };
-  }, [game.gamePk, tick]);
-
-  useEffect(() => {
-    if (live?.state !== 'live') return;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, 30_000);
-    return () => window.clearInterval(interval);
-  }, [live?.state]);
 
   // Top 4 legs by edge from this matchup's pool. The endpoint already
   // sorts by edge% and dedupes by player, so we just slice.
@@ -804,33 +825,14 @@ function Leaders({ game }: { game: MlbTodayGame }) {
   );
 }
 
-function PlayByPlay({ game }: { game: MlbTodayGame }) {
-  const [feed, setFeed] = useState<MlbLiveFeed | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-
-  // Poll every 30s while live, every 90s while pregame/final. We
-  // still poll pregame in case the game starts; once it's final we
-  // back off but keep the last snapshot rendered. Pause when the
-  // tab is hidden — saves bandwidth and avoids stale UI.
-  useEffect(() => {
-    let cancelled = false;
-    getMlbGameLive(game.gamePk)
-      .then((f) => { if (!cancelled) setFeed(f); })
-      .catch((err: Error) => { if (!cancelled) setError(err.message); });
-    return () => { cancelled = true; };
-  }, [game.gamePk, tick]);
-
-  useEffect(() => {
-    const live = feed?.state === 'live';
-    const pollMs = live ? 30_000 : 90_000;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, pollMs);
-    return () => window.clearInterval(interval);
-  }, [feed?.state]);
-
-  if (error) return null;
+function PlayByPlay({
+  game,
+  liveFeed,
+}: {
+  game: MlbTodayGame;
+  liveFeed: MlbLiveFeed | null;
+}) {
+  const feed = liveFeed;
   if (!feed) return null;
   // Don't render anything pre-game — the rest of the page (pitchers,
   // lineups, leaders) is the pregame story. Once the game starts,
@@ -932,6 +934,177 @@ function PlayByPlay({ game }: { game: MlbTodayGame }) {
       {feed.recentPlays.length === 0 && (
         <p className="muted small" style={{ marginTop: 8 }}>No plays recorded yet.</p>
       )}
+    </details>
+  );
+}
+
+// Linescore — per-inning R/H/E table. Standard ESPN-style box at the
+// top of every live/final game. Shows up empty pre-game.
+function Linescore({ game, feed }: { game: MlbTodayGame; feed: MlbLiveFeed | null }) {
+  if (!feed || feed.innings.length === 0) return null;
+  // Display all played innings + 9 placeholder. Always pad to 9 so
+  // the table reads like ESPN's even early in the game.
+  const maxInning = Math.max(9, ...feed.innings.map((i) => i.num ?? 0));
+  const inningNums: number[] = [];
+  for (let i = 1; i <= maxInning; i++) inningNums.push(i);
+  const inningByNum = new Map(feed.innings.map((i) => [i.num ?? 0, i]));
+
+  const cell = (v: number | null | undefined): string =>
+    v === null || v === undefined ? '—' : String(v);
+
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading">Linescore</summary>
+      <div className="mlb-game-twocol-scroll" style={{ marginTop: 8 }}>
+        <table className="mlb-mini-table">
+          <thead>
+            <tr>
+              <th></th>
+              {inningNums.map((n) => (
+                <th key={n} className="num">{n}</th>
+              ))}
+              <th className="num" style={{ paddingLeft: 12, borderLeft: '1px solid var(--border-subtle)' }}>R</th>
+              <th className="num">H</th>
+              <th className="num">E</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(['away', 'home'] as const).map((side) => {
+              const t = side === 'away' ? feed.totals.away : feed.totals.home;
+              const abbr = side === 'away' ? game.away.abbreviation : game.home.abbreviation;
+              return (
+                <tr key={side}>
+                  <td><strong>{abbr}</strong></td>
+                  {inningNums.map((n) => {
+                    const inn = inningByNum.get(n);
+                    const r = side === 'away' ? inn?.away.runs : inn?.home.runs;
+                    return (
+                      <td key={n} className="num" style={r !== null && r !== undefined && r > 0 ? { fontWeight: 700 } : undefined}>
+                        {cell(r)}
+                      </td>
+                    );
+                  })}
+                  <td className="num" style={{ fontWeight: 800, paddingLeft: 12, borderLeft: '1px solid var(--border-subtle)' }}>{cell(t.runs)}</td>
+                  <td className="num">{cell(t.hits)}</td>
+                  <td className="num">{cell(t.errors)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+// Win probability — inline SVG line chart of the home team's win
+// probability over the course of the game. Plus a current snapshot
+// "CIN 56.4% / HOU 43.6%" header so users see at a glance who's
+// favored right now. Same data ESPN shows on its game page.
+function WinProbability({ game, feed }: { game: MlbTodayGame; feed: MlbLiveFeed | null }) {
+  if (!feed) return null;
+  const history = feed.winProbability.history;
+  if (history.length === 0) return null;
+
+  const current = feed.winProbability.current;
+  const homeAbbr = game.home.abbreviation;
+  const awayAbbr = game.away.abbreviation;
+
+  // Chart geometry — 100% wide, 120px tall, padding for axis labels.
+  const W = 600;
+  const H = 120;
+  const PAD_X = 30;
+  const PAD_Y = 8;
+  const innerW = W - PAD_X * 2;
+  const innerH = H - PAD_Y * 2;
+
+  // X axis: at-bat index (0 to N-1). Y axis: home win prob (0-100).
+  // Higher home prob = line goes up. Below 50 = away favored.
+  const points = history.map((e, i) => {
+    const x = PAD_X + (i / Math.max(1, history.length - 1)) * innerW;
+    const y = PAD_Y + (1 - e.home / 100) * innerH;     // invert: 100 at top
+    return { x, y, e };
+  });
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+
+  // Area fill below the line (toward 50%) — green when home is winning,
+  // red when away is. Using a simple two-color split via a 50% line.
+  const midY = PAD_Y + 0.5 * innerH;
+
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading" style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span>Win probability</span>
+        {current && (
+          <span style={{ display: 'flex', gap: 12, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}>
+            <span style={{ color: current.home >= current.away ? '#66bb6a' : '#7aa2ff' }}>
+              {homeAbbr} {current.home.toFixed(1)}%
+            </span>
+            <span style={{ opacity: 0.5 }}>/</span>
+            <span style={{ color: current.away >= current.home ? '#66bb6a' : '#7aa2ff' }}>
+              {awayAbbr} {current.away.toFixed(1)}%
+            </span>
+          </span>
+        )}
+      </summary>
+      <div style={{ marginTop: 8, overflowX: 'auto' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          height={H}
+          style={{ display: 'block', maxWidth: '100%' }}
+          role="img"
+          aria-label={`Win probability chart — ${homeAbbr} home line`}
+        >
+          {/* 50% baseline */}
+          <line
+            x1={PAD_X} x2={W - PAD_X} y1={midY} y2={midY}
+            stroke="rgba(255,255,255,0.18)"
+            strokeDasharray="3 4"
+          />
+          {/* Y axis ticks at 0 / 25 / 50 / 75 / 100 */}
+          {[0, 25, 50, 75, 100].map((v) => {
+            const y = PAD_Y + (1 - v / 100) * innerH;
+            return (
+              <text
+                key={v}
+                x={PAD_X - 4} y={y + 3}
+                textAnchor="end"
+                fontSize="9"
+                fill="rgba(255,255,255,0.45)"
+              >
+                {v}
+              </text>
+            );
+          })}
+          {/* Home win prob line */}
+          <path
+            d={path}
+            fill="none"
+            stroke="#7aa2ff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {/* Latest point dot */}
+          {points.length > 0 && (
+            <circle
+              cx={points[points.length - 1]!.x}
+              cy={points[points.length - 1]!.y}
+              r="3"
+              fill="#7aa2ff"
+            />
+          )}
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.45)', padding: `0 ${PAD_X}px` }}>
+          <span>{awayAbbr} (top of chart = home favored)</span>
+          <span>{homeAbbr}</span>
+        </div>
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Computed by MLB Stats API per at-bat — same model ESPN uses. Each turning point is a play that
+        materially changed the win odds.
+      </p>
     </details>
   );
 }
