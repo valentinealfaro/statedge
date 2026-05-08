@@ -17,6 +17,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   buildMlbSlateRequest,
+  clearMlbDailySlate,
+  getMlbDailySlate,
+  setMlbDailySlate,
+  type MlbDailySlateResponse,
   type MlbSlateResponse,
   type MlbWildCardCombo,
   type RawMlbSlateLine,
@@ -24,6 +28,11 @@ import {
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
+
+// Admin secret stored in localStorage so the publish flow doesn't
+// re-prompt every page load. Only writers need it; readers (the
+// public view) don't.
+const ADMIN_KEY = 'statedge:mlbSlate:adminSecret';
 
 type ModeKey = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
 
@@ -153,6 +162,82 @@ export function MlbSlate() {
   const [skipDedup, setSkipDedup] = useState(false);
   const [skippedCount, setSkippedCount] = useState(0);
 
+  // Today's admin-published slate. Loaded on mount; what every public
+  // visitor sees by default. The paste-and-build form below is only
+  // shown to admins (those with the secret).
+  const [today, setToday] = useState<MlbDailySlateResponse | null>(null);
+  const [todayError, setTodayError] = useState<string | null>(null);
+  const [adminSecret, setAdminSecret] = useState<string>(() => {
+    try { return localStorage.getItem(ADMIN_KEY) ?? ''; } catch { return ''; }
+  });
+  const [adminMode, setAdminMode] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const isAdmin = adminSecret.trim().length > 0;
+
+  // Fetch today's published slate on mount + after every publish.
+  useEffect(() => {
+    let cancelled = false;
+    setTodayError(null);
+    getMlbDailySlate('balanced')
+      .then((r) => { if (!cancelled) setToday(r); })
+      .catch((err: Error) => { if (!cancelled) setTodayError(err.message); });
+    return () => { cancelled = true; };
+  }, [publishMessage]);    // re-fetch after a successful publish
+
+  // Persist admin secret across reloads.
+  useEffect(() => {
+    try {
+      if (adminSecret.trim().length > 0) localStorage.setItem(ADMIN_KEY, adminSecret);
+      else localStorage.removeItem(ADMIN_KEY);
+    } catch { /* full quota */ }
+  }, [adminSecret]);
+
+  async function handlePublish() {
+    setPublishing(true);
+    setPublishMessage(null);
+    setError(null);
+    const format = detectFormat(linesText);
+    try {
+      let lines: RawMlbSlateLine[] | undefined;
+      if (format === 'json') {
+        try {
+          lines = JSON.parse(linesText) as RawMlbSlateLine[];
+        } catch {
+          throw new Error('Invalid JSON.');
+        }
+        if (!Array.isArray(lines) || lines.length === 0) {
+          throw new Error('JSON must be a non-empty array.');
+        }
+      }
+      const r = await setMlbDailySlate({
+        text: format === 'pipe' ? linesText : undefined,
+        lines: format === 'json' ? lines : undefined,
+        mode,
+        adminSecret,
+      });
+      setPublishMessage(`Published ${r.count} line${r.count === 1 ? '' : 's'} for ${r.date}.`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function handleClearToday() {
+    if (!confirm('Wipe today\'s published slate? Public visitors will see an empty page until you publish again.')) return;
+    setPublishing(true);
+    setPublishMessage(null);
+    try {
+      await clearMlbDailySlate(adminSecret);
+      setPublishMessage('Cleared today\'s slate.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   // Live count for the chip — derived so it updates after every save.
   const memoryCount = useMemo(() => Object.keys(seen).length, [seen]);
 
@@ -253,14 +338,64 @@ export function MlbSlate() {
     <div className="app">
       <NavBar />
       <div className="mlb-compare-shell">
-        <h1>MLB · Slate Builder</h1>
-        <p className="muted small">
-          Paste tonight's lines as JSON. The model projects each leg, then
-          builds Safe / Balanced / Aggressive / Insane cards respecting
-          per-size eligibility. If a card size can't earn its bar, the
-          slot honestly says so — no forced cards.
-        </p>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h1 style={{ margin: 0 }}>MLB · Slate</h1>
+          <button
+            type="button"
+            className="mlb-clear-player"
+            style={{ fontSize: 12 }}
+            onClick={() => setAdminMode((v) => !v)}
+            title={isAdmin ? 'Open the admin publish form to update today\'s slate.' : 'Authenticate as admin to publish a daily slate.'}
+          >
+            {adminMode ? '← Public view' : (isAdmin ? 'Admin →' : 'Admin login →')}
+          </button>
+        </div>
 
+        {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
+        {!adminMode && (
+          <PublicTodaySlate today={today} error={todayError} />
+        )}
+
+        {/* ADMIN VIEW — paste lines + Publish button. */}
+        {adminMode && !isAdmin && (
+          <section className="mlb-stat-section" style={{ marginTop: 12 }}>
+            <label className="mlb-label" htmlFor="mlb-admin-secret">Admin secret</label>
+            <input
+              id="mlb-admin-secret"
+              type="password"
+              className="mlb-stat-select"
+              autoComplete="off"
+              placeholder="Paste SLATE_ADMIN_SECRET"
+              value={adminSecret}
+              onChange={(e) => setAdminSecret(e.target.value)}
+            />
+            <p className="muted small" style={{ marginTop: 6 }}>
+              Stored in your browser's localStorage. Server-side env
+              var <code>SLATE_ADMIN_SECRET</code> must match.
+            </p>
+          </section>
+        )}
+
+        {adminMode && isAdmin && (
+          <p className="muted small" style={{ marginTop: 8 }}>
+            <strong>Admin mode.</strong> Paste tonight's lines below and
+            click <em>Publish today's slate</em>. The pasted lines stay
+            visible to all visitors at /mlb/slate until you publish again
+            or click <em>Clear today's slate</em>.
+            {' · '}
+            <button
+              type="button"
+              className="mlb-clear-player"
+              style={{ fontSize: 11, padding: '2px 8px' }}
+              onClick={() => { setAdminSecret(''); setAdminMode(false); }}
+            >
+              Sign out
+            </button>
+          </p>
+        )}
+
+        {/* The build / publish form (only when adminMode + secret present). */}
+        {adminMode && isAdmin && (
         <section className="mlb-stat-section">
           <label className="mlb-label" htmlFor="mlb-mode-select">Mode</label>
           <select
@@ -349,14 +484,87 @@ export function MlbSlate() {
               Tick "Force build all" to re-project them.
             </div>
           )}
+
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="mlb-build-btn"
+              style={{ background: 'var(--accent, #4fc3f7)' }}
+              onClick={handlePublish}
+              disabled={publishing}
+              title="Saves these lines as today's public slate. Visitors at /mlb/slate will see whatever you publish here."
+            >
+              {publishing ? 'Publishing…' : 'Publish today\'s slate'}
+            </button>
+            {today?.slate && (
+              <button
+                type="button"
+                className="mlb-clear-player"
+                onClick={handleClearToday}
+                disabled={publishing}
+                title="Wipe today's published slate."
+              >
+                Clear today's slate
+              </button>
+            )}
+            {publishMessage && (
+              <span className="mlb-info-banner" style={{ padding: '4px 10px', margin: 0, fontSize: 12 }}>
+                ✓ {publishMessage}
+              </span>
+            )}
+          </div>
+
           {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
         </section>
+        )}
 
         {loading && <Skeleton width="100%" height={240} style={{ marginTop: 20 }} />}
 
         {result && <SlateResultView data={result} />}
       </div>
     </div>
+  );
+}
+
+// Public view of today's admin-published slate. Default for every
+// visitor (and the only thing they see — the paste-and-build form
+// is gated behind admin login).
+function PublicTodaySlate({
+  today,
+  error,
+}: {
+  today: MlbDailySlateResponse | null;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <div className="mlb-info-banner mlb-info-error" style={{ marginTop: 12 }}>
+        Couldn't load today's slate: {error}
+      </div>
+    );
+  }
+  if (!today) {
+    return <Skeleton width="100%" height={300} style={{ marginTop: 20 }} />;
+  }
+  if (!today.slate || !today.resolved) {
+    return (
+      <div className="mlb-info-banner" style={{ marginTop: 12 }}>
+        <strong>No slate published yet today.</strong> Check back later
+        — admin posts the day's lines once tonight's PrizePicks board
+        is live. The builder runs Safe / Balanced / Aggressive / Insane
+        cards plus a Wild Card per the institutional engine.
+      </div>
+    );
+  }
+  return (
+    <>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Today's slate · <strong>{today.slate.date}</strong> ·{' '}
+        {today.slate.count} line{today.slate.count === 1 ? '' : 's'} ·{' '}
+        last updated {new Date(today.slate.updatedAt).toLocaleTimeString()}
+      </p>
+      <SlateResultView data={today.resolved} />
+    </>
   );
 }
 

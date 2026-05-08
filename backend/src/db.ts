@@ -956,6 +956,106 @@ export async function setDailySlateInDb(lines: StoredSlateLine[]): Promise<{
 }
 
 // -----------------------------------------------------------------
+// MLB daily slate — mirrors the NBA daily_slate table but stores the
+// pipe-format MLB lines (per the MLB slate route's contract). Same
+// admin-publishes-once-per-day flow: GET /api/mlb/slate/today reads
+// the published slate, POST replaces it, public users see whatever
+// was last posted.
+// -----------------------------------------------------------------
+
+export type MlbStoredDailyLine = {
+  playerId: number;
+  statKey: string;
+  line: number;
+  direction?: 'over' | 'under' | 'both';
+  gamePk?: number;
+  opponentTeamId?: number;
+  isHome?: boolean;
+  opposingPitcherId?: number;
+  // Original raw text (pipe-format) so the admin can re-edit later.
+  rawText?: string;
+};
+
+async function ensureMlbDailySlateTable(): Promise<void> {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS mlb_daily_slate (
+      slate_date DATE PRIMARY KEY,
+      lines JSONB NOT NULL,
+      raw_text TEXT,
+      mode TEXT,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Defensive idempotent column-add — old rows might predate raw_text/mode.
+  await getPool().query(`
+    DO $$ BEGIN
+      ALTER TABLE mlb_daily_slate ADD COLUMN IF NOT EXISTS raw_text TEXT;
+      ALTER TABLE mlb_daily_slate ADD COLUMN IF NOT EXISTS mode TEXT;
+    END $$;
+  `).catch(() => { /* ignore — older Postgres without DO $$ */ });
+}
+
+export async function getMlbDailySlateFromDb(): Promise<{
+  date: string;
+  lines: MlbStoredDailyLine[];
+  rawText: string | null;
+  mode: string | null;
+  updatedAt: string;
+} | null> {
+  await ensureMlbDailySlateTable();
+  const date = todayEt();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    lines: MlbStoredDailyLine[];
+    raw_text: string | null;
+    mode: string | null;
+    updated_at: Date;
+  }>(
+    `SELECT slate_date::text, lines, raw_text, mode, updated_at
+       FROM mlb_daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    date: r.slate_date,
+    lines: r.lines,
+    rawText: r.raw_text,
+    mode: r.mode,
+    updatedAt: r.updated_at.toISOString(),
+  };
+}
+
+export async function setMlbDailySlateInDb(opts: {
+  lines: MlbStoredDailyLine[];
+  rawText: string | null;
+  mode: string | null;
+}): Promise<{ date: string; count: number }> {
+  await ensureMlbDailySlateTable();
+  const date = todayEt();
+  await getPool().query(
+    `INSERT INTO mlb_daily_slate (slate_date, lines, raw_text, mode, updated_at)
+     VALUES ($1, $2::jsonb, $3, $4, NOW())
+     ON CONFLICT (slate_date) DO UPDATE
+       SET lines = EXCLUDED.lines,
+           raw_text = EXCLUDED.raw_text,
+           mode = EXCLUDED.mode,
+           updated_at = NOW()`,
+    [date, JSON.stringify(opts.lines), opts.rawText, opts.mode],
+  );
+  return { date, count: opts.lines.length };
+}
+
+export async function clearMlbDailySlateFromDb(): Promise<void> {
+  await ensureMlbDailySlateTable();
+  const date = todayEt();
+  await getPool().query(
+    `DELETE FROM mlb_daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+}
+
+// -----------------------------------------------------------------
 // Slate results — snapshotted pre-built parlays per ET date plus the
 // graded outcome once games are final. Schema lives in db/schema.sql;
 // we ensureSlateResultsTable on every read/write so a fresh DB doesn't

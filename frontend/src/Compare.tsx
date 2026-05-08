@@ -244,6 +244,17 @@ export function Compare() {
       {mode === 'pvt' && (
         <>
           <PlayerSearch selected={player} onSelect={setPlayer} />
+          {player && (
+            <p className="muted small" style={{ marginTop: 4 }}>
+              <a
+                href={`/nba/player/${player.id}`}
+                style={{ color: 'var(--accent, #4fc3f7)' }}
+                title="Open the full season game-by-game log for this player."
+              >
+                Season log for {player.fullName} →
+              </a>
+            </p>
+          )}
           {player && <TeamPicker selected={team} onSelect={setTeam} />}
           {player && team && <ComparisonView player={player} team={team} />}
         </>

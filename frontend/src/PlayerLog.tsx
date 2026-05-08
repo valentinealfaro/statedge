@@ -80,7 +80,7 @@ export function PlayerLog() {
   const queriedLineRaw = searchParams.get('line');
   const queriedLine = queriedLineRaw !== null ? Number(queriedLineRaw) : null;
 
-  const [player, setPlayer] = useState<{ playerId: number; firstName?: string; lastName?: string; teamAbbr?: string } | null>(null);
+  const [player, setPlayer] = useState<{ id: number; fullName: string; teamAbbreviation?: string | null } | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [selectedStat, setSelectedStat] = useState<Last10StatId>(queriedStat);
   const [lineInput, setLineInput] = useState<string>(
@@ -90,7 +90,7 @@ export function PlayerLog() {
   const [logError, setLogError] = useState<string | null>(null);
   const [logLoading, setLogLoading] = useState(false);
 
-  const playerName = player ? `${player.firstName ?? ''} ${player.lastName ?? ''}`.trim() : '';
+  const playerName = player?.fullName ?? '';
   useTitle(playerName ? [`${playerName} · Game Log`] : ['Player Log']);
 
   useEffect(() => {
@@ -139,8 +139,8 @@ export function PlayerLog() {
           <div className="mlb-projection" style={{ marginBottom: 12 }}>
             <div className="mlb-projection-head">
               <h1 style={{ margin: 0 }}>{playerName || `Player ${playerId}`}</h1>
-              {player.teamAbbr && (
-                <span className="mlb-projection-verdict">{player.teamAbbr}</span>
+              {player.teamAbbreviation && (
+                <span className="mlb-projection-verdict">{player.teamAbbreviation}</span>
               )}
             </div>
           </div>

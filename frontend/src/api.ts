@@ -1601,6 +1601,70 @@ export async function buildMlbSlateRequest(
   return (await res.json()) as MlbSlateResponse;
 }
 
+// ---------- MLB daily-slate (admin-published) ----------
+//
+// Mirrors the NBA daily-slate flow: GET returns whatever the admin
+// most-recently posted for today; POST replaces it (admin secret
+// required); DELETE clears it. Public visitors hit GET on page load.
+
+export type MlbDailySlateResponse = {
+  slate: {
+    date: string;
+    count: number;
+    rawText: string | null;
+    mode: string | null;
+    updatedAt: string;
+  } | null;
+  resolved: (MlbSlateResponse & { lineCount: number }) | null;
+};
+
+export async function getMlbDailySlate(
+  mode?: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto',
+): Promise<MlbDailySlateResponse> {
+  const url = mode
+    ? `${API_BASE}/api/mlb/slate/today?mode=${mode}`
+    : `${API_BASE}/api/mlb/slate/today`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbDailySlateResponse;
+}
+
+export async function setMlbDailySlate(opts: {
+  text?: string;
+  lines?: RawMlbSlateLine[];
+  mode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+  adminSecret: string;
+}): Promise<{ ok: boolean; date: string; count: number }> {
+  const res = await fetch(`${API_BASE}/api/mlb/slate/today`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-secret': opts.adminSecret,
+    },
+    body: JSON.stringify({ text: opts.text, lines: opts.lines, mode: opts.mode }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as { ok: boolean; date: string; count: number };
+}
+
+export async function clearMlbDailySlate(adminSecret: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/mlb/slate/today`, {
+    method: 'DELETE',
+    headers: { 'x-admin-secret': adminSecret },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as { ok: boolean };
+}
+
 export type MlbCalibrationBucket = {
   label: string;
   predictedAverage: number;

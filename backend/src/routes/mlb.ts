@@ -4,7 +4,14 @@
 // endpoints land in Phase 2+ once the engines exist.
 
 import { Router } from 'express';
-import { getPool, isDbConfigured } from '../db.js';
+import {
+  clearMlbDailySlateFromDb,
+  getMlbDailySlateFromDb,
+  getPool,
+  isDbConfigured,
+  setMlbDailySlateInDb,
+  type MlbStoredDailyLine,
+} from '../db.js';
 import {
   getEspnMlbOddsByMatchup,
   getTodaysMlbGames,
@@ -375,6 +382,186 @@ mlbRouter.get('/projection', async (req, res) => {
     }
     console.error('mlb/projection failed', err);
     res.status(500).json({ error: 'mlb projection failed' });
+  }
+});
+
+// GET /api/mlb/slate/today
+//
+// Returns today's admin-published slate (as raw lines + the built
+// card combos). Public endpoint — anyone visiting /mlb/slate sees
+// whatever the admin most-recently posted for today's ET date. If
+// no slate has been published, returns { slate: null, resolved: null }.
+//
+// "Today" is the US Eastern calendar date; matches the NBA flow so
+// MLB's daily-slate semantics are consistent.
+mlbRouter.get('/slate/today', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ slate: null, resolved: null });
+    return;
+  }
+  try {
+    const stored = await getMlbDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ slate: null, resolved: null });
+      return;
+    }
+    const mode: MlbSlateMode =
+      stored.mode === 'safe' || stored.mode === 'balanced' ||
+      stored.mode === 'aggressive' || stored.mode === 'insane' ||
+      stored.mode === 'auto'
+        ? stored.mode
+        : 'balanced';
+    const requestedMode = (req.query.mode as MlbSlateMode | undefined) ?? mode;
+    const { lines: resolvedLines, unresolved } = await resolveMlbSlate(
+      stored.lines.map((l) => ({
+        playerId: l.playerId,
+        statKey: l.statKey as MlbStatKey,
+        line: l.line,
+        direction: l.direction,
+        gamePk: l.gamePk,
+        opponentTeamId: l.opponentTeamId,
+        isHome: l.isHome,
+        opposingPitcherId: l.opposingPitcherId,
+      })),
+    );
+    const slate = buildMlbSlate(resolvedLines, requestedMode);
+    res.json({
+      slate: {
+        date: stored.date,
+        count: stored.lines.length,
+        rawText: stored.rawText,
+        mode: stored.mode,
+        updatedAt: stored.updatedAt,
+      },
+      resolved: {
+        ...slate,
+        unresolved,
+        lineCount: resolvedLines.length,
+        requestedMode,
+        disclaimer: MLB_DISCLAIMER,
+      },
+    });
+  } catch (err) {
+    console.error('mlb/slate/today GET failed', err);
+    res.status(500).json({ error: 'mlb slate today fetch failed' });
+  }
+});
+
+// POST /api/mlb/slate/today
+// Body: { text?: string, lines?: RawMlbLine[], mode?: MlbSlateMode }
+//
+// Admin endpoint — replaces today's slate wholesale. Requires
+// SLATE_ADMIN_SECRET env var to be set; client must send the
+// `x-admin-secret` header. Same auth pattern as /api/slate/today
+// for NBA.
+//
+// Persists the parsed RawMlbLine[] AND the original raw text (so the
+// admin can edit the next day's slate against what they posted),
+// AND the chosen mode.
+mlbRouter.post('/slate/today', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const secret = process.env.SLATE_ADMIN_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured on server' });
+    return;
+  }
+  const provided = req.header('x-admin-secret');
+  if (provided !== secret) {
+    res.status(401).json({ error: 'admin secret mismatch' });
+    return;
+  }
+  const body = req.body as {
+    lines?: RawMlbLine[];
+    text?: string;
+    mode?: MlbSlateMode;
+  } | undefined;
+  if (!body || ((!Array.isArray(body.lines) || body.lines.length === 0) && !body.text)) {
+    res.status(400).json({
+      error: 'Body must include `lines` (RawMlbLine[]) or `text` (pipe-format string).',
+    });
+    return;
+  }
+  // Resolve text → lines if provided. Same parser the /slate POST uses.
+  let parsedLines: RawMlbLine[] = Array.isArray(body.lines) ? body.lines : [];
+  let parseUnresolved: Array<{ rawLine: string; reason: string }> = [];
+  if (body.text) {
+    try {
+      const parsed = await parseMlbSlateText(body.text);
+      parsedLines = [...parsedLines, ...parsed.lines];
+      parseUnresolved = parsed.unresolved;
+    } catch (err) {
+      res.status(500).json({
+        error: 'mlb slate text parse failed',
+        detail: (err as Error).message,
+      });
+      return;
+    }
+  }
+  if (parsedLines.length === 0) {
+    res.status(400).json({
+      error: 'No usable lines after parsing.',
+      unresolved: parseUnresolved,
+    });
+    return;
+  }
+  // Same 500-line cap as the build endpoint.
+  if (parsedLines.length > 500) {
+    res.status(413).json({
+      error: `Slate too large: ${parsedLines.length} lines, max 500.`,
+      received: parsedLines.length,
+      maxLines: 500,
+    });
+    return;
+  }
+  const stored: MlbStoredDailyLine[] = parsedLines.map((l) => ({
+    playerId: l.playerId,
+    statKey: l.statKey,
+    line: l.line,
+    direction: l.direction,
+    gamePk: l.gamePk,
+    opponentTeamId: l.opponentTeamId,
+    isHome: l.isHome,
+    opposingPitcherId: l.opposingPitcherId,
+  }));
+  try {
+    const out = await setMlbDailySlateInDb({
+      lines: stored,
+      rawText: body.text ?? null,
+      mode: body.mode ?? 'balanced',
+    });
+    res.json({ ok: true, ...out, unresolved: parseUnresolved });
+  } catch (err) {
+    console.error('mlb/slate/today POST failed', err);
+    res.status(500).json({ error: 'mlb slate today write failed' });
+  }
+});
+
+// DELETE /api/mlb/slate/today — admin only. Wipes today's slate so
+// the public page renders empty until the next POST.
+mlbRouter.delete('/slate/today', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const secret = process.env.SLATE_ADMIN_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured on server' });
+    return;
+  }
+  const provided = req.header('x-admin-secret');
+  if (provided !== secret) {
+    res.status(401).json({ error: 'admin secret mismatch' });
+    return;
+  }
+  try {
+    await clearMlbDailySlateFromDb();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('mlb/slate/today DELETE failed', err);
+    res.status(500).json({ error: 'mlb slate today clear failed' });
   }
 });
 
