@@ -6,6 +6,7 @@ import { EspnGameDetail } from './EspnGameDetail';
 import { GameDetail } from './GameDetail';
 import { MlbCalibration } from './MlbCalibration';
 import { MlbCompare } from './MlbCompare';
+import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
 import { MlbStandings } from './MlbStandings';
 import { Pricing } from './Pricing';
@@ -37,6 +38,7 @@ export function App() {
           <Route path="/mlb/slate" element={<MlbSlate />} />
           <Route path="/mlb/calibration" element={<MlbCalibration />} />
           <Route path="/mlb/standings" element={<MlbStandings />} />
+          <Route path="/mlb/player/:playerId" element={<MlbPlayerLog />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}
           <Route path="/game/:gameId" element={<GameDetail />} />

@@ -1232,6 +1232,15 @@ export type MlbSearchPlayer = {
   team: { id: number; fullName: string | null; abbreviation: string | null } | null;
 };
 
+export async function getMlbPlayer(playerId: number): Promise<MlbSearchPlayer> {
+  const res = await fetch(`${API_BASE}/api/mlb/player/${playerId}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbSearchPlayer;
+}
+
 export async function searchMlbPlayers(query: string): Promise<MlbSearchPlayer[]> {
   if (query.trim().length < 2) return [];
   const res = await fetch(
@@ -1282,11 +1291,17 @@ export async function getMlbPlayerLast10(opts: {
   stat: string;
   line?: number;
   direction?: 'OVER' | 'UNDER';
+  // Optional override — default 10. Game-log page passes 200 to pull
+  // the full season (capped at 500 server-side).
+  limit?: number;
 }): Promise<MlbLast10Response> {
   const params = new URLSearchParams({ stat: opts.stat });
   if (opts.line !== undefined && opts.direction) {
     params.set('line', String(opts.line));
     params.set('direction', opts.direction);
+  }
+  if (opts.limit !== undefined) {
+    params.set('limit', String(opts.limit));
   }
   const res = await fetch(
     `${API_BASE}/api/mlb/player/${opts.playerId}/last-10?${params.toString()}`,

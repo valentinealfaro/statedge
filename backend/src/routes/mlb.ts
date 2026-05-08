@@ -158,10 +158,68 @@ mlbRouter.get('/search/players', async (req, res) => {
   }
 });
 
-// GET /api/mlb/player/:playerId/last-10?stat=&line=&direction=
+// GET /api/mlb/player/:playerId — basic player info for the game-log
+// page (header). Returns name, position, team, handedness. 404 when
+// the ID isn't in mlb_players.
+mlbRouter.get('/player/:playerId', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const playerId = Number(req.params.playerId);
+  if (!Number.isFinite(playerId) || playerId <= 0) {
+    res.status(400).json({ error: 'playerId must be a positive integer' });
+    return;
+  }
+  try {
+    const { rows } = await getPool().query<{
+      id: number;
+      full_name: string;
+      position: string | null;
+      bats: string | null;
+      throws: string | null;
+      is_pitcher: boolean;
+      team_id: number | null;
+      team_abbr: string | null;
+      team_name: string | null;
+    }>(
+      `SELECT p.id, p.full_name, p.position, p.bats, p.throws, p.is_pitcher,
+              p.team_id, t.abbreviation AS team_abbr, t.full_name AS team_name
+         FROM mlb_players p
+         LEFT JOIN mlb_teams t ON t.id = p.team_id
+        WHERE p.id = $1`,
+      [playerId],
+    );
+    const r = rows[0];
+    if (!r) {
+      res.status(404).json({ error: `Player ${playerId} not found.` });
+      return;
+    }
+    res.json({
+      id: r.id,
+      fullName: r.full_name,
+      position: r.position,
+      bats: r.bats,
+      throws: r.throws,
+      playerType: r.is_pitcher ? 'pitcher' : 'hitter',
+      team: r.team_id !== null
+        ? { id: r.team_id, fullName: r.team_name, abbreviation: r.team_abbr }
+        : null,
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/player failed', err);
+    res.status(500).json({ error: 'mlb player fetch failed' });
+  }
+});
+
+// GET /api/mlb/player/:playerId/last-10?stat=&line=&direction=&limit=
 //
-// Reads the player's most recent 10 games from the appropriate stats
+// Reads the player's most recent N games from the appropriate stats
 // table (hitting if the player is a hitter, pitching if a pitcher).
+// Default N=10; pass limit=200 for the full season log on the
+// player game-log page.
+//
 // Enforces the type-restriction rule — requesting a hitter stat on a
 // pitcher (or vice versa) returns 400 with a helpful message.
 mlbRouter.get('/player/:playerId/last-10', async (req, res) => {
@@ -196,12 +254,21 @@ mlbRouter.get('/player/:playerId/last-10', async (req, res) => {
     });
     return;
   }
+  // Optional limit override — UI's last-10 sticks with default 10;
+  // game-log page asks for 200 to get the full season.
+  const limitRaw = req.query.limit as string | undefined;
+  const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+  if (limit !== undefined && (!Number.isFinite(limit) || limit < 1 || limit > 500)) {
+    res.status(400).json({ error: 'limit must be 1..500 when provided' });
+    return;
+  }
   try {
     const result = await computeMlbLast10({
       playerId,
       statKey: statKey as MlbStatKey,
       line,
       direction,
+      limit,
     });
     res.json({ ...result, disclaimer: MLB_DISCLAIMER });
   } catch (err) {

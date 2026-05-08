@@ -247,16 +247,26 @@ export function MlbCompare() {
             <p className="muted small">No active players match "{query}".</p>
           )}
           {selectedPlayer && (
-            <button
-              type="button"
-              className="mlb-clear-player"
-              onClick={() => {
-                setSelectedPlayer(null);
-                setQuery('');
-              }}
-            >
-              Clear
-            </button>
+            <>
+              <a
+                className="mlb-clear-player"
+                style={{ marginRight: 6, textDecoration: 'none' }}
+                href={`/mlb/player/${selectedPlayer.id}${selectedStat ? `?stat=${selectedStat}` : ''}${lineInput && selectedStat ? `&line=${lineInput}` : ''}`}
+                title="Open the full season game-by-game log for this player + stat."
+              >
+                Season log →
+              </a>
+              <button
+                type="button"
+                className="mlb-clear-player"
+                onClick={() => {
+                  setSelectedPlayer(null);
+                  setQuery('');
+                }}
+              >
+                Clear
+              </button>
+            </>
           )}
         </section>
 
