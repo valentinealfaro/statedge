@@ -5149,3 +5149,101 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   line-height: 1.5;
 }
 
+/* Projection panel — model output for a specific line + direction. */
+.mlb-projection {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.mlb-projection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.mlb-projection-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.mlb-projection-verdict {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+}
+.mlb-projection-verdict.ev-pos {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+  border-color: rgba(76, 175, 80, 0.40);
+}
+.mlb-projection-verdict.ev-neutral {
+  background: rgba(33, 150, 243, 0.12);
+  color: #64b5f6;
+  border-color: rgba(33, 150, 243, 0.30);
+}
+.mlb-projection-verdict.ev-neg {
+  background: rgba(229, 57, 53, 0.15);
+  color: #ef5350;
+  border-color: rgba(229, 57, 53, 0.40);
+}
+.mlb-projection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.mlb-stat.trap-clean    .mlb-stat-value { color: var(--hot); }
+.mlb-stat.trap-mild     .mlb-stat-value { color: var(--text-1); }
+.mlb-stat.trap-moderate .mlb-stat-value { color: var(--warn, #ffa726); }
+.mlb-stat.trap-high     .mlb-stat-value { color: #ef5350; }
+.mlb-stat.trap-extreme  .mlb-stat-value { color: #ef5350; }
+
+.mlb-projection-eligibility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.mlb-elig-label {
+  font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.mlb-elig-chip {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+.mlb-elig-chip.on  {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+  border-color: rgba(76, 175, 80, 0.40);
+}
+.mlb-elig-chip.off {
+  background: var(--surface-2);
+  color: var(--text-3);
+  border-color: var(--border-subtle);
+}
+.mlb-projection-reasons {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.mlb-projection-reasons li { margin-bottom: 3px; }
+

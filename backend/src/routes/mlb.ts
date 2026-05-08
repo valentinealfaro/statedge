@@ -16,6 +16,7 @@ import {
   MlbPlayerNotFoundError,
   MlbStatTypeMismatchError,
 } from '../services/mlbLast10Engine.js';
+import { projectMlbStat } from '../services/mlbProjectionEngine.js';
 import {
   listStatsForPlayerType,
   statMeta,
@@ -202,5 +203,76 @@ mlbRouter.get('/player/:playerId/last-10', async (req, res) => {
     }
     console.error('mlb/player/last-10 failed', err);
     res.status(500).json({ error: 'mlb last-10 fetch failed' });
+  }
+});
+
+// GET /api/mlb/projection?playerId=&stat=&line=&direction=&opponentTeamId=&isHome=
+//
+// Single-leg projection. Returns the model's projected value, the
+// probability the line hits in the requested direction, plus risk /
+// trap / edge / EV scores and human-readable reason codes. v0 doesn't
+// take park / weather / pitch-arsenal context — those land with later
+// phases. Slate-builder eligibility flags surface here so frontend
+// can show "qualifies for Safe / Balanced" before Phase 4 ships.
+mlbRouter.get('/projection', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const playerId = Number(req.query.playerId);
+  if (!Number.isFinite(playerId) || playerId <= 0) {
+    res.status(400).json({ error: 'playerId is required' });
+    return;
+  }
+  const statKey = req.query.stat as string | undefined;
+  if (!statKey || !statMeta(statKey)) {
+    res.status(400).json({ error: 'stat is required and must be a known MLB stat key' });
+    return;
+  }
+  const line = Number(req.query.line);
+  if (!Number.isFinite(line)) {
+    res.status(400).json({ error: 'line is required and must be numeric' });
+    return;
+  }
+  const direction = req.query.direction as string | undefined;
+  if (direction !== 'OVER' && direction !== 'UNDER') {
+    res.status(400).json({ error: 'direction must be OVER or UNDER' });
+    return;
+  }
+  const opponentRaw = req.query.opponentTeamId as string | undefined;
+  const opponentTeamId = opponentRaw !== undefined ? Number(opponentRaw) : undefined;
+  if (opponentTeamId !== undefined && !Number.isFinite(opponentTeamId)) {
+    res.status(400).json({ error: 'opponentTeamId must be numeric when provided' });
+    return;
+  }
+  const isHomeRaw = req.query.isHome as string | undefined;
+  const isHome =
+    isHomeRaw === 'true' ? true : isHomeRaw === 'false' ? false : undefined;
+
+  try {
+    const result = await projectMlbStat({
+      playerId,
+      statKey: statKey as MlbStatKey,
+      line,
+      direction,
+      opponentTeamId,
+      isHome,
+    });
+    res.json({ ...result, disclaimer: MLB_DISCLAIMER });
+  } catch (err) {
+    if (err instanceof MlbPlayerNotFoundError) {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    if (err instanceof MlbStatTypeMismatchError) {
+      res.status(400).json({
+        error: 'Selected stat is not available for this player type.',
+        detail: err.message,
+        playerType: err.playerType,
+      });
+      return;
+    }
+    console.error('mlb/projection failed', err);
+    res.status(500).json({ error: 'mlb projection failed' });
   }
 });

@@ -10,10 +10,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getMlbHealth,
   getMlbPlayerLast10,
+  getMlbProjection,
   getMlbStats,
   searchMlbPlayers,
   type MlbHealth,
   type MlbLast10Response,
+  type MlbProjectionResponse,
   type MlbSearchPlayer,
   type MlbStatMeta,
 } from './api';
@@ -37,6 +39,8 @@ export function MlbCompare() {
   const [last10, setLast10] = useState<MlbLast10Response | null>(null);
   const [last10Error, setLast10Error] = useState<string | null>(null);
   const [last10Loading, setLast10Loading] = useState(false);
+  const [projection, setProjection] = useState<MlbProjectionResponse | null>(null);
+  const [projectionLoading, setProjectionLoading] = useState(false);
 
   // Health check — surfaces the empty-DB state honestly so users know
   // why search returns nothing on a fresh install.
@@ -98,6 +102,7 @@ export function MlbCompare() {
   useEffect(() => {
     if (!selectedPlayer || !selectedStat) {
       setLast10(null);
+      setProjection(null);
       return;
     }
     const lineNum = lineInput.trim() === '' ? undefined : Number(lineInput);
@@ -119,6 +124,31 @@ export function MlbCompare() {
         setLast10(null);
         setLast10Error(err.message);
         setLast10Loading(false);
+      });
+
+    // Projection only fires when a line is provided. Without a line
+    // there's nothing to project against — empty state stays clean.
+    if (!includeLine) {
+      setProjection(null);
+      setProjectionLoading(false);
+      return;
+    }
+    setProjectionLoading(true);
+    getMlbProjection({
+      playerId: selectedPlayer.id,
+      stat: selectedStat,
+      line: lineNum,
+      direction,
+    })
+      .then((r) => {
+        setProjection(r);
+        setProjectionLoading(false);
+      })
+      .catch(() => {
+        // Projection failure shouldn't block the L10 view — silently
+        // drop it. The user still sees their distribution.
+        setProjection(null);
+        setProjectionLoading(false);
       });
   }, [selectedPlayer, selectedStat, lineInput, direction]);
 
@@ -266,6 +296,11 @@ export function MlbCompare() {
         )}
         {!last10Loading && last10 && <Last10Display data={last10} />}
 
+        {projectionLoading && (
+          <Skeleton width="100%" height={140} style={{ marginTop: 16 }} />
+        )}
+        {!projectionLoading && projection && <ProjectionPanel data={projection} />}
+
         {/* Compliance disclaimer — always rendered when MLB analytics
             are visible. Sourced from the API so the wording stays in
             sync with the backend constant. */}
@@ -359,6 +394,83 @@ function Stat({
     <div className="mlb-stat" title={hint}>
       <span className="mlb-stat-label">{label}</span>
       <span className="mlb-stat-value">{value}</span>
+    </div>
+  );
+}
+
+// Projection panel — surfaces what the model thinks about the line.
+// Mission-aligned: probability + edge + risk + trap, plus the
+// reason codes that explain WHY. No "lock" language; the soft 5-95%
+// cap on the probability is the engine's regression-to-the-mean
+// discipline made visible.
+function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
+  const evVerdict =
+    data.evScore >= 12 ? { label: 'Positive EV', cls: 'ev-pos' }
+    : data.evScore >= -2 ? { label: 'Neutral EV', cls: 'ev-neutral' }
+    : { label: 'Negative EV', cls: 'ev-neg' };
+
+  const trapClass =
+    data.trapScore <= 20 ? 'trap-clean'
+    : data.trapScore <= 40 ? 'trap-mild'
+    : data.trapScore <= 60 ? 'trap-moderate'
+    : data.trapScore <= 80 ? 'trap-high'
+    : 'trap-extreme';
+
+  return (
+    <div className="mlb-projection">
+      <div className="mlb-projection-head">
+        <h3>Model projection</h3>
+        <span className={`mlb-projection-verdict ${evVerdict.cls}`}>
+          {evVerdict.label}
+        </span>
+      </div>
+
+      <div className="mlb-projection-grid">
+        <div className="mlb-stat" title="Model's projected stat value for the upcoming game">
+          <span className="mlb-stat-label">Projection</span>
+          <span className="mlb-stat-value">{data.projection.toFixed(2)}</span>
+        </div>
+        <div className="mlb-stat" title="Probability the line hits in the chosen direction. Capped at 5-95% — no fake locks.">
+          <span className="mlb-stat-label">Probability</span>
+          <span className="mlb-stat-value">{data.probability.toFixed(1)}%</span>
+        </div>
+        <div className="mlb-stat" title="Model probability minus 50% break-even baseline">
+          <span className="mlb-stat-label">Edge</span>
+          <span className="mlb-stat-value">
+            {data.edgePercent >= 0 ? '+' : ''}{data.edgePercent.toFixed(1)}%
+          </span>
+        </div>
+        <div className="mlb-stat" title="Sample size + signal agreement. Higher = more reliable.">
+          <span className="mlb-stat-label">Confidence</span>
+          <span className="mlb-stat-value">{data.confidence}/100</span>
+        </div>
+        <div className="mlb-stat" title="Variance + stat-type risk. Higher = more fragile.">
+          <span className="mlb-stat-label">Risk</span>
+          <span className="mlb-stat-value">{data.riskScore}/100</span>
+        </div>
+        <div className={`mlb-stat ${trapClass}`} title={data.trapTier}>
+          <span className="mlb-stat-label">Trap score</span>
+          <span className="mlb-stat-value">{data.trapScore}/100</span>
+        </div>
+      </div>
+
+      <div className="mlb-projection-eligibility">
+        <span className="mlb-elig-label">Card eligibility:</span>
+        <span className={`mlb-elig-chip ${data.qualifiesForCards.safe ? 'on' : 'off'}`}>
+          {data.qualifiesForCards.safe ? '✓' : '✗'} Safe
+        </span>
+        <span className={`mlb-elig-chip ${data.qualifiesForCards.balanced ? 'on' : 'off'}`}>
+          {data.qualifiesForCards.balanced ? '✓' : '✗'} Balanced
+        </span>
+      </div>
+
+      {data.reasonCodes.length > 0 && (
+        <ul className="mlb-projection-reasons">
+          {data.reasonCodes.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

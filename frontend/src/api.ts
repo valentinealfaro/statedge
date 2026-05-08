@@ -1313,6 +1313,54 @@ export type MlbHealth = {
   disclaimer: string;
 };
 
+export type MlbProjectionResponse = {
+  projection: number;
+  probability: number;
+  confidence: number;
+  riskScore: number;
+  trapScore: number;
+  trapTier: 'Clean' | 'Mild Trap Risk' | 'Moderate Trap Risk' | 'High Trap Risk' | 'Extreme Trap Risk';
+  projectionDistanceScore: number;
+  edgePercent: number;
+  edgeScore: number;
+  evScore: number;
+  qualifiesForCards: { safe: boolean; balanced: boolean };
+  reasonCodes: string[];
+  weightsUsed: Record<string, number>;
+  disclaimer: string;
+};
+
+export async function getMlbProjection(opts: {
+  playerId: number;
+  stat: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  opponentTeamId?: number;
+  isHome?: boolean;
+}): Promise<MlbProjectionResponse> {
+  const params = new URLSearchParams({
+    playerId: String(opts.playerId),
+    stat: opts.stat,
+    line: String(opts.line),
+    direction: opts.direction,
+  });
+  if (opts.opponentTeamId !== undefined) {
+    params.set('opponentTeamId', String(opts.opponentTeamId));
+  }
+  if (opts.isHome !== undefined) {
+    params.set('isHome', String(opts.isHome));
+  }
+  const res = await fetch(`${API_BASE}/api/mlb/projection?${params.toString()}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      detail?: string;
+    };
+    throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbProjectionResponse;
+}
+
 export async function getMlbHealth(): Promise<MlbHealth> {
   const res = await fetch(`${API_BASE}/api/mlb/health`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
