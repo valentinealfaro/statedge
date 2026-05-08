@@ -9,6 +9,7 @@ import { MlbCompare } from './MlbCompare';
 import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
 import { MlbStandings } from './MlbStandings';
+import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
@@ -30,6 +31,7 @@ export function App() {
           <Route path="/nba/compare" element={<Compare />} />
           <Route path="/nba/slate" element={<Slate />} />
           <Route path="/nba/standings" element={<Standings />} />
+          <Route path="/nba/player/:playerId" element={<PlayerLog />} />
 
           {/* MLB — already mostly sport-grouped; canonical path
               for compare is now /mlb/compare. Old /mlb root
