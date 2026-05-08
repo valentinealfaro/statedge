@@ -23,6 +23,7 @@ import {
   recordMlbSlateProjections,
   type RecordableMlbCombo,
 } from '../services/mlbProjectionHistory.js';
+import { parseMlbSlateText } from '../services/mlbSlateTextParser.js';
 import { gradeMlbProjections } from '../services/mlbGrader.js';
 import { computeMlbCalibration } from '../services/mlbCalibration.js';
 import {
@@ -319,12 +320,38 @@ mlbRouter.post('/slate', async (req, res) => {
   }
   const body = req.body as {
     lines?: RawMlbLine[];
+    text?: string;
     mode?: MlbSlateMode;
     gameDate?: string;
   } | undefined;
-  if (!body || !Array.isArray(body.lines) || body.lines.length === 0) {
+  if (!body || ((!Array.isArray(body.lines) || body.lines.length === 0) && !body.text)) {
     res.status(400).json({
-      error: 'POST body must be { lines: RawMlbLine[], mode?: SlateMode, gameDate?: YYYY-MM-DD }.',
+      error: 'POST body must be { lines: RawMlbLine[] | text: pipe-format string, mode?: SlateMode, gameDate?: YYYY-MM-DD }.',
+    });
+    return;
+  }
+  // Resolve `text` (pipe format) into lines if provided. Errors here
+  // accumulate into the response's `unresolved` field — the slate
+  // still builds with whatever parsed cleanly.
+  let textParseUnresolved: Array<{ rawLine: string; reason: string }> = [];
+  let resolvedLines: RawMlbLine[] = Array.isArray(body.lines) ? body.lines : [];
+  if (body.text) {
+    try {
+      const parsed = await parseMlbSlateText(body.text);
+      resolvedLines = [...resolvedLines, ...parsed.lines];
+      textParseUnresolved = parsed.unresolved;
+    } catch (err) {
+      res.status(500).json({
+        error: 'mlb slate text parse failed',
+        detail: (err as Error).message,
+      });
+      return;
+    }
+  }
+  if (resolvedLines.length === 0) {
+    res.status(400).json({
+      error: 'No usable lines after parsing.',
+      unresolved: textParseUnresolved,
     });
     return;
   }
@@ -343,7 +370,7 @@ mlbRouter.post('/slate', async (req, res) => {
     return;
   }
   try {
-    const { lines, unresolved } = await resolveMlbSlate(body.lines);
+    const { lines, unresolved } = await resolveMlbSlate(resolvedLines);
     const slate = buildMlbSlate(lines, mode);
 
     // Persist if gameDate provided. Failure to persist doesn't fail
@@ -371,7 +398,12 @@ mlbRouter.post('/slate', async (req, res) => {
       ...slate,
       requestedMode: mode,
       lineCount: lines.length,
-      unresolved,
+      unresolved: [
+        // Player-resolution failures (parser couldn't find player) +
+        // pipeline failures (bad stat type, sync gap, etc).
+        ...textParseUnresolved.map((u) => ({ raw: { playerId: 0, statKey: 'unknown', line: 0 } as unknown, reason: `Parse: ${u.reason} · "${u.rawLine}"` })),
+        ...unresolved,
+      ],
       gameDate: gameDate ?? null,
       recordedProjections: recorded,
       disclaimer: MLB_DISCLAIMER,

@@ -27,11 +27,30 @@ import { useTitle } from './useTitle';
 
 type ModeKey = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
 
-const SAMPLE_LINES = `[
+// Sample inputs the user can clone. Two supported formats — the
+// textarea autodetects which is which based on whether the text
+// parses as JSON.
+const SAMPLE_PIPE = `# Pipe format: Player Name|TEAM|stat_key|line|sides
+# sides ∈ over / under / both. Lines starting with # are skipped.
+Aaron Judge|NYY|home_runs|0.5|over
+Mookie Betts|LAD|total_bases|1.5|both
+Chris Sale|ATL|ks|6.5|over`;
+
+const SAMPLE_JSON = `[
   { "playerId": 592450, "statKey": "home_runs", "line": 0.5,  "direction": "over" },
   { "playerId": 660271, "statKey": "hits",       "line": 1.5,  "direction": "both" },
   { "playerId": 545361, "statKey": "total_bases","line": 2.5,  "direction": "both" }
 ]`;
+
+const SAMPLE_LINES = SAMPLE_PIPE;
+
+// Detect input format: starts with `[` or `{` → JSON. Otherwise
+// treat as pipe text (the parser ignores comments + blanks anyway).
+function detectFormat(text: string): 'json' | 'pipe' {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) return 'json';
+  return 'pipe';
+}
 
 export function MlbSlate() {
   useTitle(['MLB Slate']);
@@ -45,18 +64,26 @@ export function MlbSlate() {
   async function handleBuild() {
     setError(null);
     setResult(null);
-    let parsed: RawMlbSlateLine[];
-    try {
-      parsed = JSON.parse(linesText);
-      if (!Array.isArray(parsed)) throw new Error('JSON must be an array.');
-      if (parsed.length === 0) throw new Error('No lines provided.');
-    } catch (err) {
-      setError(`Invalid JSON: ${(err as Error).message}`);
-      return;
-    }
+    const format = detectFormat(linesText);
     setLoading(true);
     try {
-      const r = await buildMlbSlateRequest(parsed, mode);
+      let r: MlbSlateResponse;
+      if (format === 'json') {
+        let parsed: RawMlbSlateLine[];
+        try {
+          parsed = JSON.parse(linesText);
+          if (!Array.isArray(parsed)) throw new Error('JSON must be an array.');
+          if (parsed.length === 0) throw new Error('No lines provided.');
+        } catch (err) {
+          setError(`Invalid JSON: ${(err as Error).message}`);
+          setLoading(false);
+          return;
+        }
+        r = await buildMlbSlateRequest({ lines: parsed }, mode);
+      } else {
+        // Pipe text — backend parses + resolves player names.
+        r = await buildMlbSlateRequest({ text: linesText }, mode);
+      }
       setResult(r);
     } catch (err) {
       setError((err as Error).message);
@@ -93,8 +120,13 @@ export function MlbSlate() {
           </select>
 
           <label className="mlb-label" htmlFor="mlb-lines-textarea" style={{ marginTop: 12 }}>
-            Tonight's lines (JSON array)
+            Tonight's lines · paste pipe format OR JSON
           </label>
+          <p className="muted small" style={{ margin: '0 0 6px' }}>
+            Pipe format: <code>Player|TEAM|stat_key|line|sides</code> per
+            line. Sides = over / under / both. Lines starting with #
+            are skipped. JSON arrays also accepted.
+          </p>
           <textarea
             id="mlb-lines-textarea"
             className="mlb-lines-textarea"

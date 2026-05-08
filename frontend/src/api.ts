@@ -1504,13 +1504,13 @@ export type MlbSlateResponse = {
 };
 
 export async function buildMlbSlateRequest(
-  lines: RawMlbSlateLine[],
+  input: { lines?: RawMlbSlateLine[]; text?: string },
   mode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto',
 ): Promise<MlbSlateResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/slate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lines, mode }),
+    body: JSON.stringify({ ...input, mode }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
