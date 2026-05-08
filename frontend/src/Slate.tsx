@@ -892,6 +892,39 @@ function BestPicksRail({
     return `${l.playerId}-${l.statKey}-${l.line}`;
   }
 
+  // Aggregate live status across every combo. Same shape as MLB's
+  // SlateLiveSummary — cleared / dead / live / pending counters +
+  // simulated $1-stake P/L for settled cards.
+  type CardStatus = 'cleared' | 'dead' | 'live' | 'pending';
+  function statusForLegs(legs: SlateCombo['legs']): CardStatus {
+    const grades = legs.map((l) => resolveNbaLegLive(liveToday, l));
+    if (grades.some((g) => g.grade === 'MISS')) return 'dead';
+    const allHit = grades.length > 0 && grades.every((g) => g.grade === 'HIT' || g.grade === 'PUSH');
+    if (allHit) return 'cleared';
+    if (grades.some((g) => g.grade === 'PROGRESS' || g.grade === 'HIT')) return 'live';
+    return 'pending';
+  }
+  const FLEX_PAYOUTS: Record<string, number> = {
+    'Best 2': 3, 'Best 3': 5, 'Best 4': 10, 'Best 5': 7, 'Best 6': 25, 'Wild Card': 5,
+  };
+  const cardsWithStatus = combos
+    .filter((c) => c.legs.length > 0)
+    .map((c) => ({ name: c.label, status: statusForLegs(c.legs) }));
+  const liveSummary = (() => {
+    if (!liveToday) return null;
+    const cleared = cardsWithStatus.filter((c) => c.status === 'cleared').length;
+    const dead = cardsWithStatus.filter((c) => c.status === 'dead').length;
+    const live = cardsWithStatus.filter((c) => c.status === 'live').length;
+    const pending = cardsWithStatus.filter((c) => c.status === 'pending').length;
+    if (cleared + dead + live === 0) return null;
+    let profit = 0;
+    for (const c of cardsWithStatus) {
+      if (c.status === 'cleared') profit += (FLEX_PAYOUTS[c.name] ?? 1) - 1;
+      else if (c.status === 'dead') profit -= 1;
+    }
+    return { cleared, dead, live, pending, profit };
+  })();
+
   return (
     <div className="best-picks">
       <div className="best-picks-head">
@@ -902,6 +935,48 @@ function BestPicksRail({
           anchors the safest picks; smaller cards draw fresh ones.
         </span>
       </div>
+      {liveSummary && (
+        <div
+          style={{
+            margin: '12px 0',
+            padding: '10px 14px',
+            borderRadius: 6,
+            background: liveSummary.dead > 0 && liveSummary.cleared === 0
+              ? 'rgba(239, 83, 80, 0.10)'
+              : liveSummary.cleared > 0
+              ? 'rgba(102, 187, 106, 0.10)'
+              : 'rgba(122, 162, 255, 0.10)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            gap: 16,
+            flexWrap: 'wrap',
+            alignItems: 'baseline',
+            fontSize: 13,
+          }}
+          title="Live aggregate across every card on tonight's slate. Cleared = all legs hit; Dead = at least one leg missed; Live = still in progress; Pending = game hasn't started."
+        >
+          <strong style={{ fontSize: 14, letterSpacing: '0.02em' }}>
+            Slate live status
+          </strong>
+          <span style={{ color: '#66bb6a', fontWeight: 700 }}>● {liveSummary.cleared} CLEARED</span>
+          <span style={{ color: '#ef5350', fontWeight: 700 }}>● {liveSummary.dead} DEAD</span>
+          <span style={{ color: '#7aa2ff', fontWeight: 700 }}>● {liveSummary.live} LIVE</span>
+          {liveSummary.pending > 0 && (
+            <span className="muted small">{liveSummary.pending} pending tipoff</span>
+          )}
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'baseline' }}>
+            <span className="muted small">Simulated $1 P/L</span>
+            <strong
+              style={{
+                fontSize: 14,
+                color: liveSummary.profit > 0 ? '#66bb6a' : liveSummary.profit < 0 ? '#ef5350' : undefined,
+              }}
+            >
+              {liveSummary.profit >= 0 ? '+' : ''}${liveSummary.profit.toFixed(2)}
+            </strong>
+          </span>
+        </div>
+      )}
       <div className="best-picks-rail">
         {combos.map((c) => {
           const keys = c.legs.map(legKey);

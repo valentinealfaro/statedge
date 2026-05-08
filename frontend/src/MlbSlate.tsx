@@ -763,6 +763,104 @@ function resolveLegLive(
   return { grade: gradeLeg(leg.direction, leg.line, current, game?.state), current };
 }
 
+// Aggregate live status across every card on the slate. Shown as a
+// banner above the card rail when at least one game is in progress
+// or final. Renders nothing when nothing has graded yet (slate is
+// pre-game everywhere) so the page stays clean.
+function SlateLiveSummary({
+  data,
+  liveToday,
+}: {
+  data: MlbSlateResponse;
+  liveToday: MlbLiveTodayResponse | null;
+}) {
+  if (!liveToday) return null;
+  const anyLive = Object.values(liveToday.byGame).some((g) => g.state === 'live');
+  const anyFinal = Object.values(liveToday.byGame).some((g) => g.state === 'final');
+  if (!anyLive && !anyFinal) return null;
+
+  // Walk every card (combo + wild) and compute its current status.
+  type CardStatus = 'cleared' | 'dead' | 'live' | 'pending';
+  function statusForLegs(legs: Array<{ playerId: number; statKey: string; line: number; direction: 'OVER' | 'UNDER' }>): CardStatus {
+    const grades = legs.map((l) => resolveLegLive(liveToday, l));
+    if (grades.some((g) => g.grade === 'MISS')) return 'dead';
+    const allHit = grades.length > 0 && grades.every((g) => g.grade === 'HIT' || g.grade === 'PUSH');
+    if (allHit) return 'cleared';
+    if (grades.some((g) => g.grade === 'PROGRESS' || g.grade === 'HIT')) return 'live';
+    return 'pending';
+  }
+
+  const cards: Array<{ name: string; status: CardStatus }> = [];
+  for (const slot of data.combos) {
+    if (!slot.combo) continue;
+    cards.push({ name: slot.combo.label, status: statusForLegs(slot.combo.legs) });
+  }
+  if (data.wildCard.kind !== 'no_edge' && data.wildCard.legs.length > 0) {
+    cards.push({ name: 'Wild Card', status: statusForLegs(data.wildCard.legs) });
+  }
+
+  const cleared = cards.filter((c) => c.status === 'cleared').length;
+  const dead = cards.filter((c) => c.status === 'dead').length;
+  const live = cards.filter((c) => c.status === 'live').length;
+  const pending = cards.filter((c) => c.status === 'pending').length;
+
+  if (cleared + dead + live === 0) return null;     // nothing to summarize
+
+  // Simulated $1-stake P/L for cards that have settled (cleared or
+  // dead). Uses the same Flex-payout schedule as the history page.
+  const FLEX_PAYOUTS: Record<string, number> = {
+    'Best 2': 3, 'Best 3': 5, 'Best 4': 10, 'Best 5': 7, 'Best 6': 25, 'Wild Card': 5,
+  };
+  let profit = 0;
+  for (const c of cards) {
+    if (c.status === 'cleared') profit += (FLEX_PAYOUTS[c.name] ?? 1) - 1;
+    else if (c.status === 'dead') profit -= 1;
+  }
+
+  return (
+    <div
+      style={{
+        margin: '12px 0',
+        padding: '10px 14px',
+        borderRadius: 6,
+        background: dead > 0 && cleared === 0
+          ? 'rgba(239, 83, 80, 0.10)'
+          : cleared > 0
+          ? 'rgba(102, 187, 106, 0.10)'
+          : 'rgba(122, 162, 255, 0.10)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex',
+        gap: 16,
+        flexWrap: 'wrap',
+        alignItems: 'baseline',
+        fontSize: 13,
+      }}
+      title="Live aggregate across every card on tonight's slate. Cleared = all legs hit; Dead = at least one leg missed; Live = still in progress; Pending = game hasn't started."
+    >
+      <strong style={{ fontSize: 14, letterSpacing: '0.02em' }}>
+        Slate live status
+      </strong>
+      <span style={{ color: '#66bb6a', fontWeight: 700 }}>● {cleared} CLEARED</span>
+      <span style={{ color: '#ef5350', fontWeight: 700 }}>● {dead} DEAD</span>
+      <span style={{ color: '#7aa2ff', fontWeight: 700 }}>● {live} LIVE</span>
+      {pending > 0 && (
+        <span className="muted small">{pending} pending tipoff</span>
+      )}
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'baseline' }}>
+        <span className="muted small">Simulated $1 P/L</span>
+        <strong
+          style={{
+            fontSize: 14,
+            color: profit > 0 ? '#66bb6a' : profit < 0 ? '#ef5350' : undefined,
+          }}
+        >
+          {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+        </strong>
+      </span>
+    </div>
+  );
+}
+
 function SlateResultView({ data }: { data: MlbSlateResponse }) {
   // Engine activity summary — what did the engine actually do? Counts
   // are derived from the response so the user sees the work.
@@ -815,6 +913,8 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
           </ul>
         </div>
       )}
+
+      <SlateLiveSummary data={data} liveToday={liveToday} />
 
       <div className="best-picks-rail">
         {data.combos.map((slot) => (
