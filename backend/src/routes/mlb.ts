@@ -686,6 +686,187 @@ mlbRouter.post('/slate/today', async (req, res) => {
   }
 });
 
+// GET /api/mlb/slate/players
+//
+// Per-player browse view of today's full slate, grouped by game.
+// Each player gets a card with their TOP edge play + all alternative
+// lines, mirroring the NBA slate's player-card UX. Game-grouped
+// because baseball context (probable pitcher, ballpark, weather)
+// lives at the matchup level.
+//
+// Cached separately from /slate/today (which caches the BUILT cards).
+// First hit per slate publish runs the full ~25s resolution; later
+// hits are sub-100ms.
+mlbRouter.get('/slate/players', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  try {
+    const stored = await getMlbDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ date: null, games: [], totalGames: 0, totalPlayers: 0, totalLines: 0 });
+      return;
+    }
+    const cacheKey = `players::${stored.date}::${stored.updatedAt}`;
+    const cached = await getMlbSlateCache(cacheKey).catch(() => null);
+    if (cached !== null) {
+      res.setHeader('X-Players-Cache', 'HIT');
+      res.json(cached);
+      return;
+    }
+    res.setHeader('X-Players-Cache', 'MISS');
+
+    // Need today's games for matchup metadata + team→game mapping.
+    const todaysGames = await getTodaysMlbGames(stored.date).catch(() => [] as MlbTodayGame[]);
+    const teamIdToGamePk = new Map<number, number>();
+    for (const g of todaysGames) {
+      teamIdToGamePk.set(g.away.id, g.gamePk);
+      teamIdToGamePk.set(g.home.id, g.gamePk);
+    }
+    // Stored lines often lack gamePk (admin's pipe-format paste), so
+    // build a playerId → gamePk lookup via mlb_players.team_id.
+    const { rows: playerRows } = await getPool().query<{ id: number; team_id: number | null }>(
+      `SELECT id, team_id FROM mlb_players WHERE team_id IS NOT NULL`,
+    );
+    const playerToGamePk = new Map<number, number>();
+    for (const p of playerRows) {
+      if (p.team_id !== null && teamIdToGamePk.has(p.team_id)) {
+        playerToGamePk.set(p.id, teamIdToGamePk.get(p.team_id)!);
+      }
+    }
+
+    // Resolve every stored line. Slow path (~25s for 3000 legs) but
+    // cached afterward.
+    const { lines: resolvedLines } = await resolveMlbSlate(
+      stored.lines.map((l) => ({
+        playerId: l.playerId,
+        statKey: l.statKey as MlbStatKey,
+        line: l.line,
+        direction: l.direction,
+        gamePk: l.gamePk,
+        opponentTeamId: l.opponentTeamId,
+        isHome: l.isHome,
+        opposingPitcherId: l.opposingPitcherId,
+      })),
+    );
+
+    // Group: gamePk → playerId → [lines]
+    type LineEntry = {
+      statKey: string;
+      statLabel: string;
+      line: number;
+      direction: 'OVER' | 'UNDER';
+      probability: number;
+      projection: number;
+      edgePercent: number;
+      trapScore: number;
+      fragilityScore: number;
+    };
+    const games = new Map<number, {
+      gamePk: number;
+      players: Map<number, {
+        playerId: number;
+        playerName: string;
+        team: string | null;
+        isPitcher: boolean;
+        lines: LineEntry[];
+      }>;
+    }>();
+
+    for (const l of resolvedLines) {
+      const gamePk = l.gamePk ?? playerToGamePk.get(l.playerId) ?? null;
+      if (gamePk === null) continue;       // can't place this line in any matchup
+      let g = games.get(gamePk);
+      if (!g) {
+        g = { gamePk, players: new Map() };
+        games.set(gamePk, g);
+      }
+      let p = g.players.get(l.playerId);
+      if (!p) {
+        p = {
+          playerId: l.playerId,
+          playerName: l.playerName,
+          team: l.team.abbr,
+          isPitcher: l.isPitcher,
+          lines: [],
+        };
+        g.players.set(l.playerId, p);
+      }
+      p.lines.push({
+        statKey: l.statKey,
+        statLabel: l.statLabel,
+        line: l.line,
+        direction: l.modelDirection,
+        probability: l.projection.probability,
+        projection: l.projection.projection,
+        edgePercent: l.projection.edgePercent,
+        trapScore: l.projection.trapScore,
+        fragilityScore: l.projection.fragilityScore,
+      });
+    }
+
+    // Sort each player's lines by edge% descending (top play first),
+    // then sort players within game by their top play's edge.
+    const gamesPayload = [...games.values()].map((g) => {
+      const matchup = todaysGames.find((tg) => tg.gamePk === g.gamePk) ?? null;
+      const players = [...g.players.values()].map((p) => ({
+        ...p,
+        lines: p.lines.sort((a, b) => b.edgePercent - a.edgePercent),
+      })).sort((a, b) =>
+        (b.lines[0]?.edgePercent ?? 0) - (a.lines[0]?.edgePercent ?? 0),
+      );
+      return {
+        gamePk: g.gamePk,
+        gameDate: matchup?.gameDate ?? null,
+        away: matchup ? {
+          id: matchup.away.id,
+          abbreviation: matchup.away.abbreviation,
+          name: matchup.away.name,
+          record: matchup.away.record,
+        } : null,
+        home: matchup ? {
+          id: matchup.home.id,
+          abbreviation: matchup.home.abbreviation,
+          name: matchup.home.name,
+          record: matchup.home.record,
+        } : null,
+        probablePitchers: matchup?.probablePitchers ?? null,
+        venue: matchup?.venue ?? null,
+        weather: matchup?.weather ?? null,
+        status: matchup?.status ?? null,
+        players,
+      };
+    }).sort((a, b) => {
+      // Sort games by start time (earlier first).
+      const aT = a.gameDate ? new Date(a.gameDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const bT = b.gameDate ? new Date(b.gameDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return aT - bT;
+    });
+
+    const totalPlayers = gamesPayload.reduce((s, g) => s + g.players.length, 0);
+    const totalLines = gamesPayload.reduce(
+      (s, g) => s + g.players.reduce((ps, p) => ps + p.lines.length, 0),
+      0,
+    );
+
+    const payload = {
+      date: stored.date,
+      games: gamesPayload,
+      totalGames: gamesPayload.length,
+      totalPlayers,
+      totalLines,
+    };
+    // Cache 5 minutes — same TTL as the slate cache, invalidates on
+    // republish via the updatedAt key suffix.
+    await setMlbSlateCache(cacheKey, payload, 5 * 60_000).catch(() => undefined);
+    res.json(payload);
+  } catch (err) {
+    console.error('mlb/slate/players failed', err);
+    res.status(500).json({ error: 'mlb slate players failed' });
+  }
+});
+
 // GET /api/mlb/slate/history?windowDays=30
 //
 // Past published slates with hit-rate aggregates per day. Reads

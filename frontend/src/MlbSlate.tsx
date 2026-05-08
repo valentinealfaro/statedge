@@ -30,6 +30,7 @@ import {
   type MlbWildCardCombo,
   type RawMlbSlateLine,
 } from './api';
+import { MlbPlayersByGame } from './MlbPlayersByGame';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -638,6 +639,12 @@ export function MlbSlate() {
         {loading && <Skeleton width="100%" height={240} style={{ marginTop: 20 }} />}
 
         {result && <SlateResultView data={result} />}
+
+        {/* Per-player browse view — game-grouped accordion + search.
+            Sits below the institutional Best 2-6 + Wild Card cards
+            so users see the curated picks first, then can drill
+            into the full board on their own. */}
+        <MlbPlayersByGame />
 
         {/* All MLB games — sits at the bottom of the slate page for
             both public and admin views. Auto-refreshes every 60s

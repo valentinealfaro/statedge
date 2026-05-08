@@ -2101,6 +2101,62 @@ export type MlbLiveTodayResponse = {
   byPlayer: Record<string, MlbLiveTodayPlayer>;
 };
 
+// =============================================================
+// MLB per-player browse (Phase 71): /mlb/slate per-player view
+// =============================================================
+
+export type MlbPlayerSlateLine = {
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  projection: number;
+  edgePercent: number;
+  trapScore: number;
+  fragilityScore: number;
+};
+
+export type MlbPlayerSlateEntry = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  isPitcher: boolean;
+  lines: MlbPlayerSlateLine[];
+};
+
+export type MlbSlateGameGroup = {
+  gamePk: number;
+  gameDate: string | null;
+  away: { id: number; abbreviation: string; name: string; record: string | null } | null;
+  home: { id: number; abbreviation: string; name: string; record: string | null } | null;
+  probablePitchers: {
+    away: MlbProbablePitcher | null;
+    home: MlbProbablePitcher | null;
+  } | null;
+  venue: string | null;
+  weather: { condition: string | null; temp: string | null; wind: string | null } | null;
+  status: { abstractGameState: string; detailedState: string; inProgress: boolean } | null;
+  players: MlbPlayerSlateEntry[];
+};
+
+export type MlbSlatePlayersResponse = {
+  date: string | null;
+  games: MlbSlateGameGroup[];
+  totalGames: number;
+  totalPlayers: number;
+  totalLines: number;
+};
+
+export async function getMlbSlatePlayers(): Promise<MlbSlatePlayersResponse> {
+  const res = await fetch(`${API_BASE}/api/mlb/slate/players`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbSlatePlayersResponse;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {
