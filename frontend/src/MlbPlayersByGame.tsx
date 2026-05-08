@@ -1,19 +1,12 @@
-// MLB slate per-player browse view — game-grouped accordion + search.
+// MLB slate per-player browse view — game-grouped accordion + search +
+// filter chips + Top Institutional Edges hero.
 //
-// Default render: collapsed game cards sorted by start time, top 3
-// auto-expanded so users see action immediately. Each game card
-// shows the matchup header (logos + records + probable pitchers +
-// odds + weather) and a grid of player cards.
-//
-// Player card mirrors the NBA per-player UX:
-//   [★] [👤 avatar] Player Name        ▶
-//                   Team
-//                   Top play: Stat Line ↑Prob%   +N more
-// Click → expands inline to show all alternative lines for that
-// player tonight.
-//
-// Search bar at the top filters by player name across all games.
-// When searching, all matching games auto-expand.
+// Phase 72 (Unified Compare Spec): wraps the per-player browse in a
+// hero section that surfaces the top 5 edges across all games, plus
+// a filter chip bar so users can slice by Hitter / Pitcher / High
+// Edge / Low Risk / Trap Watch. Edge % carries a hover tooltip
+// explaining the formula. Game-grouped accordion below renders only
+// the players that pass the active filter.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -29,10 +22,52 @@ import { Skeleton } from './Skeleton';
 
 const HOW_MANY_AUTO_EXPAND = 3;
 
+// Filter chip tag set. Each chip predicates against the player's
+// TOP line (the highest-edge play we surface as their headline).
+type FilterTag = 'all' | 'hitters' | 'pitchers' | 'high_edge' | 'low_risk' | 'trap_watch';
+
+const FILTER_LABELS: Record<FilterTag, string> = {
+  all:        'All',
+  hitters:    'Hitters',
+  pitchers:   'Pitchers',
+  high_edge:  'High Edge (≥15%)',
+  low_risk:   'Low Risk (frag ≤30)',
+  trap_watch: 'Trap Watch (trap ≥60)',
+};
+
+const FILTER_TOOLTIPS: Record<FilterTag, string> = {
+  all:        'Show every player with a projected line tonight.',
+  hitters:    'Hitters only — exclude pitcher-stat props.',
+  pitchers:   'Pitchers only — strikeouts, outs, hits allowed, etc.',
+  high_edge:  'Players whose top play has +15% or better edge vs implied — strongest model conviction.',
+  low_risk:   'Players whose top play scores ≤30 fragility (Solid Floor tier). Lower variance, sturdier projections.',
+  trap_watch: 'Players whose top play has trap score ≥60 — possible public-trap line. Interpret with caution.',
+};
+
+function passesFilter(player: MlbPlayerSlateEntry, tag: FilterTag): boolean {
+  if (tag === 'all') return true;
+  const top = player.lines[0];
+  if (!top) return false;
+  if (tag === 'hitters')    return !player.isPitcher;
+  if (tag === 'pitchers')   return player.isPitcher;
+  if (tag === 'high_edge')  return top.edgePercent >= 15;
+  if (tag === 'low_risk')   return top.fragilityScore <= 30;
+  if (tag === 'trap_watch') return top.trapScore >= 60;
+  return true;
+}
+
+// Edge-percentage explanation tooltip — shown on hover over any
+// "+X% edge" value. Surfaces our model's relationship to the market.
+const EDGE_TOOLTIP =
+  'Edge % = our model\'s projected probability − sportsbook implied probability. ' +
+  '+15% means we have meaningful conviction the market is mispricing this prop. ' +
+  'Negative edge = we agree with the market or it\'s priced too sharp for us to play.';
+
 export function MlbPlayersByGame() {
   const [data, setData] = useState<MlbSlatePlayersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState<FilterTag>('all');
   const [manuallyExpanded, setManuallyExpanded] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -44,6 +79,22 @@ export function MlbPlayersByGame() {
   }, []);
 
   const trimmedSearch = search.trim().toLowerCase();
+
+  // Top Institutional Edges — flatten every player across every
+  // game, sort by their top line's edge%, take 5. This is the hero
+  // section users see first; clicking jumps to the matching game.
+  const topEdges = useMemo(() => {
+    if (!data) return [];
+    const all: Array<{ game: MlbSlateGameGroup; player: MlbPlayerSlateEntry }> = [];
+    for (const g of data.games) {
+      for (const p of g.players) {
+        if (p.lines.length > 0) all.push({ game: g, player: p });
+      }
+    }
+    return all
+      .sort((a, b) => (b.player.lines[0]?.edgePercent ?? 0) - (a.player.lines[0]?.edgePercent ?? 0))
+      .slice(0, 5);
+  }, [data]);
 
   // When searching, every game with a matching player is "expanded"
   // by virtue of the filter. Otherwise, top-N games (by start time)
@@ -92,7 +143,12 @@ export function MlbPlayersByGame() {
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div className="mlb-context-heading" style={{ marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+      {/* Top Institutional Edges hero — top 5 cross-game edges
+          surfaced as compact hero cards. Highest-conviction picks
+          users should see first. */}
+      {topEdges.length > 0 && <TopInstitutionalEdges entries={topEdges} />}
+
+      <div className="mlb-context-heading" style={{ marginBottom: 8, marginTop: 24, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
         <span>Browse all players by game</span>
         <span className="muted small">
           {data.totalPlayers} players · {data.totalLines} lines · {data.totalGames} games
@@ -112,9 +168,39 @@ export function MlbPlayersByGame() {
           borderRadius: 6,
           background: 'rgba(255,255,255,0.04)',
           color: 'inherit',
-          marginBottom: 12,
+          marginBottom: 8,
         }}
       />
+
+      {/* Filter chips — slice the player roster by archetype or
+          model conviction. Persistent across game-card expand state. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {(Object.keys(FILTER_LABELS) as FilterTag[]).map((tag) => {
+          const active = activeFilter === tag;
+          return (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setActiveFilter(tag)}
+              title={FILTER_TOOLTIPS[tag]}
+              style={{
+                padding: '5px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: active ? 'rgba(122, 162, 255, 0.18)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${active ? 'rgba(122, 162, 255, 0.5)' : 'rgba(255,255,255,0.1)'}`,
+                color: active ? '#7aa2ff' : 'rgba(255,255,255,0.7)',
+              }}
+            >
+              {FILTER_LABELS[tag]}
+            </button>
+          );
+        })}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {data.games.map((game) => (
@@ -131,8 +217,109 @@ export function MlbPlayersByGame() {
               });
             }}
             search={trimmedSearch}
+            activeFilter={activeFilter}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Top Institutional Edges — hero panel above the player browse.
+// Pulls the 5 highest-edge plays across every matchup and presents
+// them as compact cards with an "EDGE" hero number.
+function TopInstitutionalEdges({
+  entries,
+}: {
+  entries: Array<{ game: MlbSlateGameGroup; player: MlbPlayerSlateEntry }>;
+}) {
+  return (
+    <div
+      style={{
+        marginBottom: 20,
+        padding: '14px 16px',
+        background: 'linear-gradient(135deg, rgba(102, 187, 106, 0.08), rgba(122, 162, 255, 0.05))',
+        border: '1px solid rgba(102, 187, 106, 0.25)',
+        borderRadius: 8,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.02em' }}>
+          🔥 Top Institutional Edges
+        </span>
+        <span className="muted small">
+          highest-conviction picks across the board · sorted by edge %
+        </span>
+        <span
+          title={EDGE_TOOLTIP}
+          style={{
+            marginLeft: 'auto',
+            fontSize: 10,
+            color: 'rgba(255,255,255,0.5)',
+            cursor: 'help',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '50%',
+            width: 16,
+            height: 16,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          ?
+        </span>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+          gap: 10,
+        }}
+      >
+        {entries.map(({ game, player }, i) => {
+          const top = player.lines[0]!;
+          const isOver = top.direction === 'OVER';
+          return (
+            <div
+              key={`${player.playerId}-${i}`}
+              style={{
+                background: 'rgba(0,0,0,0.18)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 6,
+                padding: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <MlbPlayerAvatar playerId={player.playerId} name={player.playerName} size="md" />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {player.playerName}
+                  </div>
+                  <div className="muted small" style={{ fontSize: 10 }}>
+                    {player.team ?? '—'} · {game.away?.abbreviation} @ {game.home?.abbreviation}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                {top.statLabel} {top.line}
+                <span style={{ marginLeft: 6, color: top.probability >= 70 ? '#66bb6a' : '#7aa2ff' }}>
+                  {isOver ? '↑' : '↓'} {Math.round(top.probability)}%
+                </span>
+              </div>
+              <div
+                title={EDGE_TOOLTIP}
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: '#66bb6a',
+                  cursor: 'help',
+                }}
+              >
+                +{top.edgePercent.toFixed(0)}% EDGE
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -143,11 +330,13 @@ function GameCard({
   expanded,
   onToggle,
   search,
+  activeFilter,
 }: {
   game: MlbSlateGameGroup;
   expanded: boolean;
   onToggle: () => void;
   search: string;
+  activeFilter: FilterTag;
 }) {
   const time = game.gameDate
     ? new Date(game.gameDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -155,9 +344,17 @@ function GameCard({
   const live = game.status?.inProgress ?? false;
   const final = game.status?.abstractGameState === 'Final';
 
-  const filteredPlayers = search
-    ? game.players.filter((p) => p.playerName.toLowerCase().includes(search))
-    : game.players;
+  // Apply both search + filter chip in one pass.
+  const filteredPlayers = game.players
+    .filter((p) => passesFilter(p, activeFilter))
+    .filter((p) => !search || p.playerName.toLowerCase().includes(search));
+
+  // When a non-default filter excludes everyone in this game (and the
+  // user isn't actively searching), hide the whole game card so the
+  // page doesn't show empty accordion rows.
+  if (activeFilter !== 'all' && !search && filteredPlayers.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mlb-projection" style={{ padding: 0 }}>
@@ -361,12 +558,14 @@ function LineRow({ line, highlight }: { line: MlbPlayerSlateLine; highlight?: bo
         {isOver ? '↑' : '↓'} {Math.round(line.probability)}%
       </span>
       <span
+        title={EDGE_TOOLTIP}
         style={{
           fontSize: 10,
           fontWeight: 700,
           color: line.edgePercent >= 5 ? '#66bb6a' : line.edgePercent <= -5 ? '#ef5350' : 'rgba(255,255,255,0.5)',
           minWidth: 50,
           textAlign: 'right',
+          cursor: 'help',
         }}
       >
         {line.edgePercent >= 0 ? '+' : ''}{line.edgePercent.toFixed(0)}% edge
