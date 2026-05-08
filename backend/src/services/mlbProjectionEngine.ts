@@ -61,6 +61,10 @@ import {
   getStabilizationGames,
   type RobustBaselineComponents,
 } from './mlbBaselineEngine.js';
+import {
+  computeFragility,
+  type FragilityResult,
+} from './mlbFragilityEngine.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -250,6 +254,15 @@ export type ProjectionResult = {
   // orderedValues; very short samples).
   robustBaselineComponents: RobustBaselineComponents | null;
 
+  // L5 Fragility Intelligence — separate from probability and trap.
+  // "How little must go wrong for the pick to fail." A 75% HR prop
+  // and a 75% hits-1.5 prop have identical probabilities but very
+  // different fragility profiles. Surfacing both keeps the UI
+  // honest. Components feed the UI's fragility breakdown panel.
+  fragilityScore: number;          // 0..100
+  fragilityTier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
+  fragilityComponents: FragilityResult['components'];
+
   // ---- Line raising (NBA-style elite-conviction signal) ----
   // When the model has elite conviction (high probability + high
   // confidence + low trap + projection well above line), we test
@@ -346,6 +359,15 @@ function emptyResult(
     last5Average: null,
     last10HitRate: null,
     robustBaselineComponents: null,
+    fragilityScore: 50,
+    fragilityTier: 'Moderate Fragility',
+    fragilityComponents: {
+      statRarity: 50,
+      marginThinness: 50,
+      sampleWeakness: 100,
+      volatility: 50,
+      lineupUncertainty: null,
+    },
     momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,
@@ -864,6 +886,25 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const distanceUnits = Math.abs(projection - line) / stddev;
   const projectionDistanceScore = clamp(Math.round(distanceUnits * 50), 0, 100);
 
+  // ----- L5 Fragility -----
+  // Separate from probability + trap. "How little must go wrong for
+  // this pick to fail." Surfaced alongside probability so users see
+  // both: a 75% HR prop and a 75% hits prop look identical on the
+  // probability dial but have very different failure modes.
+  const fragility = computeFragility({
+    statKey: inputs.statKey,
+    playerType: inputs.playerType,
+    projection,
+    line,
+    stddev,
+    sampleStrength: bayesian?.sampleStrength ?? null,
+    // Hitters: confirmed when we have a real lineupSpot from the MLB
+    // API (not null). Pitchers: not applicable.
+    lineupConfirmed: inputs.playerType === 'pitcher'
+      ? null
+      : inputs.lineupSpot !== null,
+  });
+
   // ----- Confidence -----
   // Sample size: 0 → 0, 10 → 100 (capped). Modulated by signal
   // agreement: if opponent avg, season avg, and L10 avg all agree
@@ -892,13 +933,21 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const edgePercent = round1(probability - impliedBreakEven);
   const edgeScore = clamp(Math.round((edgePercent + 25) * 2), 0, 100);
 
-  // ----- EV score per spec -----
+  // ----- EV score per spec (L7) -----
+  // Spec formula:
+  //   evScore = edge%*0.34 + projGap*0.22 + confidence*0.18
+  //           - trap*0.10 - fragility*0.08 - correlationPenalty*0.08
+  //
+  // Correlation penalty is applied at the card-construction layer
+  // (slate builder weights legs differently when same-game stacks
+  // appear), not per-leg, so we hold its weight at 0 here. The
+  // remaining six components reweight to spec proportions.
   const evScore = round1(
-    edgePercent * 0.40
-    + confidence * 0.20
-    + projectionDistanceScore * 0.20
-    - riskScore * 0.10
-    - trapScore * 0.10,
+    edgePercent * 0.34
+    + projectionDistanceScore * 0.22
+    + confidence * 0.18
+    - trapScore * 0.10
+    - fragility.fragility * 0.08,
   );
 
   // ----- Eligibility for cards (v0: simple gates; richer in Phase 4) -----
@@ -1033,11 +1082,11 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     const newDistanceUnits = Math.abs(projection - raise.line) / stddev;
     finalProjectionDistanceScore = clamp(Math.round(newDistanceUnits * 50), 0, 100);
     finalEvScore = round1(
-      finalEdgePercent * 0.40
-      + confidence * 0.20
-      + finalProjectionDistanceScore * 0.20
-      - riskScore * 0.10
-      - trapScore * 0.10,
+      finalEdgePercent * 0.34
+      + finalProjectionDistanceScore * 0.22
+      + confidence * 0.18
+      - trapScore * 0.10
+      - fragility.fragility * 0.08,
     );
     reasonCodes.push(`Line raised: ${raise.originalLine} → ${raise.line} (model still favors ${inputs.direction} at the raised line).`);
   }
@@ -1073,6 +1122,9 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     last5Average: inputs.last10.last5Average !== null ? round2(inputs.last10.last5Average) : null,
     last10HitRate: inputs.last10.hitRate?.rate ?? null,
     robustBaselineComponents: robustComponents,
+    fragilityScore: fragility.fragility,
+    fragilityTier: fragility.tier,
+    fragilityComponents: fragility.components,
     momentumExpansionScore: computeMomentumExpansionScore({
       direction: inputs.direction,
       last10Average: inputs.last10.last10Average,

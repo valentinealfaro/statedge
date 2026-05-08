@@ -31,6 +31,12 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     last5Average: 1.5,
     last10HitRate: 60,
     robustBaselineComponents: null,
+    fragilityScore: 35,
+    fragilityTier: 'Moderate Fragility',
+    fragilityComponents: {
+      statRarity: 45, marginThinness: 30, sampleWeakness: 0, volatility: 30,
+      lineupUncertainty: 0,
+    },
     momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,

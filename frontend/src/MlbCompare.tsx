@@ -489,6 +489,14 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
           <span className="mlb-stat-value">{data.trapScore}/100</span>
         </div>
         <div
+          className={`mlb-stat ${fragilityClass(data.fragilityScore)}`}
+          title="L5 Fragility — how little must go wrong for this pick to fail. SEPARATE from probability + trap. Components: stat rarity (HR/SB are inherently fragile), margin thinness (projection vs line), sample weakness, volatility, lineup uncertainty."
+        >
+          <span className="mlb-stat-label">Fragility</span>
+          <span className="mlb-stat-value">{data.fragilityScore.toFixed(0)}/100</span>
+          <span className="mlb-stat-sub">{data.fragilityTier}</span>
+        </div>
+        <div
           className={`mlb-stat ${momentumClass(data.momentumExpansionScore)}`}
           title="L2 composite — production lift (L5/L10), season lift (L10/season), projection separation, L10 hit rate. Direction-aware. 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum."
         >
@@ -517,6 +525,12 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
       {data.robustBaselineComponents && (
         <RobustBaselinePanel components={data.robustBaselineComponents} />
       )}
+
+      <FragilityPanel
+        score={data.fragilityScore}
+        tier={data.fragilityTier}
+        components={data.fragilityComponents}
+      />
 
       {data.monteCarlo && <MonteCarloBands data={data} />}
 
@@ -705,6 +719,67 @@ function RobustBaselinePanel({
       </div>
     </div>
   );
+}
+
+// L5 fragility components panel — surfaces the 5-component breakdown
+// that built the fragility score so users see WHY a pick is fragile,
+// not just that it is.
+function FragilityPanel({
+  score,
+  tier,
+  components,
+}: {
+  score: number;
+  tier: string;
+  components: {
+    statRarity: number;
+    marginThinness: number;
+    sampleWeakness: number;
+    volatility: number;
+    lineupUncertainty: number | null;
+  };
+}) {
+  const rows: Array<{ label: string; value: number; hint: string }> = [
+    { label: 'Stat rarity',     value: components.statRarity,     hint: 'Rare events (HR, SB, triples) are inherently fragile.' },
+    { label: 'Margin thinness', value: components.marginThinness, hint: '|projection − line| / max(projection, line). Razor-thin margins fail on a single bad swing.' },
+    { label: 'Sample weakness', value: components.sampleWeakness, hint: 'Inverse of Bayesian sampleStrength. Small samples mean the projection itself is uncertain.' },
+    { label: 'Volatility',      value: components.volatility,     hint: 'L10 stddev / projection. High coefficient of variation = fragile.' },
+  ];
+  if (components.lineupUncertainty !== null) {
+    rows.push({
+      label: 'Lineup uncertainty',
+      value: components.lineupUncertainty,
+      hint: 'Hitter only — confirmed lineup = 0; unconfirmed = 60.',
+    });
+  }
+  return (
+    <div className="mlb-context" title="L5 Fragility breakdown — how little must go wrong for this pick to fail. Separate from probability + trap.">
+      <div className="mlb-context-heading">
+        Fragility breakdown · {score.toFixed(0)}/100 · <em>{tier}</em>
+      </div>
+      <div className="mlb-context-grid">
+        {rows.map((r) => (
+          <div key={r.label} className={`mlb-context-chip ${fragilityComponentClass(r.value)}`} title={r.hint}>
+            <span className="mlb-context-label">{r.label}</span>
+            <span className="mlb-context-value">{r.value.toFixed(0)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function fragilityComponentClass(value: number): string {
+  if (value <= 25) return 'positive';     // low fragility = green
+  if (value <= 60) return 'neutral';
+  return 'negative';                      // high fragility = red
+}
+
+function fragilityClass(score: number): string {
+  if (score <= 25) return 'trap-clean';
+  if (score <= 50) return 'trap-mild';
+  if (score <= 75) return 'trap-moderate';
+  return 'trap-high';
 }
 
 function momentumClass(score: number): string {

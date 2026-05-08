@@ -1372,6 +1372,18 @@ export type MlbProjectionResponse = {
     median: number | null;
     trimmedMean: number | null;
   } | null;
+  // L5 Fragility — separate from probability + trap. "How little
+  // must go wrong for the pick to fail." Surfaced alongside trap so
+  // a 75% HR prop doesn't look identical to a 75% hits prop.
+  fragilityScore: number;
+  fragilityTier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
+  fragilityComponents: {
+    statRarity: number;
+    marginThinness: number;
+    sampleWeakness: number;
+    volatility: number;
+    lineupUncertainty: number | null;
+  };
   // Layer 2 of the institutional MLB engine: composite of L5 vs L10,
   // L10 vs season, projection separation, and L10 hit rate. Direction-
   // aware; 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.
