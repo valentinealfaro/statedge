@@ -14,7 +14,7 @@
 // v1 ingestion is a JSON paste box. PrizePicks/scrape integration
 // for MLB is a future slice.
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   buildMlbSlateRequest,
   type MlbSlateResponse,
@@ -26,6 +26,75 @@ import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
 type ModeKey = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+
+// ---------- Slate-input dedup ----------
+//
+// Track lines that were successfully built within a recent window so
+// re-pasting a 500-line slate doesn't re-burn server time on lines we
+// already projected. Memory is keyed by a normalized form of each
+// raw line (whitespace + case folded) so trivial typos still match.
+//
+// Auto-expiry is 60 minutes — after that, projections may have
+// shifted (lineup confirmed, weather updated, ML odds moved) so we
+// re-run them anyway. The "Force build all" button bypasses memory
+// for one-off re-runs.
+const SEEN_KEY = 'statedge:mlbSlate:seenLines:v1';
+const SEEN_TTL_MS = 60 * 60 * 1000;
+
+type SeenMap = Record<string, number>;     // normalizedLine → epoch ms
+
+function loadSeen(): SeenMap {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as SeenMap;
+    const now = Date.now();
+    const out: SeenMap = {};
+    for (const [line, ts] of Object.entries(parsed)) {
+      if (now - ts < SEEN_TTL_MS) out[line] = ts;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveSeen(seen: SeenMap): void {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* full quota */ }
+}
+
+// Normalize a raw line for dedup. Same form used to remember built
+// lines and to filter the next paste. Pipe-format is space/case-folded;
+// JSON-encoded lines are JSON.stringify'd with sorted keys.
+function normalizeLine(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Split a paste into individual line strings (pipe format) or a
+// single normalized JSON-element-per-leg list. Strips comments + blanks.
+function splitInputIntoLines(text: string, format: 'json' | 'pipe'): string[] {
+  if (format === 'json') {
+    try {
+      const arr = JSON.parse(text) as RawMlbSlateLine[];
+      if (!Array.isArray(arr)) return [];
+      // Stringify each leg with sorted keys for stable normalization.
+      return arr.map((leg) => stableStringify(leg));
+    } catch {
+      return [];
+    }
+  }
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('#'));
+}
+
+function stableStringify(obj: unknown): string {
+  if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+  if (Array.isArray(obj)) return '[' + obj.map(stableStringify).join(',') + ']';
+  const keys = Object.keys(obj as Record<string, unknown>).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify((obj as Record<string, unknown>)[k])).join(',') + '}';
+}
 
 // Sample inputs the user can clone. Two supported formats — the
 // textarea autodetects which is which based on whether the text
@@ -60,19 +129,63 @@ export function MlbSlate() {
   const [result, setResult] = useState<MlbSlateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Dedup memory + UI state. memoryCount drives the "X memorized"
+  // chip; skippedCount is the per-build count of lines that were
+  // filtered out as already-seen.
+  const [seen, setSeen] = useState<SeenMap>(() => loadSeen());
+  const [skipDedup, setSkipDedup] = useState(false);
+  const [skippedCount, setSkippedCount] = useState(0);
+
+  // Live count for the chip — derived so it updates after every save.
+  const memoryCount = useMemo(() => Object.keys(seen).length, [seen]);
+
+  // Persist memory anytime it changes.
+  useEffect(() => { saveSeen(seen); }, [seen]);
+
+  function clearSeen(): void {
+    setSeen({});
+    setSkippedCount(0);
+  }
 
   async function handleBuild() {
     setError(null);
     setResult(null);
+    setSkippedCount(0);
     const format = detectFormat(linesText);
     setLoading(true);
     try {
       let r: MlbSlateResponse;
+      // Filter the input text against memory unless the user clicked
+      // "Force build all". Filtering happens BEFORE we hit the
+      // backend so we don't spend serverless time re-projecting
+      // lines we already projected within the dedup window.
+      const allLines = splitInputIntoLines(linesText, format);
+      const fresh: string[] = [];
+      let skipped = 0;
+      if (!skipDedup) {
+        for (const line of allLines) {
+          if (seen[normalizeLine(line)] !== undefined) skipped += 1;
+          else fresh.push(line);
+        }
+      } else {
+        fresh.push(...allLines);
+      }
+      setSkippedCount(skipped);
+      if (fresh.length === 0) {
+        setError(
+          skipped > 0
+            ? `All ${skipped} lines were built within the last hour. Use "Force build all" to re-run anyway.`
+            : 'No lines provided.',
+        );
+        setLoading(false);
+        return;
+      }
+
       if (format === 'json') {
         let parsed: RawMlbSlateLine[];
         try {
-          parsed = JSON.parse(linesText);
-          if (!Array.isArray(parsed)) throw new Error('JSON must be an array.');
+          // Parse only the fresh subset back into JSON objects.
+          parsed = fresh.map((s) => JSON.parse(s) as RawMlbSlateLine);
           if (parsed.length === 0) throw new Error('No lines provided.');
         } catch (err) {
           setError(`Invalid JSON: ${(err as Error).message}`);
@@ -81,10 +194,22 @@ export function MlbSlate() {
         }
         r = await buildMlbSlateRequest({ lines: parsed }, mode);
       } else {
-        // Pipe text — backend parses + resolves player names.
-        r = await buildMlbSlateRequest({ text: linesText }, mode);
+        // Pipe text — re-stitch the fresh lines so the backend parses
+        // them with full pipe-format semantics (preserves comments
+        // would be ideal, but they were already stripped).
+        r = await buildMlbSlateRequest({ text: fresh.join('\n') }, mode);
       }
       setResult(r);
+
+      // Memorize lines we just successfully built. We commit the
+      // whole `fresh` set even though some may have been unresolved
+      // server-side — re-running them won't help until the user fixes
+      // the underlying issue (typo / not-in-DB), and re-projecting
+      // them on every paste is exactly what we're trying to avoid.
+      const now = Date.now();
+      const next: SeenMap = { ...seen };
+      for (const line of fresh) next[normalizeLine(line)] = now;
+      setSeen(next);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -142,7 +267,7 @@ export function MlbSlate() {
               onClick={handleBuild}
               disabled={loading}
             >
-              {loading ? 'Building…' : 'Build slate'}
+              {loading ? 'Building…' : skipDedup ? 'Force build all' : 'Build slate'}
             </button>
             <button
               type="button"
@@ -152,6 +277,41 @@ export function MlbSlate() {
               Reset to sample
             </button>
           </div>
+
+          <div className="mlb-dedup-row" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 12 }}>
+            <span title="Lines already projected within the last hour are skipped on subsequent builds so re-pasting a 500-line slate doesn't re-burn server time. After 60 min, projections may have shifted (lineups, weather, ML odds), so memory auto-expires.">
+              <strong>Skip-already-built memory:</strong>{' '}
+              <span style={{ opacity: memoryCount > 0 ? 1 : 0.6 }}>
+                {memoryCount} line{memoryCount === 1 ? '' : 's'} memorized (60-min window)
+              </span>
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={skipDedup}
+                onChange={(e) => setSkipDedup(e.target.checked)}
+              />
+              Force build all (ignore memory)
+            </label>
+            {memoryCount > 0 && (
+              <button
+                type="button"
+                className="mlb-clear-player"
+                onClick={clearSeen}
+                style={{ fontSize: 11, padding: '2px 8px' }}
+                title="Wipe the dedup memory so the next Build re-projects every line."
+              >
+                Forget memory
+              </button>
+            )}
+          </div>
+
+          {skippedCount > 0 && !error && (
+            <div className="mlb-info-banner" style={{ marginTop: 8 }}>
+              Skipped <strong>{skippedCount}</strong> line{skippedCount === 1 ? '' : 's'} already built within the last hour.
+              Tick "Force build all" to re-project them.
+            </div>
+          )}
           {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
         </section>
 
