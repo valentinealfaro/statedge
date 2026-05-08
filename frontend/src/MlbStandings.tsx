@@ -54,8 +54,19 @@ export function MlbStandings() {
           </div>
         )}
 
+        {data && data.daysStale !== null && data.daysStale >= 2 && (
+          <div className="mlb-info-banner mlb-info-error">
+            <strong>⚠ Standings are stale.</strong> Most recent game in
+            our database is <strong>{data.lastGameDate}</strong> ({data.daysStale} days
+            ago). Re-run the GitHub Actions workflow{' '}
+            <em>"Sync MLB data to Neon"</em> to pull the missing games
+            and stats — the numbers below reflect the older snapshot
+            until you do.
+          </div>
+        )}
+
         {data && data.teams.length > 0 && (
-          <StandingsByDivision teams={data.teams} asOf={data.asOf} />
+          <StandingsByDivision teams={data.teams} asOf={data.asOf} lastGameDate={data.lastGameDate} />
         )}
 
         {data && (
@@ -69,9 +80,11 @@ export function MlbStandings() {
 function StandingsByDivision({
   teams,
   asOf,
+  lastGameDate,
 }: {
   teams: MlbStandingRow[];
   asOf: string;
+  lastGameDate: string | null;
 }) {
   // Group by `${league} · ${division}`. Teams within a group are
   // already sorted by win% then run differential by the backend.
@@ -85,7 +98,9 @@ function StandingsByDivision({
   return (
     <>
       <p className="muted small" style={{ marginTop: 16 }}>
-        As of {asOf} · {teams.length} teams · {teams.reduce((s, t) => s + t.gamesPlayed, 0)} cumulative games
+        As of {asOf}
+        {lastGameDate && lastGameDate !== asOf && ` · data through ${lastGameDate}`}
+        {' · '}{teams.length} teams · {teams.reduce((s, t) => s + t.gamesPlayed, 0)} cumulative games
       </p>
       {[...groups.entries()].map(([label, rows]) => (
         <div key={label} className="mlb-standings-division">

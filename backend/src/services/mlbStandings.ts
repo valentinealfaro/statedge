@@ -57,7 +57,13 @@ export type MlbStandingRow = {
 };
 
 export type MlbStandingsResult = {
-  asOf: string;                 // YYYY-MM-DD
+  asOf: string;                 // YYYY-MM-DD — today (server time)
+  // Freshness — the most recent game_date with a final score in
+  // mlb_games. When this lags asOf by more than a day or two, the
+  // sync workflow hasn't run recently and the standings are stale.
+  // UI surfaces a banner so users don't trust stale data.
+  lastGameDate: string | null;
+  daysStale: number | null;
   totalGamesScanned: number;
   teams: MlbStandingRow[];
 };
@@ -266,8 +272,29 @@ export async function computeMlbStandings(opts?: {
     return b.runDifferential - a.runDifferential;
   });
 
+  // Compute freshness from the most recent dated game in the result
+  // set. asOf is today's date — if lastGameDate is days behind that,
+  // the sync workflow hasn't run recently.
+  let lastGameDate: string | null = null;
+  if (gameRows.length > 0) {
+    const lastTs = gameRows.reduce(
+      (max, g) => g.game_date.getTime() > max ? g.game_date.getTime() : max,
+      0,
+    );
+    const d = new Date(lastTs);
+    lastGameDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  let daysStale: number | null = null;
+  if (lastGameDate !== null) {
+    const lastMs = new Date(lastGameDate + 'T00:00:00Z').getTime();
+    const asOfMs = new Date(asOf + 'T00:00:00Z').getTime();
+    daysStale = Math.max(0, Math.round((asOfMs - lastMs) / (1000 * 60 * 60 * 24)));
+  }
+
   return {
     asOf,
+    lastGameDate,
+    daysStale,
     totalGamesScanned: gameRows.length,
     teams,
   };

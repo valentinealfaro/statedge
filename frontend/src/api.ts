@@ -1661,6 +1661,10 @@ export type MlbStandingRow = {
 
 export type MlbStandingsResponse = {
   asOf: string;
+  // Freshness — the most recent game_date with a final score in mlb_games.
+  // null when the DB has no completed games yet.
+  lastGameDate: string | null;
+  daysStale: number | null;
   totalGamesScanned: number;
   teams: MlbStandingRow[];
   disclaimer: string;
