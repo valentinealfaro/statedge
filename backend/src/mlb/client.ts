@@ -456,17 +456,11 @@ type RawScheduleTeam = {
     id: number;
     abbreviation?: string;
     name?: string;
-    record?: {
-      // The records hydrate returns splitRecords keyed by `type`:
-      // 'home', 'away', 'left', 'right', 'day', 'night', etc.
-      splitRecords?: Array<{
-        wins?: number;
-        losses?: number;
-        type?: string;
-      }>;
-    };
   };
   score?: number;
+  // Record going INTO the game. We use this only as a fallback when
+  // the parallel /standings call fails. Primary source for both
+  // overall + home/away splits is /standings.
   leagueRecord?: { wins?: number; losses?: number };
   probablePitcher?: RawProbablePitcher;
 };
@@ -541,28 +535,94 @@ function buildRecord(t: RawScheduleTeam): string | null {
   return `${w}-${l}`;
 }
 
-// Pull a specific split record out of the team(record) hydrate.
-// Returns "10-8" or null if the split is missing.
-function buildSplitRecord(t: RawScheduleTeam, splitType: 'home' | 'away'): string | null {
-  const splits = t.team.record?.splitRecords ?? [];
-  const match = splits.find((s) => (s.type ?? '').toLowerCase() === splitType);
-  if (!match || match.wins === undefined || match.losses === undefined) return null;
-  return `${match.wins}-${match.losses}`;
+// Fetch /standings and build a per-team-id map of overall + home +
+// away records. The /schedule endpoint's leagueRecord is the record
+// COMING INTO the game (off-by-one for today's games once they start)
+// and team(record) hydrate doesn't reliably expose splitRecords. The
+// /standings endpoint is the canonical source for both.
+type RawStandingsResponse = {
+  records?: Array<{
+    teamRecords?: Array<{
+      team?: { id?: number };
+      leagueRecord?: { wins?: number; losses?: number };
+      records?: {
+        splitRecords?: Array<{ wins?: number; losses?: number; type?: string }>;
+      };
+    }>;
+  }>;
+};
+
+type TeamRecordSet = {
+  overall: string | null;
+  home: string | null;
+  away: string | null;
+};
+
+async function getStandingsRecordsByTeamId(season: number): Promise<Map<number, TeamRecordSet>> {
+  // 103 = AL, 104 = NL. Single call covers all 30 teams.
+  const data = await fetchJson<RawStandingsResponse>(
+    `/standings?leagueId=103,104&season=${season}`,
+  );
+  const out = new Map<number, TeamRecordSet>();
+  for (const division of data.records ?? []) {
+    for (const tr of division.teamRecords ?? []) {
+      const id = tr.team?.id;
+      if (id === undefined) continue;
+      const overallW = tr.leagueRecord?.wins;
+      const overallL = tr.leagueRecord?.losses;
+      const splits = tr.records?.splitRecords ?? [];
+      const homeSplit = splits.find((s) => (s.type ?? '').toLowerCase() === 'home');
+      const awaySplit = splits.find((s) => (s.type ?? '').toLowerCase() === 'away');
+      out.set(id, {
+        overall: overallW !== undefined && overallL !== undefined ? `${overallW}-${overallL}` : null,
+        home: homeSplit && homeSplit.wins !== undefined && homeSplit.losses !== undefined
+          ? `${homeSplit.wins}-${homeSplit.losses}` : null,
+        away: awaySplit && awaySplit.wins !== undefined && awaySplit.losses !== undefined
+          ? `${awaySplit.wins}-${awaySplit.losses}` : null,
+      });
+    }
+  }
+  return out;
 }
 
 // Get every game on a given date (defaults to today). Hydrates
-// probable pitchers AND their season stats AND weather AND
-// home/away split records in a single API call. Used by the
-// "Tonight's MLB games" rail + the slate auto-publish path.
+// probable pitchers + season stats + weather in one /schedule call,
+// fetches /standings in parallel for accurate overall + home/away
+// split records (the /schedule endpoint's leagueRecord is the record
+// going INTO the game, which is off-by-one once games start).
 export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> {
   const targetDate = date ?? new Date().toISOString().slice(0, 10);
-  const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team(record),linescore,weather';
-  const data = await fetchJson<RawScheduleResponse>(
-    `/schedule?sportId=${SPORT_ID}&date=${targetDate}&hydrate=${encodeURIComponent(hydrate)}`,
-  );
+  const season = Number(targetDate.slice(0, 4));
+  const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team,linescore,weather';
+
+  // Fan-out: schedule + standings in parallel. Standings is non-fatal
+  // — if it fails, splits become null but the page still renders.
+  const [data, standings] = await Promise.all([
+    fetchJson<RawScheduleResponse>(
+      `/schedule?sportId=${SPORT_ID}&date=${targetDate}&hydrate=${encodeURIComponent(hydrate)}`,
+    ),
+    getStandingsRecordsByTeamId(season).catch((err) => {
+      console.warn('mlb standings fetch failed (records will lack splits):', (err as Error).message);
+      return new Map<number, TeamRecordSet>();
+    }),
+  ]);
+
   const dates = data.dates ?? [];
   const games = dates.flatMap((d) => d.games ?? []);
-  return games.map((g): MlbTodayGame => ({
+
+  // Pick the right record per side: overall from standings (current
+  // season), splits from standings. Fall back to leagueRecord on the
+  // schedule game when standings is unavailable.
+  const recordFor = (id: number, fallback: string | null): TeamRecordSet => {
+    const s = standings.get(id);
+    if (s) return s;
+    return { overall: fallback, home: null, away: null };
+  };
+
+  return games.map((g): MlbTodayGame => {
+    const homeR = recordFor(g.teams.home.team.id, buildRecord(g.teams.home));
+    const awayR = recordFor(g.teams.away.team.id, buildRecord(g.teams.away));
+    return {
     gamePk: g.gamePk,
     gameDate: g.gameDate,
     officialDate: g.officialDate,
@@ -576,8 +636,8 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
       abbreviation: g.teams.home.team.abbreviation ?? '?',
       name: g.teams.home.team.name ?? '',
       score: g.teams.home.score ?? null,
-      record: buildRecord(g.teams.home),
-      homeRecord: buildSplitRecord(g.teams.home, 'home'),
+      record: homeR.overall,
+      homeRecord: homeR.home,
       awayRecord: null,
     },
     away: {
@@ -585,9 +645,9 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
       abbreviation: g.teams.away.team.abbreviation ?? '?',
       name: g.teams.away.team.name ?? '',
       score: g.teams.away.score ?? null,
-      record: buildRecord(g.teams.away),
+      record: awayR.overall,
       homeRecord: null,
-      awayRecord: buildSplitRecord(g.teams.away, 'away'),
+      awayRecord: awayR.away,
     },
     venue: g.venue?.name ?? null,
     weather: g.weather && (g.weather.condition || g.weather.temp || g.weather.wind)
@@ -601,7 +661,8 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
       home: extractProbablePitcher(g.teams.home.probablePitcher),
       away: extractProbablePitcher(g.teams.away.probablePitcher),
     },
-  }));
+    };
+  });
 }
 
 // ---------- Per-pitcher season stats (ad-hoc) ----------
