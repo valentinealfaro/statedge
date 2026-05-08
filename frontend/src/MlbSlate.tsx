@@ -811,6 +811,13 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
         />
         <Stat label="Avg edge" value={`${wildCard.averageEdge >= 0 ? '+' : ''}${wildCard.averageEdge.toFixed(1)}%`} />
         <Stat label="Avg trap" value={`${wildCard.averageTrap.toFixed(0)}/100`} />
+        {wildCard.averageWildCardScore !== undefined && (
+          <Stat
+            label="WC score"
+            value={`${wildCard.averageWildCardScore.toFixed(0)}/100`}
+            hint="Phase 29 spec composite: projGap×0.25 + momentum×0.25 + matchup×0.15 + marketLag×0.15 + upside×0.10 - trap×0.10. ≥60 = real institutional edge tonight."
+          />
+        )}
       </div>
       {wildCard.correlationRisk !== 'None' && (
         <div className={`mlb-correlation-chip corr-${wildCard.correlationRisk.toLowerCase().replace(' ', '-')}`}

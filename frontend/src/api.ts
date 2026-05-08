@@ -1594,6 +1594,9 @@ export type MlbWildCardCombo = {
   correlationPairs: number;
   averageEdge: number;
   averageTrap: number;
+  // Phase 29 spec wildCardScore averaged across picks. ≥60 = real
+  // institutional edge. Compare night-to-night to gauge slate quality.
+  averageWildCardScore?: number;
   closestCandidates?: MlbWildCardLeg[];
 };
 

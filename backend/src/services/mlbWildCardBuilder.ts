@@ -60,6 +60,10 @@ export type MlbWildCardCombo = {
   correlationPairs: number;
   averageEdge: number;
   averageTrap: number;
+  // Phase 29: average wildCardScore across the picks. ≥60 = real
+  // institutional edge. ≤40 = pool was thin even though tier
+  // qualified. Lets users compare night-to-night Wild Card quality.
+  averageWildCardScore?: number;
   closestCandidates?: Array<MlbComboLeg & { wildCardReason: string }>;
 };
 
@@ -408,6 +412,9 @@ export function buildMlbWildCard(
     const raw = combinedHit(picks);
     const corr = computeCorrelationRisk(picks);
     const adjusted = Math.round(raw * corr.multiplier * 10) / 10;
+    // Average wildCardScore across the tier picks — surfaced so users
+    // can see how strong the tier's edge is relative to other days.
+    const avgWildScore = avg(picks.map((l) => computeWildCardScore(l)));
     return {
       label: 'Wild Card',
       kind: tier.kind,
@@ -419,6 +426,7 @@ export function buildMlbWildCard(
       correlationPairs: corr.pairs,
       averageEdge: avg(picks.map((l) => l.projection.edgePercent)),
       averageTrap: avg(picks.map((l) => l.projection.trapScore)),
+      averageWildCardScore: avgWildScore,
     };
   }
 
