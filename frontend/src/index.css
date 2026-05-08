@@ -5051,6 +5051,20 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-left-color: var(--cold);
   color: var(--text-1);
 }
+.mlb-retry-btn {
+  margin-left: 6px;
+  padding: 2px 10px;
+  background: transparent;
+  color: var(--text-1);
+  border: 1px solid var(--border-1);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mlb-retry-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .mlb-search-section,
 .mlb-stat-section {
   margin-top: 18px;

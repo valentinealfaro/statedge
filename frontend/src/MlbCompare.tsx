@@ -44,12 +44,27 @@ export function MlbCompare() {
   const [projectionLoading, setProjectionLoading] = useState(false);
 
   // Health check — surfaces the empty-DB state honestly so users know
-  // why search returns nothing on a fresh install.
+  // why search returns nothing on a fresh install. Auto-retries once
+  // after a short delay so a brief deploy hiccup doesn't strand users
+  // on an error banner.
+  const [healthAttempt, setHealthAttempt] = useState(0);
   useEffect(() => {
+    let cancelled = false;
+    setHealthError(null);
     getMlbHealth()
-      .then(setHealth)
-      .catch((err: Error) => setHealthError(err.message));
-  }, []);
+      .then((h) => { if (!cancelled) setHealth(h); })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        if (healthAttempt === 0) {
+          window.setTimeout(() => {
+            if (!cancelled) setHealthAttempt((n) => n + 1);
+          }, 1500);
+        } else {
+          setHealthError(err.message);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [healthAttempt]);
 
   // Debounced player search. 300ms is enough to feel snappy without
   // hammering the backend on every keystroke.
@@ -179,7 +194,14 @@ export function MlbCompare() {
         )}
         {healthError && (
           <div className="mlb-info-banner mlb-info-error">
-            Couldn't reach the MLB API: {healthError}
+            Couldn't reach the MLB API: {healthError}.{' '}
+            <button
+              type="button"
+              className="mlb-retry-btn"
+              onClick={() => setHealthAttempt((n) => n + 1)}
+            >
+              Retry
+            </button>
           </div>
         )}
 
