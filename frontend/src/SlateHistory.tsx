@@ -41,6 +41,22 @@ function legBadge(o: SlateHistoryLeg['outcome']): { label: string; cls: string }
   return { label: '—', cls: 'pending' };
 }
 
+// Derive the effective mode chip for a snapshotted combo. The snapshot
+// doesn't currently persist the user-mode that generated it (deferred —
+// would need a new column on slate_results), but each card's per-size
+// subtitle reveals its identity ("Safe Core" / "Balanced EV" /
+// "Aggressive Edge" / "Lottery" / "Momentum"). Map those to the 5
+// user-facing mode labels so the History tab matches the mode selector.
+function modeChip(combo: SlateHistoryCombo): { label: string; cls: string } {
+  if (combo.tag === 'wild') return { label: 'Wild Card', cls: 'mode-wild' };
+  const sub = (combo.subtitle ?? '').toLowerCase();
+  if (sub.includes('lottery')) return { label: 'Insane', cls: 'mode-insane' };
+  if (sub.includes('aggressive')) return { label: 'Aggressive', cls: 'mode-aggressive' };
+  if (sub.includes('safe core')) return { label: 'Safe', cls: 'mode-safe' };
+  if (sub.includes('balanced')) return { label: 'Balanced', cls: 'mode-balanced' };
+  return { label: 'Balanced', cls: 'mode-balanced' };
+}
+
 export function SlateHistory() {
   const [days, setDays] = useState<SlateHistoryDay[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -151,10 +167,17 @@ function comboHit(combo: SlateHistoryCombo): number {
 
 function ComboRow({ combo }: { combo: SlateHistoryCombo }) {
   const sb = statusBadge(combo.status);
+  const mc = modeChip(combo);
   return (
     <div className={`slate-history-combo ${combo.tag === 'wild' ? 'wild' : ''}`}>
       <div className="slate-history-combo-head">
         <span className="slate-history-combo-label">{combo.label}</span>
+        <span
+          className={`slate-history-combo-mode ${mc.cls}`}
+          title="Mode that generated this card — matches the Today-tab mode selector"
+        >
+          {mc.label}
+        </span>
         {combo.subtitle && (
           <span className="slate-history-combo-subtitle">{combo.subtitle}</span>
         )}

@@ -4834,6 +4834,47 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--text-3);
   font-weight: 500;
 }
+/* Mode chip — visually maps each History card to one of the 5
+   user-facing modes (Safe / Balanced / Aggressive / Insane / Wild Card)
+   so users can see which mode of the model produced it. Colors match
+   the mode-meter palette on the Today-tab selector. */
+.slate-history-combo-mode {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.slate-history-combo-mode.mode-safe {
+  background: rgba(76, 175, 80, 0.15);
+  color: #66bb6a;
+  border-color: rgba(76, 175, 80, 0.40);
+}
+.slate-history-combo-mode.mode-balanced {
+  background: rgba(33, 150, 243, 0.15);
+  color: #64b5f6;
+  border-color: rgba(33, 150, 243, 0.40);
+}
+.slate-history-combo-mode.mode-aggressive {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ffa726;
+  border-color: rgba(255, 152, 0, 0.40);
+}
+.slate-history-combo-mode.mode-insane {
+  background: rgba(229, 57, 53, 0.15);
+  color: #ef5350;
+  border-color: rgba(229, 57, 53, 0.40);
+}
+.slate-history-combo-mode.mode-wild {
+  background: rgba(156, 39, 176, 0.15);
+  color: #ba68c8;
+  border-color: rgba(156, 39, 176, 0.40);
+}
 .slate-history-combo-size {
   font-size: 12px;
   color: var(--text-3);
