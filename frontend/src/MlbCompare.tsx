@@ -699,9 +699,8 @@ function ContextChip({ label, mult, wired }: { label: string; mult: number; wire
 
 // L1 baseline composition — surfaces the 7-window blend the engine
 // uses as the projection anchor (per the institutional MLB
-// Intelligence Engine spec). Mission-aligned transparency: users see
-// season / L30 / L20 / L10 / L5 / median / trimmedMean side-by-side
-// instead of a black-box "projection".
+// Intelligence Engine spec). Collapsible to keep the Compare page
+// scannable; expand to audit how the projection was built.
 function RobustBaselinePanel({
   components,
 }: {
@@ -727,9 +726,9 @@ function RobustBaselinePanel({
   const present = rows.filter((r) => r.value !== null);
   if (present.length === 0) return null;
   return (
-    <div className="mlb-context" title="L1 robust baseline — the 7-window composite the engine uses as the projection anchor before context adjustments.">
-      <div className="mlb-context-heading">Baseline composition</div>
-      <div className="mlb-context-grid">
+    <details className="mlb-context" style={{ cursor: 'pointer' }}>
+      <summary className="mlb-context-heading">Baseline composition (L1) <span className="muted small">— click to expand</span></summary>
+      <div className="mlb-context-grid" style={{ marginTop: 8 }}>
         {present.map((r) => (
           <div key={r.label} className="mlb-context-chip neutral" title={r.hint}>
             <span className="mlb-context-label">{r.label}</span>
@@ -737,7 +736,7 @@ function RobustBaselinePanel({
           </div>
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -773,11 +772,11 @@ function FragilityPanel({
     });
   }
   return (
-    <div className="mlb-context" title="L5 Fragility breakdown — how little must go wrong for this pick to fail. Separate from probability + trap.">
-      <div className="mlb-context-heading">
-        Fragility breakdown · {score.toFixed(0)}/100 · <em>{tier}</em>
-      </div>
-      <div className="mlb-context-grid">
+    <details className="mlb-context" style={{ cursor: 'pointer' }}>
+      <summary className="mlb-context-heading">
+        Fragility breakdown (L5) · {score.toFixed(0)}/100 · <em>{tier}</em> <span className="muted small">— click to expand</span>
+      </summary>
+      <div className="mlb-context-grid" style={{ marginTop: 8 }}>
         {rows.map((r) => (
           <div key={r.label} className={`mlb-context-chip ${fragilityComponentClass(r.value)}`} title={r.hint}>
             <span className="mlb-context-label">{r.label}</span>
@@ -785,7 +784,7 @@ function FragilityPanel({
           </div>
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -822,11 +821,11 @@ function ConfidencePanel({
     { label: 'Data completeness',     value: components.dataCompleteness,     hint: 'Count of context layers (park / weather / lineup / BvP / game-script) populated.' },
   ];
   return (
-    <div className="mlb-context" title="L10 Confidence Intelligence — confidence is NOT hit probability. It measures how trustworthy the projection itself is.">
-      <div className="mlb-context-heading">
-        Confidence breakdown · {score}/100 · <em>{tier}</em>
-      </div>
-      <div className="mlb-context-grid">
+    <details className="mlb-context" style={{ cursor: 'pointer' }}>
+      <summary className="mlb-context-heading">
+        Confidence breakdown (L10) · {score}/100 · <em>{tier}</em> <span className="muted small">— click to expand</span>
+      </summary>
+      <div className="mlb-context-grid" style={{ marginTop: 8 }}>
         {rows.map((r) => (
           <div key={r.label} className={`mlb-context-chip ${confidenceComponentClass(r.value)}`} title={r.hint}>
             <span className="mlb-context-label">{r.label}</span>
@@ -834,7 +833,7 @@ function ConfidencePanel({
           </div>
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 

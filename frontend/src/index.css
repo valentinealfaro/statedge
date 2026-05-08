@@ -5307,6 +5307,24 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--text-3);
   margin-top: 2px;
 }
+.mlb-context summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.mlb-context summary::-webkit-details-marker {
+  display: none;
+}
+.mlb-context summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+  color: var(--text-3);
+}
+.mlb-context[open] summary::before {
+  transform: rotate(90deg);
+}
 
 .mlb-projection-eligibility {
   display: flex;
