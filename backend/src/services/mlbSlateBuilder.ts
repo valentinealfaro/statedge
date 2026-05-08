@@ -41,8 +41,11 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
   maxLegTrap: number;
   allowedSizes: ReadonlySet<number>;
   // Per-card-size additional requirements per the "card size must be
-  // earned" principle. Larger cards demand higher edge concentration.
-  perSize: Partial<Record<number, { minAvgEdge: number }>>;
+  // earned" principle. Larger cards demand higher edge concentration
+  // AND lower per-leg fragility (per L8 spec: rotate fragile picks
+  // out of larger cards). Each leg in a 6-stack compounds failure;
+  // tighter caps keep the multiplied probability honest.
+  perSize: Partial<Record<number, { minAvgEdge: number; maxLegFragility?: number }>>;
 }> = {
   safe: {
     label: 'Safe',
@@ -51,9 +54,9 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
     maxLegTrap: 40,
     allowedSizes: new Set([2, 3, 4]),
     perSize: {
-      2: { minAvgEdge: 5 },
-      3: { minAvgEdge: 7 },
-      4: { minAvgEdge: 9 },
+      2: { minAvgEdge: 5,  maxLegFragility: 75 },
+      3: { minAvgEdge: 7,  maxLegFragility: 65 },
+      4: { minAvgEdge: 9,  maxLegFragility: 55 },
     },
   },
   balanced: {
@@ -63,11 +66,11 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
     maxLegTrap: 50,
     allowedSizes: new Set([2, 3, 4, 5, 6]),
     perSize: {
-      2: { minAvgEdge: 5 },
-      3: { minAvgEdge: 7 },
-      4: { minAvgEdge: 9 },
-      5: { minAvgEdge: 12 },
-      6: { minAvgEdge: 14 },
+      2: { minAvgEdge: 5,  maxLegFragility: 80 },
+      3: { minAvgEdge: 7,  maxLegFragility: 70 },
+      4: { minAvgEdge: 9,  maxLegFragility: 60 },
+      5: { minAvgEdge: 12, maxLegFragility: 55 },
+      6: { minAvgEdge: 14, maxLegFragility: 50 },
     },
   },
   aggressive: {
@@ -77,24 +80,26 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
     maxLegTrap: 60,
     allowedSizes: new Set([3, 4, 5, 6]),
     perSize: {
-      3: { minAvgEdge: 12 },
-      4: { minAvgEdge: 14 },
-      5: { minAvgEdge: 16 },
-      6: { minAvgEdge: 18 },
+      3: { minAvgEdge: 12, maxLegFragility: 80 },
+      4: { minAvgEdge: 14, maxLegFragility: 70 },
+      5: { minAvgEdge: 16, maxLegFragility: 60 },
+      6: { minAvgEdge: 18, maxLegFragility: 55 },
     },
   },
   insane: {
     // Lottery-ticket mode (per feedback_insane_lottery_framing memory).
     // Power Play 5/6-leg only — that's where the payouts live. Edge
     // floor stays modest because lottery users explicitly accept losing.
+    // Fragility cap relaxed too — lottery users explicitly accept
+    // fragile picks for the ceiling.
     label: 'Insane',
     minLegProb: 45,
     minLegEdge: 8,
     maxLegTrap: 70,
     allowedSizes: new Set([5, 6]),
     perSize: {
-      5: { minAvgEdge: 12 },
-      6: { minAvgEdge: 14 },
+      5: { minAvgEdge: 12, maxLegFragility: 85 },
+      6: { minAvgEdge: 14, maxLegFragility: 80 },
     },
   },
 };
@@ -404,16 +409,25 @@ export function buildMlbSlate(
   const sizes = [...cfg.allowedSizes].sort((a, b) => a - b);
   for (const size of sizes) {
     const label = (`Best ${size}`) as MlbCombo['label'];
-    if (eligible.length < size) {
+    // Per L8 spec: "rotate fragile picks out of larger cards." Apply a
+    // size-specific fragility cap BEFORE picking — every leg in a Best 6
+    // compounds failure, so 6-leg cards demand sturdier legs than 2-leg.
+    const sizeFragCap = cfg.perSize[size]?.maxLegFragility;
+    const sizePool = sizeFragCap !== undefined
+      ? eligible.filter((l) => l.projection.fragilityScore <= sizeFragCap)
+      : eligible;
+    if (sizePool.length < size) {
       slots.push({
         size,
         label,
         combo: null,
-        reason: `Not enough eligible legs (have ${eligible.length}, need ${size}).`,
+        reason: sizeFragCap !== undefined && sizePool.length < eligible.length
+          ? `Not enough sturdy legs (≤${sizeFragCap} fragility) for a ${size}-stack: have ${sizePool.length}, need ${size}.`
+          : `Not enough eligible legs (have ${sizePool.length}, need ${size}).`,
       });
       continue;
     }
-    const picks = pickTopN(eligible, size, resolvedMode);
+    const picks = pickTopN(sizePool, size, resolvedMode);
     if (picks.length < size) {
       // Same-player uniqueness shrunk the pool below target.
       slots.push({

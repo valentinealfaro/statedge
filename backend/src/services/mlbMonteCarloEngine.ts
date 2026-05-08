@@ -51,20 +51,52 @@ function normalSample(mean: number, stddev: number): number {
   return mean + z * stddev;
 }
 
+// Poisson sampler (Knuth's algorithm — exact for small λ, which is
+// what we need for rare-event MLB stats: HR ≈ 0.4/game, SB ≈ 0.1,
+// triples ≈ 0.05). For the projections we deal with (λ < 30 always)
+// the loop terminates in a handful of iterations on average.
+//
+// Per the MLB Intelligence Engine spec L6: "Use skew-aware
+// distributions for HRs and SBs" — Poisson is the textbook choice
+// for count-of-rare-events outcomes. Replaces the v0 normal-rounded
+// approximation, which produced symmetric distributions where the
+// real world is right-skewed (long upper tail, hard floor at 0).
+function poissonSample(lambda: number): number {
+  if (lambda <= 0) return 0;
+  // Knuth's algorithm. Numerically stable for λ < ~30 (everything
+  // we'd ever project for a single MLB game).
+  const L = Math.exp(-lambda);
+  let k = 0;
+  let p = 1;
+  // Cap iterations defensively — astronomically unlikely to need more.
+  for (let i = 0; i < 1000; i++) {
+    k += 1;
+    p *= Math.random();
+    if (p <= L) break;
+  }
+  return k - 1;
+}
+
 // Stat type categorization for distribution choice. Kept private to
 // this module — the projection engine doesn't need to know.
 type DistShape =
   | 'integer_normal'        // hits, runs, RBI, K (hitter), pitcher K, etc.
-  | 'integer_zero_inflated' // HR, total_bases, doubles, triples, SB
+  | 'poisson'               // HR, triples, SB, home_runs_allowed (rare events)
+  | 'integer_zero_inflated' // doubles, total_bases (semi-rare, asymmetric)
   | 'continuous_normal';     // innings_pitched, pitches_thrown
 
 function shapeFor(key: MlbStatKey): DistShape {
   switch (key) {
+    // True rare events — Poisson is the textbook fit. Mean λ < 0.5
+    // for a single game in real-world MLB.
     case 'home_runs':
-    case 'doubles':
     case 'triples':
     case 'stolen_bases':
     case 'home_runs_allowed':
+      return 'poisson';
+    // Semi-rare integer stats with more spread — kept on the
+    // zero-inflated normal until we calibrate Poisson against them.
+    case 'doubles':
       return 'integer_zero_inflated';
     case 'innings_pitched':
     case 'pitches_thrown':
@@ -80,15 +112,18 @@ function clampZero(n: number): number {
 
 // Draw a single value from the chosen distribution.
 function drawValue(shape: DistShape, mean: number, stddev: number): number {
+  if (shape === 'poisson') {
+    // Poisson uses the projection as λ directly — stddev is implied
+    // by λ (var = λ for Poisson). Right-skewed by construction:
+    // hard zero floor + long upper tail, exactly what HR/SB need.
+    return poissonSample(Math.max(0, mean));
+  }
   if (shape === 'continuous_normal') {
     return clampZero(normalSample(mean, stddev));
   }
   if (shape === 'integer_zero_inflated') {
-    // For zero-inflated stats (HR, SB), use a half-normal-style: draw
-    // from normal centered at mean with the given stddev, clamp to 0.
-    // Round to integer. The mean for these stats is typically <1
-    // (Aaron Judge is 0.4 HR/game even in MVP form), so we're
-    // implicitly fattening the zero bin.
+    // Half-normal-style fallback for stats we haven't migrated to
+    // Poisson yet (doubles): clamp at 0, round to int.
     return Math.max(0, Math.round(normalSample(mean, stddev)));
   }
   // integer_normal: standard normal, rounded to non-negative integer.
@@ -230,4 +265,4 @@ function round1(n: number): number { return Math.round(n * 10) / 10; }
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 
 // Pure helpers exposed for tests.
-export const _internal = { normalSample, percentile, shapeFor };
+export const _internal = { normalSample, percentile, shapeFor, poissonSample };

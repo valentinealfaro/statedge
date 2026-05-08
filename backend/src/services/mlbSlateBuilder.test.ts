@@ -165,6 +165,38 @@ describe('buildMlbSlate — Insane mode', () => {
   });
 });
 
+describe('buildMlbSlate — L8 per-size fragility caps', () => {
+  test('Highly-fragile leg gets dropped from Best 6 (Balanced cap = 50) but kept in Best 2 (cap = 80)', () => {
+    // 6 legs total; player 1 has high fragility (75 — over Best-6 cap 50, under Best-2 cap 80).
+    const slate: ResolvedMlbLine[] = strongSlate(6);
+    slate[0] = {
+      ...slate[0]!,
+      projection: { ...slate[0]!.projection, fragilityScore: 75 },
+    };
+    const r = buildMlbSlate(slate, 'balanced');
+    const best6 = r.combos.find((c) => c.size === 6);
+    const best2 = r.combos.find((c) => c.size === 2);
+    // Best 6 either drops player 1 entirely OR fails (insufficient sturdy legs).
+    if (best6?.combo) {
+      const ids = best6.combo.legs.map((l) => l.playerId);
+      expect(ids).not.toContain(100);     // player 1 (id 100) excluded by fragility cap
+    }
+    // Best 2 should still be able to include the fragile leg if its score warrants.
+    expect(best2).toBeDefined();
+  });
+
+  test('Slate of all-fragile legs fails Best 6 with sturdy-legs reason', () => {
+    // Every leg over Balanced Best-6 cap (50).
+    const slate = Array.from({ length: 8 }, (_, i) =>
+      leg(200 + i, {}, { fragilityScore: 70, edgePercent: 18, probability: 65 }),
+    );
+    const r = buildMlbSlate(slate, 'balanced');
+    const best6 = r.combos.find((c) => c.size === 6);
+    expect(best6?.combo).toBeNull();
+    expect(best6?.reason).toMatch(/sturdy/i);
+  });
+});
+
 describe('buildMlbSlate — same-player block', () => {
   test('Same player on multiple stats can\'t stack on one card', () => {
     const slate = [

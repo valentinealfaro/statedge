@@ -184,11 +184,35 @@ describe('Monte Carlo — internal helpers', () => {
   });
 
   test('shapeFor classifies stats correctly', () => {
-    expect(_internal.shapeFor('home_runs')).toBe('integer_zero_inflated');
-    expect(_internal.shapeFor('stolen_bases')).toBe('integer_zero_inflated');
+    // Phase 18 (L6): true rare events migrated to Poisson; doubles
+    // kept on the legacy zero-inflated normal path until calibrated.
+    expect(_internal.shapeFor('home_runs')).toBe('poisson');
+    expect(_internal.shapeFor('stolen_bases')).toBe('poisson');
+    expect(_internal.shapeFor('triples')).toBe('poisson');
+    expect(_internal.shapeFor('home_runs_allowed')).toBe('poisson');
+    expect(_internal.shapeFor('doubles')).toBe('integer_zero_inflated');
     expect(_internal.shapeFor('hits')).toBe('integer_normal');
     expect(_internal.shapeFor('innings_pitched')).toBe('continuous_normal');
     expect(_internal.shapeFor('pitches_thrown')).toBe('continuous_normal');
+  });
+
+  test('Poisson sampler produces non-negative integers with mean ≈ λ', () => {
+    // 1000 draws at λ=2.0; sample mean should be near 2 (±0.2).
+    const samples: number[] = [];
+    for (let i = 0; i < 1000; i++) samples.push(_internal.poissonSample(2.0));
+    const mean = samples.reduce((s, v) => s + v, 0) / samples.length;
+    expect(mean).toBeGreaterThan(1.7);
+    expect(mean).toBeLessThan(2.3);
+    // All draws non-negative integers.
+    for (const v of samples) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+
+  test('Poisson sampler at λ=0 always returns 0', () => {
+    expect(_internal.poissonSample(0)).toBe(0);
+    expect(_internal.poissonSample(-1)).toBe(0);
   });
 });
 
