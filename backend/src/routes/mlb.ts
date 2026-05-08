@@ -699,7 +699,17 @@ mlbRouter.get('/slate/history', async (req, res) => {
   const windowDays = Math.max(1, Math.min(365, Number(req.query.windowDays ?? 30)));
   try {
     const all = await listMlbProjections({ windowDays, graded: 'all' });
-    // Group by date.
+
+    type CardBucket = {
+      cardType: string;
+      legs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+      // A card is "cleared" only if every leg hit (any miss = parlay dead).
+      cleared: boolean | null;   // null while pending
+    };
+
     type DayBucket = {
       date: string;
       totalLegs: number;
@@ -707,20 +717,48 @@ mlbRouter.get('/slate/history', async (req, res) => {
       hits: number;
       misses: number;
       pending: number;
+      byCardType: Record<string, CardBucket>;
     };
+
     const byDate = new Map<string, DayBucket>();
+
     for (const r of all) {
       const date = r.gameDate;
       let bucket = byDate.get(date);
       if (!bucket) {
-        bucket = { date, totalLegs: 0, gradedLegs: 0, hits: 0, misses: 0, pending: 0 };
+        bucket = { date, totalLegs: 0, gradedLegs: 0, hits: 0, misses: 0, pending: 0, byCardType: {} };
         byDate.set(date, bucket);
       }
       bucket.totalLegs += 1;
       if (r.hitOrMiss === true) { bucket.hits += 1; bucket.gradedLegs += 1; }
       else if (r.hitOrMiss === false) { bucket.misses += 1; bucket.gradedLegs += 1; }
       else { bucket.pending += 1; }
+
+      // Per-card-type breakdown. Same leg can appear in multiple
+      // cards (Best 4 ⊃ Best 3 ⊃ Best 2) — that duplication is
+      // intentional in the history table because each card has its
+      // own pass/fail outcome.
+      const ct = r.cardType ?? 'Other';
+      let card = bucket.byCardType[ct];
+      if (!card) {
+        card = { cardType: ct, legs: 0, hits: 0, misses: 0, pending: 0, cleared: null };
+        bucket.byCardType[ct] = card;
+      }
+      card.legs += 1;
+      if (r.hitOrMiss === true) card.hits += 1;
+      else if (r.hitOrMiss === false) card.misses += 1;
+      else card.pending += 1;
     }
+
+    // Resolve "cleared" per card after counting: cleared = all legs
+    // graded AND zero misses. While any leg is pending, cleared = null.
+    for (const day of byDate.values()) {
+      for (const card of Object.values(day.byCardType)) {
+        if (card.pending > 0) card.cleared = null;
+        else card.cleared = card.misses === 0;
+      }
+    }
+
     const days = [...byDate.values()]
       .sort((a, b) => b.date.localeCompare(a.date))
       .map((d) => ({

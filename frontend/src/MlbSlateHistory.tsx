@@ -13,6 +13,15 @@ import { useTitle } from './useTitle';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '') as string;
 
+type CardBucket = {
+  cardType: string;
+  legs: number;
+  hits: number;
+  misses: number;
+  pending: number;
+  cleared: boolean | null;
+};
+
 type DayBucket = {
   date: string;
   totalLegs: number;
@@ -21,6 +30,7 @@ type DayBucket = {
   misses: number;
   pending: number;
   hitRate: number | null;
+  byCardType?: Record<string, CardBucket>;
 };
 
 type HistoryResponse = {
@@ -93,6 +103,10 @@ export function MlbSlateHistory() {
   );
 }
 
+// Standard card-type ordering — keeps the rollup table consistent
+// even when a particular card type is missing from a given window.
+const CARD_TYPE_ORDER = ['Best 2', 'Best 3', 'Best 4', 'Best 5', 'Best 6', 'Wild Card'];
+
 function HistoryTable({ days }: { days: DayBucket[] }) {
   // Cumulative aggregates across the visible window.
   const totals = days.reduce(
@@ -109,6 +123,27 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
     totals.gradedLegs > 0
       ? Math.round((totals.hits / totals.gradedLegs) * 1000) / 10
       : null;
+
+  // Card-type rollup across the entire window: how many days did
+  // each card type CLEAR (every leg hit) vs DIE (any leg missed)?
+  // This is the metric that matters for parlay players — leg hit rate
+  // doesn't pay; whole-card clearance does.
+  const cardRollup = new Map<string, { cleared: number; dead: number; pending: number; days: number }>();
+  for (const d of days) {
+    if (!d.byCardType) continue;
+    for (const [name, card] of Object.entries(d.byCardType)) {
+      const r = cardRollup.get(name) ?? { cleared: 0, dead: 0, pending: 0, days: 0 };
+      r.days += 1;
+      if (card.cleared === true) r.cleared += 1;
+      else if (card.cleared === false) r.dead += 1;
+      else r.pending += 1;
+      cardRollup.set(name, r);
+    }
+  }
+  const orderedCards = [
+    ...CARD_TYPE_ORDER.filter((n) => cardRollup.has(n)),
+    ...[...cardRollup.keys()].filter((n) => !CARD_TYPE_ORDER.includes(n)),
+  ];
 
   return (
     <>
@@ -147,6 +182,47 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
         </div>
       </div>
 
+      {orderedCards.length > 0 && (
+        <div className="mlb-context" style={{ marginTop: 12 }} title="Per-card-type clearance rate. Cleared = every leg in that card hit. Dead = at least one leg missed (parlay killed).">
+          <div className="mlb-context-heading">
+            Card-type track record <span className="muted small">— whole-card clearance, the only metric that pays</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="mlb-standings-table" style={{ marginTop: 6 }}>
+              <thead>
+                <tr>
+                  <th>Card</th>
+                  <th className="num">Days</th>
+                  <th className="num">Cleared</th>
+                  <th className="num">Dead</th>
+                  <th className="num">Pending</th>
+                  <th className="num">Clear rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orderedCards.map((name) => {
+                  const r = cardRollup.get(name)!;
+                  const settled = r.cleared + r.dead;
+                  const clearRate = settled > 0 ? Math.round((r.cleared / settled) * 1000) / 10 : null;
+                  return (
+                    <tr key={name}>
+                      <td><strong>{name}</strong></td>
+                      <td className="num">{r.days}</td>
+                      <td className="num" style={{ color: r.cleared > 0 ? 'var(--hot, #66bb6a)' : undefined }}>{r.cleared}</td>
+                      <td className="num" style={{ color: r.dead > 0 ? '#ef5350' : undefined }}>{r.dead}</td>
+                      <td className="num">{r.pending}</td>
+                      <td className="num">
+                        {clearRate !== null ? `${clearRate.toFixed(1)}%` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="mlb-context" style={{ marginTop: 12 }}>
         <div className="mlb-context-heading">Day by day</div>
         <div style={{ overflowX: 'auto' }}>
@@ -160,6 +236,7 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
                 <th className="num">Misses</th>
                 <th className="num">Pending</th>
                 <th className="num">Hit %</th>
+                <th>Cards</th>
               </tr>
             </thead>
             <tbody>
@@ -173,6 +250,41 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
                   <td className="num">{d.pending}</td>
                   <td className="num">
                     {d.hitRate !== null ? `${d.hitRate.toFixed(1)}%` : '—'}
+                  </td>
+                  <td>
+                    {d.byCardType && Object.keys(d.byCardType).length > 0 ? (
+                      <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                        {orderedCards
+                          .filter((n) => d.byCardType![n])
+                          .map((n) => {
+                            const c = d.byCardType![n];
+                            const color =
+                              c.cleared === true ? '#66bb6a'
+                              : c.cleared === false ? '#ef5350'
+                              : '#7aa2ff';
+                            const symbol =
+                              c.cleared === true ? '✓'
+                              : c.cleared === false ? '✗'
+                              : '●';
+                            const tooltip =
+                              c.cleared === true ? `${n} CLEARED — all ${c.legs} legs hit`
+                              : c.cleared === false ? `${n} DEAD — ${c.misses} of ${c.legs} legs missed (${c.hits} hit)`
+                              : `${n} pending: ${c.hits} hit, ${c.misses} miss, ${c.pending} pending`;
+                            return (
+                              <span
+                                key={n}
+                                title={tooltip}
+                                style={{ color, fontWeight: 700, fontSize: 11 }}
+                              >
+                                {symbol} {n.replace('Best ', 'B')}
+                                {c.cleared === false && ` (${c.hits}/${c.legs})`}
+                              </span>
+                            );
+                          })}
+                      </span>
+                    ) : (
+                      <span className="muted small">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
