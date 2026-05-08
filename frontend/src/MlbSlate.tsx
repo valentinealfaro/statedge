@@ -34,6 +34,56 @@ import { useTitle } from './useTitle';
 // public view) don't.
 const ADMIN_KEY = 'statedge:mlbSlate:adminSecret';
 
+// MLB team abbreviations (30 teams). Used to filter pasted slates
+// down to MLB-only — PrizePicks lists every sport's lines on one
+// page and a "copy all" paste typically includes NBA/NFL/NHL. The
+// admin's 3130-line paste was almost entirely non-MLB; filtering
+// drops the burden on the projection pipeline by ~5x.
+const MLB_TEAM_ABBRS = new Set([
+  // AL East
+  'NYY', 'BOS', 'TB', 'TOR', 'BAL',
+  // AL Central
+  'CLE', 'MIN', 'KC', 'CWS', 'CHW', 'DET',
+  // AL West
+  'HOU', 'TEX', 'SEA', 'LAA', 'OAK', 'ATH',
+  // NL East
+  'ATL', 'PHI', 'NYM', 'WSH', 'WAS', 'MIA',
+  // NL Central
+  'CHC', 'STL', 'MIL', 'PIT', 'CIN',
+  // NL West
+  'LAD', 'SD', 'SF', 'ARI', 'AZ', 'COL',
+]);
+
+// Pre-filter pipe-format text to MLB-only. Returns { kept, droppedNonMlb }
+// counts so the UI can surface the filter. Lines starting with #
+// (comments) and blank lines pass through unchanged.
+function filterToMlbOnly(text: string): { filtered: string; droppedNonMlb: number } {
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  let dropped = 0;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      out.push(raw);   // preserve comments + blanks
+      continue;
+    }
+    // Pipe format: Player|TEAM|stat|line|side. Pull TEAM (2nd field).
+    const parts = trimmed.split('|');
+    if (parts.length < 5) {
+      // Unparsable — let the backend's text parser surface the error.
+      out.push(raw);
+      continue;
+    }
+    const team = (parts[1] ?? '').trim().toUpperCase();
+    if (MLB_TEAM_ABBRS.has(team)) {
+      out.push(raw);
+    } else {
+      dropped += 1;
+    }
+  }
+  return { filtered: out.join('\n'), droppedNonMlb: dropped };
+}
+
 type ModeKey = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
 
 // ---------- Slate-input dedup ----------
@@ -485,7 +535,7 @@ export function MlbSlate() {
             </div>
           )}
 
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
               type="button"
               className="mlb-build-btn"
@@ -506,6 +556,12 @@ export function MlbSlate() {
               >
                 Clear today's slate
               </button>
+            )}
+            {publishing && (
+              <span className="muted small">
+                Resolving {linesText.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith('#')).length} lines… large
+                slates take 30-60s.
+              </span>
             )}
             {publishMessage && (
               <span className="mlb-info-banner" style={{ padding: '4px 10px', margin: 0, fontSize: 12 }}>
