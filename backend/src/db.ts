@@ -1056,6 +1056,63 @@ export async function clearMlbDailySlateFromDb(): Promise<void> {
 }
 
 // -----------------------------------------------------------------
+// MLB resolved-slate cache (cross-instance via Postgres).
+//
+// In-memory caching doesn't work on Vercel because each request can
+// land on a different serverless instance. A 25-second projection
+// run for a 3000-leg slate would have to repeat on every cold hit.
+// This shared-Postgres cache means the FIRST visitor pays the cost
+// and every other visitor across every instance gets the cached
+// payload until TTL expires.
+// -----------------------------------------------------------------
+
+async function ensureMlbSlateCacheTable(): Promise<void> {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS mlb_slate_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+}
+
+export async function getMlbSlateCache(cacheKey: string): Promise<unknown | null> {
+  await ensureMlbSlateCacheTable();
+  const { rows } = await getPool().query<{
+    payload: unknown;
+    expires_at: Date;
+  }>(
+    `SELECT payload, expires_at FROM mlb_slate_cache
+      WHERE cache_key = $1 AND expires_at > NOW()`,
+    [cacheKey],
+  );
+  return rows[0]?.payload ?? null;
+}
+
+export async function setMlbSlateCache(
+  cacheKey: string,
+  payload: unknown,
+  ttlMs: number,
+): Promise<void> {
+  await ensureMlbSlateCacheTable();
+  const expiresAt = new Date(Date.now() + ttlMs);
+  await getPool().query(
+    `INSERT INTO mlb_slate_cache (cache_key, payload, expires_at)
+     VALUES ($1, $2::jsonb, $3)
+     ON CONFLICT (cache_key) DO UPDATE
+       SET payload = EXCLUDED.payload, expires_at = EXCLUDED.expires_at`,
+    [cacheKey, JSON.stringify(payload), expiresAt],
+  );
+}
+
+export async function purgeMlbSlateCacheDb(): Promise<void> {
+  await ensureMlbSlateCacheTable();
+  // Clear EVERYTHING — admin re-publish should evict regardless of
+  // mode/date in the key. Cheap (table is tiny, max ~5 entries per day).
+  await getPool().query(`DELETE FROM mlb_slate_cache`);
+}
+
+// -----------------------------------------------------------------
 // Slate results — snapshotted pre-built parlays per ET date plus the
 // graded outcome once games are final. Schema lives in db/schema.sql;
 // we ensureSlateResultsTable on every read/write so a fresh DB doesn't

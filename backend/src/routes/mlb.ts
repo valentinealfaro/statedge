@@ -7,9 +7,12 @@ import { Router } from 'express';
 import {
   clearMlbDailySlateFromDb,
   getMlbDailySlateFromDb,
+  getMlbSlateCache,
   getPool,
   isDbConfigured,
+  purgeMlbSlateCacheDb,
   setMlbDailySlateInDb,
+  setMlbSlateCache,
   type MlbStoredDailyLine,
 } from '../db.js';
 import {
@@ -386,23 +389,23 @@ mlbRouter.get('/projection', async (req, res) => {
   }
 });
 
-// In-memory cache for the resolved /slate/today response. The first
-// GET after a publish runs the full projection (~25s for a 3130-leg
-// PrizePicks board); subsequent visitors within 5 min get the cached
-// payload instantly. Invalidated on every POST/DELETE so admin
-// updates are visible immediately.
+// Cross-instance cache for the resolved /slate/today response. Backed
+// by Postgres (mlb_slate_cache table) because Vercel's serverless
+// model spawns multiple instances; an in-memory Map only helps the
+// instance that did the projection. With Postgres-backed cache, the
+// FIRST visitor across the whole pool pays the 25s projection cost
+// and every other instance hits the cache until TTL.
 //
-// Keyed by `${date}::${mode}::${updatedAtMs}` so a same-day publish
-// with different modes doesn't collide and an admin republish auto-
-// invalidates without manual purge.
+// Keyed by `${date}::${mode}::${updatedAt}` so a same-day publish
+// with a different mode doesn't collide and a re-publish auto-
+// invalidates (the new entry has a new key; old entries fall away
+// at TTL or on explicit purge).
 const SLATE_CACHE_TTL_MS = 5 * 60 * 1000;
-type SlateCacheEntry = { expiresAt: number; payload: unknown };
-const slateCache = new Map<string, SlateCacheEntry>();
 
-function purgeMlbSlateCache(): void {
-  slateCache.clear();
-  // History-snapshot tracking lives alongside; clear it too so a
-  // re-publish triggers a fresh write on the next GET miss.
+async function purgeMlbSlateCache(): Promise<void> {
+  await purgeMlbSlateCacheDb().catch(() => { /* best-effort */ });
+  // History-snapshot tracking is per-instance memory only; we still
+  // clear it so the local instance's tracking matches the DB state.
   slateHistorySnapshotted.clear();
 }
 
@@ -434,15 +437,13 @@ mlbRouter.get('/slate/today', async (req, res) => {
         : 'balanced';
     const requestedMode = (req.query.mode as MlbSlateMode | undefined) ?? mode;
 
-    // Cache lookup. Key includes the stored updatedAt so a republish
-    // auto-invalidates (the new entry has a new key; the old cache
-    // entry just sits until TTL expires or purge runs).
+    // Cache lookup (cross-instance via Postgres). Key includes the
+    // stored updatedAt so a republish auto-invalidates.
     const cacheKey = `${stored.date}::${requestedMode}::${stored.updatedAt}`;
-    const now = Date.now();
-    const hit = slateCache.get(cacheKey);
-    if (hit && hit.expiresAt > now) {
+    const cached = await getMlbSlateCache(cacheKey).catch(() => null);
+    if (cached !== null) {
       res.setHeader('X-Slate-Cache', 'HIT');
-      res.json(hit.payload);
+      res.json(cached);
       return;
     }
     res.setHeader('X-Slate-Cache', 'MISS');
@@ -476,9 +477,11 @@ mlbRouter.get('/slate/today', async (req, res) => {
         disclaimer: MLB_DISCLAIMER,
       },
     };
-    slateCache.set(cacheKey, {
-      expiresAt: now + SLATE_CACHE_TTL_MS,
-      payload,
+    // Persist to the cross-instance Postgres cache. Best-effort —
+    // a write failure shouldn't fail the response (next GET will
+    // just re-project).
+    await setMlbSlateCache(cacheKey, payload, SLATE_CACHE_TTL_MS).catch(() => {
+      /* best-effort cache write */
     });
 
     // Snapshot to mlb_projection_history for L9 calibration. We do
@@ -609,7 +612,7 @@ mlbRouter.post('/slate/today', async (req, res) => {
     // Wipe the cache so the next public GET re-projects against the
     // newly-published lines. Without this, the first viewer after a
     // re-publish could see the stale slate for up to 5 minutes.
-    purgeMlbSlateCache();
+    await purgeMlbSlateCache();
     res.json({ ok: true, ...out, unresolved: parseUnresolved });
   } catch (err) {
     console.error('mlb/slate/today POST failed', err);
@@ -687,7 +690,7 @@ mlbRouter.delete('/slate/today', async (req, res) => {
   }
   try {
     await clearMlbDailySlateFromDb();
-    purgeMlbSlateCache();
+    await purgeMlbSlateCache();
     res.json({ ok: true });
   } catch (err) {
     console.error('mlb/slate/today DELETE failed', err);
