@@ -385,6 +385,23 @@ mlbRouter.get('/projection', async (req, res) => {
   }
 });
 
+// In-memory cache for the resolved /slate/today response. The first
+// GET after a publish runs the full projection (~25s for a 3130-leg
+// PrizePicks board); subsequent visitors within 5 min get the cached
+// payload instantly. Invalidated on every POST/DELETE so admin
+// updates are visible immediately.
+//
+// Keyed by `${date}::${mode}::${updatedAtMs}` so a same-day publish
+// with different modes doesn't collide and an admin republish auto-
+// invalidates without manual purge.
+const SLATE_CACHE_TTL_MS = 5 * 60 * 1000;
+type SlateCacheEntry = { expiresAt: number; payload: unknown };
+const slateCache = new Map<string, SlateCacheEntry>();
+
+function purgeMlbSlateCache(): void {
+  slateCache.clear();
+}
+
 // GET /api/mlb/slate/today
 //
 // Returns today's admin-published slate (as raw lines + the built
@@ -412,6 +429,20 @@ mlbRouter.get('/slate/today', async (req, res) => {
         ? stored.mode
         : 'balanced';
     const requestedMode = (req.query.mode as MlbSlateMode | undefined) ?? mode;
+
+    // Cache lookup. Key includes the stored updatedAt so a republish
+    // auto-invalidates (the new entry has a new key; the old cache
+    // entry just sits until TTL expires or purge runs).
+    const cacheKey = `${stored.date}::${requestedMode}::${stored.updatedAt}`;
+    const now = Date.now();
+    const hit = slateCache.get(cacheKey);
+    if (hit && hit.expiresAt > now) {
+      res.setHeader('X-Slate-Cache', 'HIT');
+      res.json(hit.payload);
+      return;
+    }
+    res.setHeader('X-Slate-Cache', 'MISS');
+
     const { lines: resolvedLines, unresolved } = await resolveMlbSlate(
       stored.lines.map((l) => ({
         playerId: l.playerId,
@@ -425,7 +456,7 @@ mlbRouter.get('/slate/today', async (req, res) => {
       })),
     );
     const slate = buildMlbSlate(resolvedLines, requestedMode);
-    res.json({
+    const payload = {
       slate: {
         date: stored.date,
         count: stored.lines.length,
@@ -440,7 +471,12 @@ mlbRouter.get('/slate/today', async (req, res) => {
         requestedMode,
         disclaimer: MLB_DISCLAIMER,
       },
+    };
+    slateCache.set(cacheKey, {
+      expiresAt: now + SLATE_CACHE_TTL_MS,
+      payload,
     });
+    res.json(payload);
   } catch (err) {
     console.error('mlb/slate/today GET failed', err);
     res.status(500).json({ error: 'mlb slate today fetch failed' });
@@ -537,6 +573,10 @@ mlbRouter.post('/slate/today', async (req, res) => {
       rawText: body.text ?? null,
       mode: body.mode ?? 'balanced',
     });
+    // Wipe the cache so the next public GET re-projects against the
+    // newly-published lines. Without this, the first viewer after a
+    // re-publish could see the stale slate for up to 5 minutes.
+    purgeMlbSlateCache();
     res.json({ ok: true, ...out, unresolved: parseUnresolved });
   } catch (err) {
     console.error('mlb/slate/today POST failed', err);
@@ -563,6 +603,7 @@ mlbRouter.delete('/slate/today', async (req, res) => {
   }
   try {
     await clearMlbDailySlateFromDb();
+    purgeMlbSlateCache();
     res.json({ ok: true });
   } catch (err) {
     console.error('mlb/slate/today DELETE failed', err);
