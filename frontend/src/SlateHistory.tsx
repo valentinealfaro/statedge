@@ -91,6 +91,7 @@ export function SlateHistory() {
         Past pre-built parlays graded against actual stats. A combo wins
         if every leg hits its line; pushes count as survival.
       </p>
+      <CardTrackRecord days={days} />
       {days.map((day) => {
         const open = openDate === day.date;
         const wonCount = day.combos.filter((c) => c.status === 'won').length;
@@ -136,6 +137,150 @@ export function SlateHistory() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// PrizePicks Flex Play full-clear payouts. Same payout table as MLB
+// so the two slate histories speak the same language. Wild Card maps
+// to a 3-leg shape on NBA too; B2-B6 cover the rest.
+const FLEX_PAYOUTS: Record<string, number> = {
+  'Best 2': 3,
+  'Best 3': 5,
+  'Best 4': 10,
+  'Best 5': 7,
+  'Best 6': 25,
+  'Wild Card': 5,
+};
+
+const CARD_TYPE_ORDER = ['Best 2', 'Best 3', 'Best 4', 'Best 5', 'Best 6', 'Wild Card'];
+
+// Rollup of card-type clearance + simulated $1-stake P/L across the
+// visible history window. Mirrors the MLB version. NBA combos carry
+// status: 'won' | 'lost' | 'pending' so we tally directly.
+function CardTrackRecord({ days }: { days: SlateHistoryDay[] }) {
+  type Bucket = { days: number; cleared: number; dead: number; pending: number };
+  const rollup = new Map<string, Bucket>();
+  for (const d of days) {
+    for (const c of d.combos) {
+      const r = rollup.get(c.label) ?? { days: 0, cleared: 0, dead: 0, pending: 0 };
+      r.days += 1;
+      if (c.status === 'won') r.cleared += 1;
+      else if (c.status === 'lost') r.dead += 1;
+      else r.pending += 1;
+      rollup.set(c.label, r);
+    }
+  }
+  if (rollup.size === 0) return null;
+  const ordered = [
+    ...CARD_TYPE_ORDER.filter((n) => rollup.has(n)),
+    ...[...rollup.keys()].filter((n) => !CARD_TYPE_ORDER.includes(n)),
+  ];
+
+  let totalProfit = 0;
+  let totalSettled = 0;
+  let totalCleared = 0;
+  let totalDead = 0;
+  for (const name of ordered) {
+    const r = rollup.get(name)!;
+    const payout = FLEX_PAYOUTS[name] ?? 1;
+    totalProfit += r.cleared * (payout - 1) - r.dead;
+    totalSettled += r.cleared + r.dead;
+    totalCleared += r.cleared;
+    totalDead += r.dead;
+  }
+  const totalRoi = totalSettled > 0 ? (totalProfit / totalSettled) * 100 : null;
+  const totalClearRate = totalSettled > 0 ? Math.round((totalCleared / totalSettled) * 1000) / 10 : null;
+
+  return (
+    <div className="mlb-context" style={{ marginBottom: 16 }}>
+      <div className="mlb-context-heading">
+        Card-type track record <span className="muted small">— whole-card clearance + simulated $1-stake ROI</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="mlb-standings-table" style={{ marginTop: 6 }}>
+          <thead>
+            <tr>
+              <th>Card</th>
+              <th className="num">Days</th>
+              <th className="num">Cleared</th>
+              <th className="num">Dead</th>
+              <th className="num">Pending</th>
+              <th className="num">Clear rate</th>
+              <th className="num">$1 P/L</th>
+              <th className="num">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map((name) => {
+              const r = rollup.get(name)!;
+              const settled = r.cleared + r.dead;
+              const clearRate = settled > 0 ? Math.round((r.cleared / settled) * 1000) / 10 : null;
+              const payout = FLEX_PAYOUTS[name] ?? 1;
+              const profit = r.cleared * (payout - 1) - r.dead;
+              const roi = settled > 0 ? (profit / settled) * 100 : null;
+              return (
+                <tr key={name}>
+                  <td><strong>{name}</strong></td>
+                  <td className="num">{r.days}</td>
+                  <td className="num" style={{ color: r.cleared > 0 ? 'var(--hot, #66bb6a)' : undefined }}>{r.cleared}</td>
+                  <td className="num" style={{ color: r.dead > 0 ? '#ef5350' : undefined }}>{r.dead}</td>
+                  <td className="num">{r.pending}</td>
+                  <td className="num">{clearRate !== null ? `${clearRate.toFixed(1)}%` : '—'}</td>
+                  <td
+                    className="num"
+                    style={{
+                      color: profit > 0 ? 'var(--hot, #66bb6a)' : profit < 0 ? '#ef5350' : undefined,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {settled === 0 ? '—' : `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      color: roi !== null && roi > 0 ? 'var(--hot, #66bb6a)' : roi !== null && roi < 0 ? '#ef5350' : undefined,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {roi !== null ? `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%` : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr style={{ borderTop: '2px solid var(--border-subtle)' }}>
+              <td><strong>All cards combined</strong></td>
+              <td className="num">—</td>
+              <td className="num" style={{ color: totalCleared > 0 ? 'var(--hot, #66bb6a)' : undefined }}><strong>{totalCleared}</strong></td>
+              <td className="num" style={{ color: totalDead > 0 ? '#ef5350' : undefined }}><strong>{totalDead}</strong></td>
+              <td className="num">—</td>
+              <td className="num"><strong>{totalClearRate !== null ? `${totalClearRate.toFixed(1)}%` : '—'}</strong></td>
+              <td
+                className="num"
+                style={{
+                  color: totalProfit > 0 ? 'var(--hot, #66bb6a)' : totalProfit < 0 ? '#ef5350' : undefined,
+                  fontWeight: 800,
+                }}
+              >
+                <strong>{totalSettled === 0 ? '—' : `${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}`}</strong>
+              </td>
+              <td
+                className="num"
+                style={{
+                  color: totalRoi !== null && totalRoi > 0 ? 'var(--hot, #66bb6a)' : totalRoi !== null && totalRoi < 0 ? '#ef5350' : undefined,
+                  fontWeight: 800,
+                }}
+              >
+                <strong>{totalRoi !== null ? `${totalRoi >= 0 ? '+' : ''}${totalRoi.toFixed(1)}%` : '—'}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Hypothetical $1-stake P/L assuming PrizePicks full-clear Flex payouts. Partial-clear payouts
+        (4/5, 5/6) aren't credited — the strict version of the metric.
+      </p>
     </div>
   );
 }
