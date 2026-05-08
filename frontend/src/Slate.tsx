@@ -2051,6 +2051,11 @@ function ProjectionPanel({ projection }: { projection: SlateProjection }) {
               <strong>{projection.risk.label}</strong>
               <span className="muted small">{projection.risk.score}</span>
             </div>
+            <div className="slate-projection-cell" title="L5 Fragility — how little must go wrong for this leg to fail. Separate from probability + risk. Stat rarity + margin thinness + sample weakness + volatility + minutes uncertainty.">
+              <span className="muted small">Fragility</span>
+              <strong>{projection.fragility.tier}</strong>
+              <span className="muted small">{projection.fragility.score.toFixed(0)}</span>
+            </div>
           </div>
 
           <div className="slate-projection-factors">
