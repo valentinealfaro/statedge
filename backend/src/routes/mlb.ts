@@ -33,6 +33,7 @@ import { projectMlbStat } from '../services/mlbProjectionEngine.js';
 import { resolveMlbSlate, type RawMlbLine } from '../services/mlbSlatePipeline.js';
 import { buildMlbSlate, type MlbSlateMode } from '../services/mlbSlateBuilder.js';
 import {
+  listMlbProjections,
   recordMlbSlateProjections,
   type RecordableMlbCombo,
 } from '../services/mlbProjectionHistory.js';
@@ -400,6 +401,9 @@ const slateCache = new Map<string, SlateCacheEntry>();
 
 function purgeMlbSlateCache(): void {
   slateCache.clear();
+  // History-snapshot tracking lives alongside; clear it too so a
+  // re-publish triggers a fresh write on the next GET miss.
+  slateHistorySnapshotted.clear();
 }
 
 // GET /api/mlb/slate/today
@@ -476,12 +480,41 @@ mlbRouter.get('/slate/today', async (req, res) => {
       expiresAt: now + SLATE_CACHE_TTL_MS,
       payload,
     });
+
+    // Snapshot to mlb_projection_history for L9 calibration. We do
+    // this on cache MISS only — first visitor of the day pays the
+    // write cost, subsequent visits hit the cache and skip. Idempotent
+    // via the table's primary key (slate_date + player_id + stat
+    // + line) so re-publishes safely overwrite. Best-effort: a
+    // history-write failure must not break the slate response.
+    if (!slateHistorySnapshotted.has(cacheKey)) {
+      try {
+        const recordable: RecordableMlbCombo[] = slate.combos
+          .filter((c) => c.combo !== null)
+          .map((c) => ({ combo: c.combo!, cardType: c.label }));
+        if (recordable.length > 0) {
+          await recordMlbSlateProjections({
+            combos: recordable,
+            gameDate: stored.date,
+          });
+          slateHistorySnapshotted.add(cacheKey);
+        }
+      } catch (snapErr) {
+        console.warn('mlb/slate/today history snapshot failed:', (snapErr as Error).message);
+      }
+    }
+
     res.json(payload);
   } catch (err) {
     console.error('mlb/slate/today GET failed', err);
     res.status(500).json({ error: 'mlb slate today fetch failed' });
   }
 });
+
+// Tracks which cache-keys have already had their history rows
+// written today. Cleared on every POST/DELETE alongside the cache
+// itself so a re-publish triggers a fresh snapshot.
+const slateHistorySnapshotted = new Set<string>();
 
 // POST /api/mlb/slate/today
 // Body: { text?: string, lines?: RawMlbLine[], mode?: MlbSlateMode }
@@ -581,6 +614,57 @@ mlbRouter.post('/slate/today', async (req, res) => {
   } catch (err) {
     console.error('mlb/slate/today POST failed', err);
     res.status(500).json({ error: 'mlb slate today write failed' });
+  }
+});
+
+// GET /api/mlb/slate/history?windowDays=30
+//
+// Past published slates with hit-rate aggregates per day. Reads
+// from mlb_projection_history (populated automatically on every GET
+// /slate/today cache miss). Grouped by game_date so the UI can
+// render a date-by-date track record.
+//
+// Public endpoint — accountability is the whole point.
+mlbRouter.get('/slate/history', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ days: [] });
+    return;
+  }
+  const windowDays = Math.max(1, Math.min(365, Number(req.query.windowDays ?? 30)));
+  try {
+    const all = await listMlbProjections({ windowDays, graded: 'all' });
+    // Group by date.
+    type DayBucket = {
+      date: string;
+      totalLegs: number;
+      gradedLegs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+    };
+    const byDate = new Map<string, DayBucket>();
+    for (const r of all) {
+      const date = r.gameDate;
+      let bucket = byDate.get(date);
+      if (!bucket) {
+        bucket = { date, totalLegs: 0, gradedLegs: 0, hits: 0, misses: 0, pending: 0 };
+        byDate.set(date, bucket);
+      }
+      bucket.totalLegs += 1;
+      if (r.hitOrMiss === true) { bucket.hits += 1; bucket.gradedLegs += 1; }
+      else if (r.hitOrMiss === false) { bucket.misses += 1; bucket.gradedLegs += 1; }
+      else { bucket.pending += 1; }
+    }
+    const days = [...byDate.values()]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((d) => ({
+        ...d,
+        hitRate: d.gradedLegs > 0 ? Math.round((d.hits / d.gradedLegs) * 1000) / 10 : null,
+      }));
+    res.json({ windowDays, days, disclaimer: MLB_DISCLAIMER });
+  } catch (err) {
+    console.error('mlb/slate/history failed', err);
+    res.status(500).json({ error: 'mlb slate history failed' });
   }
 });
 
