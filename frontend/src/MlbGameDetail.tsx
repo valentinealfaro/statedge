@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
 import {
   getMlbDailySlate,
   getMlbGameLive,
@@ -127,10 +128,16 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
   return (
     <div className="mlb-projection" style={{ marginBottom: 12 }}>
       <div className="mlb-projection-head" style={{ alignItems: 'baseline' }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>
-          {game.away.name} ({game.away.record ?? '—'}{awaySplit ? `, ${awaySplit} away` : ''})
-          {' @ '}
-          {game.home.name} ({game.home.record ?? '—'}{homeSplit ? `, ${homeSplit} home` : ''})
+        <h1 style={{ margin: 0, fontSize: 22, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <MlbTeamLogo abbr={game.away.abbreviation} name={game.away.name} size="lg" />
+          <span>
+            {game.away.name} ({game.away.record ?? '—'}{awaySplit ? `, ${awaySplit} away` : ''})
+          </span>
+          <span style={{ opacity: 0.6 }}>@</span>
+          <MlbTeamLogo abbr={game.home.abbreviation} name={game.home.name} size="lg" />
+          <span>
+            {game.home.name} ({game.home.record ?? '—'}{homeSplit ? `, ${homeSplit} home` : ''})
+          </span>
         </h1>
         <span
           className="mlb-projection-verdict"
@@ -235,28 +242,29 @@ function ProbablePitchers({ game }: { game: MlbTodayGame }) {
   const a = game.probablePitchers.away;
   const h = game.probablePitchers.home;
   if (!a && !h) return null;
+  const Pitcher = ({
+    p, team,
+  }: {
+    p: NonNullable<MlbTodayGame['probablePitchers']['home']>;
+    team: string;
+  }) => (
+    <div className="mlb-context-chip neutral" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px' }}>
+      <MlbPlayerAvatar playerId={p.id} name={p.fullName ?? 'Pitcher'} size="lg" />
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span className="mlb-context-label">{team} {p.fullName ?? ''}</span>
+        <span className="mlb-context-value" style={{ fontSize: 13 }}>
+          {p.wins ?? 0}-{p.losses ?? 0} · {p.era !== null ? `${p.era.toFixed(2)} ERA` : '—'}
+          {p.strikeouts !== null && ` · ${p.strikeouts} K`}
+        </span>
+      </div>
+    </div>
+  );
   return (
     <details className="mlb-context" open>
       <summary className="mlb-context-heading">Probable pitchers</summary>
       <div className="mlb-context-grid" style={{ marginTop: 8 }}>
-        {a && (
-          <div className="mlb-context-chip neutral" title="Away probable starter — season stats">
-            <span className="mlb-context-label">{game.away.abbreviation} {a.fullName ?? ''}</span>
-            <span className="mlb-context-value" style={{ fontSize: 13 }}>
-              {a.wins ?? 0}-{a.losses ?? 0} · {a.era !== null ? `${a.era.toFixed(2)} ERA` : '—'}
-              {a.strikeouts !== null && ` · ${a.strikeouts} K`}
-            </span>
-          </div>
-        )}
-        {h && (
-          <div className="mlb-context-chip neutral" title="Home probable starter — season stats">
-            <span className="mlb-context-label">{game.home.abbreviation} {h.fullName ?? ''}</span>
-            <span className="mlb-context-value" style={{ fontSize: 13 }}>
-              {h.wins ?? 0}-{h.losses ?? 0} · {h.era !== null ? `${h.era.toFixed(2)} ERA` : '—'}
-              {h.strikeouts !== null && ` · ${h.strikeouts} K`}
-            </span>
-          </div>
-        )}
+        {a && <Pitcher p={a} team={game.away.abbreviation} />}
+        {h && <Pitcher p={h} team={game.home.abbreviation} />}
       </div>
     </details>
   );
@@ -449,7 +457,10 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
             {graded.map(({ leg: l, current, grade }, i) => (
               <div key={i} className="best-pick-leg-block">
                 <div className="best-pick-leg">
-                  <span className="best-pick-leg-name">{l.playerName}</span>
+                  <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
+                    {l.playerName}
+                  </span>
                   <span className="best-pick-leg-stat">
                     {l.statLabel} {l.line}
                   </span>
@@ -658,7 +669,12 @@ function Lineups({ game }: { game: MlbTodayGame }) {
               {side.map((b) => (
                 <tr key={b.playerId}>
                   <td>{b.battingOrder || '—'}</td>
-                  <td><strong>{b.name}</strong></td>
+                  <td>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <MlbPlayerAvatar playerId={b.playerId} name={b.name} size="md" />
+                      <strong>{b.name}</strong>
+                    </span>
+                  </td>
                   <td>{b.position}</td>
                   <td className="num">{b.avg ?? '—'}</td>
                   <td className="num">{b.hr ?? '—'}</td>
@@ -716,7 +732,10 @@ function Leaders({ game }: { game: MlbTodayGame }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Top hitters · AVG</div>
             {side.hittingAvg.map((l) => (
               <div key={`avg-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
+                  {l.name}
+                </span>
                 <span className="best-pick-leg-stat">{l.value} <span className="muted small">({l.context})</span></span>
               </div>
             ))}
@@ -727,7 +746,10 @@ function Leaders({ game }: { game: MlbTodayGame }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Power · HR</div>
             {side.hittingHr.map((l) => (
               <div key={`hr-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
+                  {l.name}
+                </span>
                 <span className="best-pick-leg-stat">{l.value} HR <span className="muted small">({l.context})</span></span>
               </div>
             ))}
@@ -738,7 +760,10 @@ function Leaders({ game }: { game: MlbTodayGame }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Starting rotation · ERA</div>
             {side.pitchingEra.map((l) => (
               <div key={`era-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
+                  {l.name}
+                </span>
                 <span className="best-pick-leg-stat">{l.value} ERA <span className="muted small">({l.context})</span></span>
               </div>
             ))}
@@ -918,7 +943,12 @@ function Injuries({ game }: { game: MlbTodayGame }) {
             <tbody>
               {side.map((p) => (
                 <tr key={p.playerId}>
-                  <td>{p.name}</td>
+                  <td>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <MlbPlayerAvatar playerId={p.playerId} name={p.name} size="md" />
+                      {p.name}
+                    </span>
+                  </td>
                   <td>{p.position ?? '—'}</td>
                   <td className="muted small">{p.status}</td>
                 </tr>

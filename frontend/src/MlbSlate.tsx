@@ -15,6 +15,7 @@
 // for MLB is a future slice.
 
 import { useEffect, useMemo, useState } from 'react';
+import { MlbPlayerAvatar } from './Avatar';
 import {
   buildMlbSlateRequest,
   clearMlbDailySlate,
@@ -1012,7 +1013,10 @@ function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liv
             {wildCard.closestCandidates.map((leg, i) => (
               <div key={i} className="best-pick-leg-block">
                 <div className="best-pick-leg">
-                  <span className="best-pick-leg-name">{leg.playerName}</span>
+                  <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <MlbPlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />
+                    {leg.playerName}
+                  </span>
                   <span className="best-pick-leg-stat">
                     {leg.statLabel} {leg.line}
                   </span>
@@ -1137,7 +1141,10 @@ function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liv
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
+                  {l.playerName}
+                </span>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>
@@ -1390,7 +1397,10 @@ function ComboCard({ slot, liveToday }: { slot: MlbSlateResponse['combos'][numbe
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
+                  {l.playerName}
+                </span>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>

@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
 import { getMlbToday, type MlbTodayGame, type MlbTodayResponse } from './api';
 
 export function MlbTodaysGames() {
@@ -84,7 +85,8 @@ function GameCard({ game }: { game: MlbTodayGame }) {
       <div className="mlb-today-game-status">{status}</div>
 
       <div className="mlb-today-row">
-        <span className="mlb-today-team">
+        <span className="mlb-today-team" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MlbTeamLogo abbr={game.away.abbreviation} name={game.away.name} size="md" />
           <strong>{game.away.abbreviation}</strong>
           {game.away.record && (
             <span className="muted small">
@@ -96,7 +98,8 @@ function GameCard({ game }: { game: MlbTodayGame }) {
         <span className="mlb-today-score">{game.away.score ?? '—'}</span>
       </div>
       <div className="mlb-today-row">
-        <span className="mlb-today-team">
+        <span className="mlb-today-team" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MlbTeamLogo abbr={game.home.abbreviation} name={game.home.name} size="md" />
           <strong>{game.home.abbreviation}</strong>
           {game.home.record && (
             <span className="muted small">
@@ -180,16 +183,21 @@ function PitcherLine({
     ? `${pitcher.wins}-${pitcher.losses}`
     : null;
   return (
-    <div className="mlb-today-pitcher">
-      <span className="mlb-today-pitcher-team muted small">{team}</span>
-      <span className="mlb-today-pitcher-name">{pitcher.fullName}</span>
-      {(record || pitcher.era !== null) && (
-        <span className="mlb-today-pitcher-stats muted small">
-          {record ?? ''}
-          {record && pitcher.era !== null ? ' · ' : ''}
-          {pitcher.era !== null ? `${pitcher.era.toFixed(2)} ERA` : ''}
-        </span>
-      )}
+    <div className="mlb-today-pitcher" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <MlbPlayerAvatar playerId={pitcher.id} name={pitcher.fullName} size="md" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+          <span className="mlb-today-pitcher-team muted small">{team}</span>
+          <span className="mlb-today-pitcher-name">{pitcher.fullName}</span>
+        </div>
+        {(record || pitcher.era !== null) && (
+          <span className="mlb-today-pitcher-stats muted small">
+            {record ?? ''}
+            {record && pitcher.era !== null ? ' · ' : ''}
+            {pitcher.era !== null ? `${pitcher.era.toFixed(2)} ERA` : ''}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
