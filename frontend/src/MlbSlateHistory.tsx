@@ -33,9 +33,20 @@ type DayBucket = {
   byCardType?: Record<string, CardBucket>;
 };
 
+type StatTypeBucket = {
+  stat: string;
+  direction: 'OVER' | 'UNDER';
+  legs: number;
+  hits: number;
+  misses: number;
+  pending: number;
+  hitRate: number | null;
+};
+
 type HistoryResponse = {
   windowDays: number;
   days: DayBucket[];
+  byStatType?: StatTypeBucket[];
   disclaimer: string;
 };
 
@@ -94,6 +105,9 @@ export function MlbSlateHistory() {
         )}
 
         {data && data.days.length > 0 && <HistoryTable days={data.days} />}
+        {data && data.byStatType && data.byStatType.length > 0 && (
+          <StatTypeBreakdown buckets={data.byStatType} />
+        )}
 
         {data && (
           <p className="mlb-disclaimer">{data.disclaimer}</p>
@@ -393,5 +407,83 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
         </Link>
       </p>
     </>
+  );
+}
+
+// Stat-type rollup — shows where the model has edge vs where it's
+// getting beaten. Sorted strongest signal first; thin samples (<5
+// legs) sink to the bottom and gray out so users don't over-index.
+function StatTypeBreakdown({ buckets }: { buckets: StatTypeBucket[] }) {
+  if (buckets.length === 0) return null;
+  // Pretty-print stat keys (selected_stat is snake_case)
+  const fmt = (s: string): string =>
+    s.replace(/_/g, ' ')
+      .replace(/\brbis\b/g, 'RBIs')
+      .replace(/\bhrs?\b/gi, 'HR')
+      .replace(/\bera\b/gi, 'ERA')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <div className="mlb-context" style={{ marginTop: 12 }} title="Per-stat-type+direction hit rates. Shows where the model has signal and where it doesn't.">
+      <div className="mlb-context-heading">
+        Stat-type performance <span className="muted small">— where the model has edge</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="mlb-standings-table" style={{ marginTop: 6 }}>
+          <thead>
+            <tr>
+              <th>Stat</th>
+              <th>Side</th>
+              <th className="num">Legs</th>
+              <th className="num">Hits</th>
+              <th className="num">Misses</th>
+              <th className="num">Pending</th>
+              <th className="num">Hit %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buckets.map((b, i) => {
+              const settled = b.hits + b.misses;
+              const thin = settled < 5;
+              return (
+                <tr key={i} style={{ opacity: thin ? 0.55 : 1 }}>
+                  <td><strong>{fmt(b.stat)}</strong></td>
+                  <td>
+                    <span style={{
+                      color: b.direction === 'OVER' ? '#66bb6a' : '#7aa2ff',
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}>
+                      {b.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'}
+                    </span>
+                  </td>
+                  <td className="num">{b.legs}</td>
+                  <td className="num" style={{ color: b.hits > 0 ? 'var(--hot, #66bb6a)' : undefined }}>{b.hits}</td>
+                  <td className="num" style={{ color: b.misses > 0 ? '#ef5350' : undefined }}>{b.misses}</td>
+                  <td className="num">{b.pending}</td>
+                  <td
+                    className="num"
+                    title={thin ? 'Thin sample — interpret cautiously' : undefined}
+                    style={{
+                      fontWeight: 700,
+                      color: b.hitRate !== null && b.hitRate >= 60 ? 'var(--hot, #66bb6a)'
+                        : b.hitRate !== null && b.hitRate <= 40 ? '#ef5350'
+                        : undefined,
+                    }}
+                  >
+                    {b.hitRate !== null ? `${b.hitRate.toFixed(1)}%` : '—'}
+                    {thin && <span className="muted small" style={{ marginLeft: 4 }}>·thin</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Buckets with fewer than 5 settled legs are dimmed — too thin to read
+        as signal. Use the calibration page for Bayesian-smoothed numbers.
+      </p>
+    </div>
   );
 }

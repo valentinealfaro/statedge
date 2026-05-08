@@ -765,7 +765,53 @@ mlbRouter.get('/slate/history', async (req, res) => {
         ...d,
         hitRate: d.gradedLegs > 0 ? Math.round((d.hits / d.gradedLegs) * 1000) / 10 : null,
       }));
-    res.json({ windowDays, days, disclaimer: MLB_DISCLAIMER });
+
+    // Per-stat-type+direction rollup across the window. Tells the user
+    // WHERE the model is edge-positive vs edge-negative — "hits OVER
+    // is +12% vs market, but home_runs UNDER is -8%."
+    const byStatTypeMap = new Map<string, {
+      stat: string;
+      direction: 'OVER' | 'UNDER';
+      legs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+    }>();
+    for (const r of all) {
+      const key = `${r.selectedStat}::${r.direction}`;
+      let bucket = byStatTypeMap.get(key);
+      if (!bucket) {
+        bucket = {
+          stat: r.selectedStat,
+          direction: r.direction,
+          legs: 0, hits: 0, misses: 0, pending: 0,
+        };
+        byStatTypeMap.set(key, bucket);
+      }
+      bucket.legs += 1;
+      if (r.hitOrMiss === true) bucket.hits += 1;
+      else if (r.hitOrMiss === false) bucket.misses += 1;
+      else bucket.pending += 1;
+    }
+    const byStatType = [...byStatTypeMap.values()]
+      .map((b) => {
+        const settled = b.hits + b.misses;
+        return {
+          ...b,
+          hitRate: settled > 0 ? Math.round((b.hits / settled) * 1000) / 10 : null,
+        };
+      })
+      // Surface the strongest signal first (highest hit rate among ≥5
+      // legs) — but de-emphasize buckets with thin samples.
+      .sort((a, b) => {
+        const aSettled = a.hits + a.misses;
+        const bSettled = b.hits + b.misses;
+        if (aSettled < 5 && bSettled >= 5) return 1;
+        if (bSettled < 5 && aSettled >= 5) return -1;
+        return (b.hitRate ?? 0) - (a.hitRate ?? 0);
+      });
+
+    res.json({ windowDays, days, byStatType, disclaimer: MLB_DISCLAIMER });
   } catch (err) {
     console.error('mlb/slate/history failed', err);
     res.status(500).json({ error: 'mlb slate history failed' });
