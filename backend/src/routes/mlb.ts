@@ -1172,12 +1172,28 @@ mlbRouter.get('/game/:gamePk/sgp', async (req, res) => {
       res.json({ legs: [], reason: 'No published slate today.' });
       return;
     }
-    // Pre-filter the stored raw lines to just this game. Each game
-    // typically has 50-150 lines (full prop board for a matchup);
-    // resolving them takes <2s end-to-end.
-    const matchupLines = stored.lines.filter((l) => l.gamePk === gamePk);
+    // Stored lines don't always carry gamePk (the admin's pipe-format
+    // paste doesn't include it). Filter by player team membership
+    // instead: find the game's home + away team ids, then pull every
+    // stored line whose player belongs to either team.
+    const todaysGames = await getTodaysMlbGames().catch(() => []);
+    const matchup = todaysGames.find((g) => g.gamePk === gamePk);
+    if (!matchup) {
+      res.json({ legs: [], reason: 'Game not on today\'s schedule.' });
+      return;
+    }
+    const teamIds = [matchup.away.id, matchup.home.id];
+    const { rows: playerRows } = await getPool().query<{ id: number }>(
+      `SELECT id FROM mlb_players WHERE team_id = ANY($1::int[])`,
+      [teamIds],
+    );
+    const matchupPlayerIds = new Set(playerRows.map((r) => r.id));
+    const matchupLines = stored.lines.filter((l) => matchupPlayerIds.has(l.playerId));
     if (matchupLines.length === 0) {
-      res.json({ legs: [], reason: 'No lines in today\'s slate for this matchup.' });
+      res.json({
+        legs: [],
+        reason: `No lines in today's slate for ${matchup.away.abbreviation} or ${matchup.home.abbreviation} players.`,
+      });
       return;
     }
 
