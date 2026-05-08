@@ -357,8 +357,9 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
     return () => { cancelled = true; };
   }, [game.gamePk]);
 
-  // Pull live feed for grading. Re-poll every 30s when game is live;
-  // pregame/final fetches once.
+  // Pull live feed for grading. Re-poll every 15s when game is live;
+  // pregame/final fetches once. The backend has a 12s server-side
+  // cache so polling is cheap regardless of concurrent users.
   useEffect(() => {
     let cancelled = false;
     getMlbGameLive(game.gamePk)
@@ -371,7 +372,7 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
     if (live?.state !== 'live') return;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, 30_000);
+    }, 15_000);
     return () => window.clearInterval(interval);
   }, [live?.state]);
 
@@ -499,7 +500,7 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
             <p className="muted small" style={{ marginTop: 8 }}>
               {isFinal
                 ? `Final result: ${tally.hit} hit, ${tally.miss} miss${tally.push ? `, ${tally.push} push` : ''}.`
-                : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 30s.`}
+                : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 15s.`}
             </p>
           )}
         </>

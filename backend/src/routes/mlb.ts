@@ -1555,6 +1555,15 @@ mlbRouter.get('/game/:gamePk/preview', async (req, res) => {
   }
 });
 
+// Per-game cache for the live feed. Keyed by gamePk. Lets us tighten
+// client polling cadence without 10×-ing the upstream load on
+// statsapi.mlb.com. 12s TTL — fast enough that two users polling at
+// 15s land on cache hits ~80% of the time, slow enough to coalesce
+// 100 concurrent watchers into ~5 upstream calls per minute per game.
+type LiveGameCacheEntry = { fetchedAt: number; payload: unknown };
+const liveGameCache = new Map<number, LiveGameCacheEntry>();
+const LIVE_GAME_TTL_MS = 12_000;
+
 // GET /api/mlb/game/:gamePk/live
 //
 // Phase C — slim wrapper around statsapi.mlb.com's live game feed.
@@ -1569,6 +1578,15 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
     res.status(400).json({ error: 'gamePk must be a positive integer' });
     return;
   }
+
+  const now = Date.now();
+  const cached = liveGameCache.get(gamePk);
+  if (cached && now - cached.fetchedAt < LIVE_GAME_TTL_MS) {
+    res.setHeader('X-Live-Cache', 'HIT');
+    res.json(cached.payload);
+    return;
+  }
+  res.setHeader('X-Live-Cache', 'MISS');
 
   try {
     const feed = await getLiveGameFeed(gamePk);
@@ -1682,7 +1700,7 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
       }
     }
 
-    res.json({
+    const payload = {
       gamePk,
       state,
       detailedState: status.detailedState,
@@ -1712,7 +1730,9 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
       currentPlay,
       recentPlays,
       playerStats,
-    });
+    };
+    liveGameCache.set(gamePk, { fetchedAt: now, payload });
+    res.json(payload);
   } catch (err) {
     console.error('mlb/game/live failed', err);
     res.status(500).json({ error: 'mlb game live failed' });
