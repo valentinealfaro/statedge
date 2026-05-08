@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
 import { RecentsRail } from './RecentsRail';
 import { SlateTeaser } from './SlateTeaser';
@@ -28,6 +29,11 @@ export function Home() {
           We provide statistics and analysis only. No betting advice.
         </p>
       </header>
+
+      {/* Live deck — only renders when at least one NBA or MLB game is
+          actually in progress. Bloomberg-Terminal framing: when markets
+          are live, that's what users see first. */}
+      <LiveDeck />
 
       <section className="home-recents">
         <RecentsRail heading="Pick up where you left off" />
