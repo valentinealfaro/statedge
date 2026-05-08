@@ -609,10 +609,70 @@ mlbRouter.post('/slate/today', async (req, res) => {
       rawText: body.text ?? null,
       mode: body.mode ?? 'balanced',
     });
-    // Wipe the cache so the next public GET re-projects against the
-    // newly-published lines. Without this, the first viewer after a
-    // re-publish could see the stale slate for up to 5 minutes.
+    // Wipe the cache so the newly-published slate resolves fresh.
     await purgeMlbSlateCache();
+
+    // Pre-warm: synchronously resolve the slate + write the cache + record
+    // history. Admin's POST takes ~30-45s for a 3000-leg slate, but every
+    // public visitor afterwards gets an instant cache HIT — no 25s wait
+    // for the first viewer of the day. Best-effort: a pre-warm failure
+    // shouldn't fail the publish (raw lines are saved; the next GET will
+    // resolve normally).
+    const mode: MlbSlateMode = body.mode ?? 'balanced';
+    try {
+      const refreshed = await getMlbDailySlateFromDb();
+      if (refreshed) {
+        const { lines: resolvedLines, unresolved: prewarmUnresolved } =
+          await resolveMlbSlate(
+            refreshed.lines.map((l) => ({
+              playerId: l.playerId,
+              statKey: l.statKey as MlbStatKey,
+              line: l.line,
+              direction: l.direction,
+              gamePk: l.gamePk,
+              opponentTeamId: l.opponentTeamId,
+              isHome: l.isHome,
+              opposingPitcherId: l.opposingPitcherId,
+            })),
+          );
+        const slate = buildMlbSlate(resolvedLines, mode);
+        const payload = {
+          slate: {
+            date: refreshed.date,
+            count: refreshed.lines.length,
+            rawText: refreshed.rawText,
+            mode: refreshed.mode,
+            updatedAt: refreshed.updatedAt,
+          },
+          resolved: {
+            ...slate,
+            unresolved: prewarmUnresolved,
+            lineCount: resolvedLines.length,
+            requestedMode: mode,
+            disclaimer: MLB_DISCLAIMER,
+          },
+        };
+        const cacheKey = `${refreshed.date}::${mode}::${refreshed.updatedAt}`;
+        await setMlbSlateCache(cacheKey, payload, 5 * 60 * 1000).catch(() => {});
+        // Snapshot history at publish time too — admin sees the
+        // calibration counter increment immediately.
+        try {
+          const recordable: RecordableMlbCombo[] = slate.combos
+            .filter((c) => c.combo !== null)
+            .map((c) => ({ combo: c.combo!, cardType: c.label }));
+          if (recordable.length > 0) {
+            await recordMlbSlateProjections({
+              combos: recordable,
+              gameDate: refreshed.date,
+            });
+          }
+        } catch (snapErr) {
+          console.warn('mlb/slate/today prewarm history failed:', (snapErr as Error).message);
+        }
+      }
+    } catch (prewarmErr) {
+      console.warn('mlb/slate/today prewarm failed (slate still saved):', (prewarmErr as Error).message);
+    }
     res.json({ ok: true, ...out, unresolved: parseUnresolved });
   } catch (err) {
     console.error('mlb/slate/today POST failed', err);
