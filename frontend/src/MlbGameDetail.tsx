@@ -13,14 +13,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
 import {
-  getMlbDailySlate,
   getMlbGameLive,
   getMlbGamePreview,
+  getMlbGameSgp,
   getMlbStandings,
   getMlbTeamLast5,
   getMlbToday,
-  type MlbDailySlateResponse,
   type MlbGamePreview,
+  type MlbGameSgp,
+  type MlbGameSgpLeg,
   type MlbLiveFeed,
   type MlbLivePlayerStats,
   type MlbStandingRow,
@@ -325,18 +326,24 @@ function gradeLeg(
 }
 
 function SameGameParlay({ game }: { game: MlbTodayGame }) {
-  const [slate, setSlate] = useState<MlbDailySlateResponse | null>(null);
+  const [sgp, setSgp] = useState<MlbGameSgp | null>(null);
   const [live, setLive] = useState<MlbLiveFeed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
+  // Dedicated per-game SGP endpoint. Resolves every line from this
+  // matchup (50-150 typical) and returns the top 10 by edge%, NOT
+  // just the legs that made it onto the diversified Best cards.
+  // This is the fix for "no same-game legs" — Phase 58 intentionally
+  // rotates players across cards so most matchups contribute 0-2
+  // legs to the union of cards. SGP needs a deeper view.
   useEffect(() => {
     let cancelled = false;
-    getMlbDailySlate()
-      .then((d) => { if (!cancelled) setSlate(d); })
+    getMlbGameSgp(game.gamePk)
+      .then((d) => { if (!cancelled) setSgp(d); })
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
-  }, []);
+  }, [game.gamePk]);
 
   // Pull live feed for grading. Re-poll every 30s when game is live;
   // pregame/final fetches once.
@@ -356,42 +363,16 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
     return () => window.clearInterval(interval);
   }, [live?.state]);
 
-  // Filter today's slate legs to those whose player team matches one
-  // of this game's two teams. We don't have gamePk on stored legs,
-  // so team-abbr matching is the proxy.
-  const sgpLegs = useMemo(() => {
-    if (!slate?.resolved) return [];
-    const teamAbbrs = new Set([game.away.abbreviation, game.home.abbreviation]);
-    // Pull from the union of all card legs (Best 2-6 + Wild Card).
-    const allLegs = new Map<string, NonNullable<typeof slate.resolved.combos[0]['combo']>['legs'][number]>();
-    for (const slot of slate.resolved.combos) {
-      if (!slot.combo) continue;
-      for (const l of slot.combo.legs) {
-        const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
-        if (l.team && teamAbbrs.has(l.team) && !allLegs.has(key)) {
-          allLegs.set(key, l);
-        }
-      }
-    }
-    if (slate.resolved.wildCard.legs) {
-      for (const l of slate.resolved.wildCard.legs) {
-        const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
-        if (l.team && teamAbbrs.has(l.team) && !allLegs.has(key)) {
-          allLegs.set(key, l);
-        }
-      }
-    }
-    // Top 4 by edge — cap at 4 for SGP correlation tolerance.
-    return [...allLegs.values()]
-      .sort((a, b) => b.edgePercent - a.edgePercent)
-      .slice(0, 4);
-  }, [slate, game]);
+  // Top 4 legs by edge from this matchup's pool. The endpoint already
+  // sorts by edge% and dedupes by player, so we just slice.
+  const sgpLegs = useMemo<MlbGameSgpLeg[]>(() => {
+    return (sgp?.legs ?? []).slice(0, 4);
+  }, [sgp]);
 
   const combinedHit = sgpLegs.length > 0
     ? sgpLegs.reduce((p, l) => p * (l.probability / 100), 1) * 100
     : 0;
 
-  // Live grade per leg (only when game is live or final).
   const isLiveOrFinal = live?.state === 'live' || live?.state === 'final';
   const isFinal = live?.state === 'final';
   const graded = sgpLegs.map((l) => {
@@ -425,10 +406,9 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
         )}
       </summary>
       {error && <p className="muted small" style={{ marginTop: 8 }}>{error}</p>}
-      {!error && sgpLegs.length === 0 && (
+      {!error && sgp && sgpLegs.length === 0 && (
         <p className="muted small" style={{ marginTop: 8 }}>
-          No same-game legs in today's published slate. SGP requires at least one leg with a player from
-          {' '}{game.away.abbreviation} or {game.home.abbreviation}.
+          {sgp.reason ?? `No projected legs for ${game.away.abbreviation} @ ${game.home.abbreviation} in today's slate yet.`}
         </p>
       )}
       {sgpLegs.length > 0 && (

@@ -1887,6 +1887,37 @@ export type MlbGamePreview = {
   disclaimer: string;
 };
 
+export type MlbGameSgpLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  projection: number;
+  edgePercent: number;
+  trapScore: number;
+  fragilityScore: number;
+};
+
+export type MlbGameSgp = {
+  gamePk: number;
+  legs: MlbGameSgpLeg[];
+  reason?: string;
+  disclaimer: string;
+};
+
+export async function getMlbGameSgp(gamePk: number): Promise<MlbGameSgp> {
+  const res = await fetch(`${API_BASE}/api/mlb/game/${gamePk}/sgp`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbGameSgp;
+}
+
 export async function getMlbGamePreview(gamePk: number): Promise<MlbGamePreview> {
   const res = await fetch(`${API_BASE}/api/mlb/game/${gamePk}/preview`);
   if (!res.ok) {

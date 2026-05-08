@@ -619,7 +619,7 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
     return { overall: fallback, home: null, away: null };
   };
 
-  return games.map((g): MlbTodayGame => {
+  const resolved: MlbTodayGame[] = games.map((g): MlbTodayGame => {
     const homeR = recordFor(g.teams.home.team.id, buildRecord(g.teams.home));
     const awayR = recordFor(g.teams.away.team.id, buildRecord(g.teams.away));
     return {
@@ -663,6 +663,55 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
     },
     };
   });
+
+  // The probablePitcher hydrate sometimes ships an empty stats array
+  // (especially for recently-promoted starters whose season stats
+  // haven't propagated to the schedule endpoint cache). Fall back to
+  // a direct /people/:id/stats call per pitcher with missing data.
+  // Parallel + best-effort — a fetch failure leaves the original
+  // null values rather than crashing the whole rail.
+  const fallbackTargets: Array<{ side: 'home' | 'away'; gameIdx: number; id: number; fullName: string }> = [];
+  resolved.forEach((g, idx) => {
+    const a = g.probablePitchers.away;
+    const h = g.probablePitchers.home;
+    const isEmpty = (p: typeof a): boolean =>
+      !!p && p.era === null && p.wins === null && p.losses === null;
+    if (a && isEmpty(a)) fallbackTargets.push({ side: 'away', gameIdx: idx, id: a.id, fullName: a.fullName });
+    if (h && isEmpty(h)) fallbackTargets.push({ side: 'home', gameIdx: idx, id: h.id, fullName: h.fullName });
+  });
+
+  if (fallbackTargets.length > 0) {
+    await Promise.allSettled(
+      fallbackTargets.map(async (t) => {
+        try {
+          const stats = await getPitcherSeasonStats(t.id, season);
+          if (!stats) return;
+          // Patch the original probable-pitcher entry with the freshly
+          // fetched season stats. Keep the name from the schedule
+          // hydrate (the /stats endpoint omits it).
+          const game = resolved[t.gameIdx]!;
+          const target = t.side === 'home' ? game.probablePitchers.home : game.probablePitchers.away;
+          if (target) {
+            target.era = stats.era;
+            target.wins = stats.wins;
+            target.losses = stats.losses;
+            target.inningsPitched = stats.inningsPitched;
+            target.strikeouts = stats.strikeouts;
+            target.walks = stats.walks;
+            target.whip = stats.whip;
+            target.hitsAllowed = stats.hitsAllowed;
+            target.homeRunsAllowed = stats.homeRunsAllowed;
+            target.earnedRuns = stats.earnedRuns;
+            target.battersFaced = stats.battersFaced;
+          }
+        } catch {
+          /* best-effort — original null stats stay */
+        }
+      }),
+    );
+  }
+
+  return resolved;
 }
 
 // ---------- Per-pitcher season stats (ad-hoc) ----------

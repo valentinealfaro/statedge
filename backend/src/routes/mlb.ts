@@ -1144,6 +1144,95 @@ mlbRouter.get('/team/:teamId/last-5', async (req, res) => {
   }
 });
 
+// GET /api/mlb/game/:gamePk/sgp
+//
+// Top edge legs for THIS matchup, drawn from today's full slate
+// (not just the legs that made it onto the Best 2-6 cards). Phase
+// 58's diversification engine intentionally rotates players across
+// cards, so any single matchup typically contributes 0-2 legs to
+// the union of cards. The Same-Game Parlay UI needs a deeper pool
+// than that: this endpoint resolves every line from the matchup
+// regardless of card placement, sorts by edge%, and returns the top
+// 10. Lets users build a coherent SGP even when the slate engine
+// doesn't pick the matchup's headline edges for its institutional
+// portfolio.
+mlbRouter.get('/game/:gamePk/sgp', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const gamePk = Number(req.params.gamePk);
+  if (!Number.isFinite(gamePk) || gamePk <= 0) {
+    res.status(400).json({ error: 'gamePk must be a positive integer' });
+    return;
+  }
+  try {
+    const stored = await getMlbDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ legs: [], reason: 'No published slate today.' });
+      return;
+    }
+    // Pre-filter the stored raw lines to just this game. Each game
+    // typically has 50-150 lines (full prop board for a matchup);
+    // resolving them takes <2s end-to-end.
+    const matchupLines = stored.lines.filter((l) => l.gamePk === gamePk);
+    if (matchupLines.length === 0) {
+      res.json({ legs: [], reason: 'No lines in today\'s slate for this matchup.' });
+      return;
+    }
+
+    const { lines: resolvedLines } = await resolveMlbSlate(
+      matchupLines.map((l) => ({
+        playerId: l.playerId,
+        statKey: l.statKey as MlbStatKey,
+        line: l.line,
+        direction: l.direction,
+        gamePk: l.gamePk,
+        opponentTeamId: l.opponentTeamId,
+        isHome: l.isHome,
+        opposingPitcherId: l.opposingPitcherId,
+      })),
+    );
+
+    // Sort by edge% descending, take top 10. Apply the same player-
+    // dedup that ComboCard uses (only one stat per player) so the
+    // SGP feels like a balanced parlay, not five Aaron Judge props.
+    const seenPlayer = new Set<number>();
+    const top: typeof resolvedLines = [];
+    const sorted = [...resolvedLines].sort(
+      (a, b) => b.projection.edgePercent - a.projection.edgePercent,
+    );
+    for (const l of sorted) {
+      if (seenPlayer.has(l.playerId)) continue;
+      seenPlayer.add(l.playerId);
+      top.push(l);
+      if (top.length >= 10) break;
+    }
+
+    res.json({
+      gamePk,
+      legs: top.map((l) => ({
+        playerId: l.playerId,
+        playerName: l.playerName,
+        team: l.team.abbr,
+        statKey: l.statKey,
+        statLabel: l.statLabel,
+        line: l.line,
+        direction: l.modelDirection,
+        probability: l.projection.probability,
+        projection: l.projection.projection,
+        edgePercent: l.projection.edgePercent,
+        trapScore: l.projection.trapScore,
+        fragilityScore: l.projection.fragilityScore,
+      })),
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/game/sgp failed', err);
+    res.status(500).json({ error: 'mlb game sgp failed' });
+  }
+});
+
 // GET /api/mlb/game/:gamePk/preview
 //
 // Phase B of the game-detail page. Returns:
