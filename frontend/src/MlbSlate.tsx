@@ -417,11 +417,6 @@ export function MlbSlate() {
           </button>
         </div>
 
-        {/* Tonight's MLB games rail — auto-refreshes every 60s during
-            live games so the slate page becomes a live-tracker
-            surface as games progress. */}
-        <MlbTodaysGames />
-
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (
           <PublicTodaySlate today={today} error={todayError} />
@@ -609,6 +604,14 @@ export function MlbSlate() {
         {loading && <Skeleton width="100%" height={240} style={{ marginTop: 20 }} />}
 
         {result && <SlateResultView data={result} />}
+
+        {/* All MLB games — sits at the bottom of the slate page for
+            both public and admin views. Auto-refreshes every 60s
+            during live games so the rail becomes a live-tracker as
+            games progress. */}
+        <div style={{ marginTop: 24 }}>
+          <MlbTodaysGames />
+        </div>
       </div>
     </div>
   );
