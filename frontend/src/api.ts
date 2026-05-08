@@ -1560,6 +1560,17 @@ export type MlbSlateCombo = {
   averageTrap: number;
   weakestLegName: string;
   weakestLegReason: string;
+  // Per Phase 33: plain-language summary of what the engine actually
+  // built (diversification, dominant stats, same-player stacks).
+  constructionNotes?: {
+    uniquePlayers: number;
+    uniqueStats: number;
+    uniqueGames: number;
+    uniqueTeams: number;
+    sameTeamMaxStack: number;
+    samePlayerMaxStack: number;
+    summary: string;
+  };
 };
 
 export type MlbWildCardKind =

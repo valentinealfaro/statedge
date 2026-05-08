@@ -161,6 +161,18 @@ export type MlbCombo = {
   averageTrap: number;
   weakestLegName: string;
   weakestLegReason: string;
+  // Construction notes — plain-language explanation of WHAT the
+  // engine built. Surfaces the new institutional rules so users
+  // see the diversification work.
+  constructionNotes: {
+    uniquePlayers: number;
+    uniqueStats: number;
+    uniqueGames: number;
+    uniqueTeams: number;
+    sameTeamMaxStack: number;
+    samePlayerMaxStack: number;
+    summary: string;            // human-readable one-liner
+  };
 };
 
 export type MlbSlateResult = {
@@ -492,6 +504,10 @@ function makeCombo(
   const corr = computeCorrelationRisk(legs);
   const adjusted = Math.round(raw * corr.multiplier * 10) / 10;
 
+  // Construction notes — plain-language explanation of what the
+  // engine actually did (Phases 28-32 made these decisions visible).
+  const constructionNotes = computeConstructionNotes(legs);
+
   return {
     label,
     subtitle: subtitleFor(mode, size),
@@ -505,6 +521,58 @@ function makeCombo(
     averageTrap: avg(legs.map((l) => l.projection.trapScore)),
     weakestLegName: worst.playerName,
     weakestLegReason,
+    constructionNotes,
+  };
+}
+
+function computeConstructionNotes(legs: ResolvedMlbLine[]): MlbCombo['constructionNotes'] {
+  const players = new Map<number, number>();
+  const stats = new Set<string>();
+  const games = new Set<string>();
+  const teams = new Map<string, number>();
+  for (const l of legs) {
+    players.set(l.playerId, (players.get(l.playerId) ?? 0) + 1);
+    stats.add(l.statKey);
+    if (l.gameKey) games.add(l.gameKey);
+    if (l.team.abbr) teams.set(l.team.abbr, (teams.get(l.team.abbr) ?? 0) + 1);
+  }
+  const sameTeamMax = teams.size > 0 ? Math.max(...teams.values()) : 0;
+  const samePlayerMax = players.size > 0 ? Math.max(...players.values()) : 0;
+
+  // Compose summary based on the actual diversification profile.
+  const parts: string[] = [];
+  parts.push(
+    `${players.size} player${players.size === 1 ? '' : 's'}` +
+    ` · ${stats.size} stat type${stats.size === 1 ? '' : 's'}`,
+  );
+  if (games.size > 0) {
+    parts.push(`${games.size} game${games.size === 1 ? '' : 's'}`);
+  }
+  if (samePlayerMax >= 2) {
+    parts.push(`${samePlayerMax}-stat stack on top player`);
+  }
+  if (sameTeamMax >= 3) {
+    parts.push(`${sameTeamMax} legs same team`);
+  }
+  // Headline verdict.
+  let verdict: string;
+  if (legs.length >= 5 && players.size === legs.length && games.size >= legs.length - 1) {
+    verdict = 'Diversified portfolio.';
+  } else if (samePlayerMax >= 3) {
+    verdict = 'Concentrated star-stack.';
+  } else if (sameTeamMax >= legs.length - 1) {
+    verdict = 'Heavy team stack.';
+  } else {
+    verdict = 'Balanced.';
+  }
+  return {
+    uniquePlayers: players.size,
+    uniqueStats: stats.size,
+    uniqueGames: games.size,
+    uniqueTeams: teams.size,
+    sameTeamMaxStack: sameTeamMax,
+    samePlayerMaxStack: samePlayerMax,
+    summary: `${verdict} ${parts.join(' · ')}.`,
   };
 }
 

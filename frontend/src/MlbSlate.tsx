@@ -907,6 +907,15 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
           </li>
         ))}
       </ul>
+      {c.constructionNotes && (
+        <div
+          className="muted small"
+          style={{ marginTop: 8, fontStyle: 'italic' }}
+          title="Plain-language summary of what the engine built. Same-player and same-game caps are spec-driven (Phase 28-32) — diversification is a feature, not noise."
+        >
+          {c.constructionNotes.summary}
+        </div>
+      )}
       <div className="mlb-slate-card-weakest">
         ⚠ Weakest leg: <strong>{c.weakestLegName}</strong> — {c.weakestLegReason}
       </div>
