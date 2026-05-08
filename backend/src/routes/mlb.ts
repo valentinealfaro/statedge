@@ -41,6 +41,7 @@ import { resolveMlbSlate, type RawMlbLine } from '../services/mlbSlatePipeline.j
 import { buildMlbSlate, type MlbSlateMode } from '../services/mlbSlateBuilder.js';
 import {
   listMlbProjections,
+  recordMlbSgpLegs,
   recordMlbSlateProjections,
   type RecordableMlbCombo,
 } from '../services/mlbProjectionHistory.js';
@@ -1224,6 +1225,30 @@ mlbRouter.get('/game/:gamePk/sgp', async (req, res) => {
       seenPlayer.add(l.playerId);
       top.push(l);
       if (top.length >= 10) break;
+    }
+
+    // Snapshot the top 4 legs (the parlay users actually see) into
+    // mlb_projection_history with card_type='SGP'. Once games finalize,
+    // the grader fills in result_value + hit_or_miss; the calibration
+    // page + slate-history rollup automatically include SGP rows so
+    // users can see "we picked these matchups, here's what happened."
+    // Dedup via slateHistorySnapshotted set: one snapshot per gamePk
+    // per slate-update cycle, regardless of how many users hit /sgp.
+    const sgpKey = `sgp::${stored.date}::${gamePk}::${stored.updatedAt}`;
+    if (!slateHistorySnapshotted.has(sgpKey) && top.length > 0) {
+      try {
+        const sgpDisplayLegs = top.slice(0, 4);     // matches what UI renders
+        const result = await recordMlbSgpLegs({
+          legs: sgpDisplayLegs,
+          gameDate: stored.date,
+          gamePk,
+          awayAbbr: matchup.away.abbreviation,
+          homeAbbr: matchup.home.abbreviation,
+        });
+        if (result.inserted > 0) slateHistorySnapshotted.add(sgpKey);
+      } catch (snapErr) {
+        console.warn('mlb/game/sgp snapshot failed:', (snapErr as Error).message);
+      }
     }
 
     res.json({

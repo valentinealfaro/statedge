@@ -119,7 +119,9 @@ export function MlbSlateHistory() {
 
 // Standard card-type ordering — keeps the rollup table consistent
 // even when a particular card type is missing from a given window.
-const CARD_TYPE_ORDER = ['Best 2', 'Best 3', 'Best 4', 'Best 5', 'Best 6', 'Wild Card'];
+// SGP appended at the end since it's per-game and accumulates faster
+// than the daily Best cards.
+const CARD_TYPE_ORDER = ['Best 2', 'Best 3', 'Best 4', 'Best 5', 'Best 6', 'Wild Card', 'SGP'];
 
 // PrizePicks Flex Play full-clear payouts. We use FULL clear as the
 // net profit basis (cleared = payout − 1, dead = −1). This is the
@@ -133,6 +135,7 @@ const FLEX_PAYOUTS: Record<string, number> = {
   'Best 5': 7,    // PP's 5/5 full Flex
   'Best 6': 25,
   'Wild Card': 5,  // typical 3-leg shape
+  'SGP': 10,      // 4-leg PP Flex full-clear payout
 };
 
 function HistoryTable({ days }: { days: DayBucket[] }) {

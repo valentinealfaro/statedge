@@ -17,6 +17,7 @@
 
 import { getPool } from '../db.js';
 import type { MlbCombo } from './mlbSlateBuilder.js';
+import type { ResolvedMlbLine } from './mlbSlatePipeline.js';
 import { ensureMlbTables } from '../mlb/db.js';
 
 // Schema version stamped on every row. Bump when the projection
@@ -97,6 +98,76 @@ export async function recordMlbSlateProjections(opts: {
       );
       inserted += 1;
     }
+  }
+  return { inserted };
+}
+
+// Persist top SGP legs for a single game-detail page view. Each
+// matchup snapshots its top-N edge legs (typically 4 — the actual
+// displayed parlay) under card_type='SGP' so the calibration loop +
+// the slate history page can grade them just like Best 2-6 + Wild
+// Card cards. This is THE feedback channel that proves "we pick
+// winners" — every game's SGP becomes a tracked prediction with
+// real-world outcome, accumulating evidence over time.
+export async function recordMlbSgpLegs(opts: {
+  legs: ResolvedMlbLine[];
+  gameDate: string;            // YYYY-MM-DD
+  gamePk: number;
+  awayAbbr: string | null;
+  homeAbbr: string | null;
+}): Promise<{ inserted: number }> {
+  await ensureMlbTables();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.gameDate)) {
+    throw new Error(`Invalid gameDate: ${opts.gameDate} (expected YYYY-MM-DD).`);
+  }
+  if (opts.legs.length === 0) return { inserted: 0 };
+  const pool = getPool();
+  let inserted = 0;
+  for (const leg of opts.legs) {
+    const inputsJson = {
+      modelVersion: MLB_MODEL_VERSION,
+      cardLabel: 'SGP',
+      cardSize: opts.legs.length,
+      gamePk: opts.gamePk,
+      matchup:
+        opts.awayAbbr && opts.homeAbbr
+          ? `${opts.awayAbbr}@${opts.homeAbbr}`
+          : null,
+      bookableSide: leg.bookableSide,
+    };
+    await pool.query(
+      `INSERT INTO mlb_projection_history (
+         game_date, player_id, team_id, opponent_team_id,
+         selected_stat, line_value, direction,
+         projection_value, probability, confidence_score,
+         risk_score, trap_score, edge_score, ev_score,
+         card_type, model_version, inputs_json
+       ) VALUES (
+         $1, $2, NULL, NULL,
+         $3, $4, $5,
+         $6, $7, $8,
+         $9, $10, $11, $12,
+         $13, $14, $15
+       )`,
+      [
+        opts.gameDate,
+        leg.playerId,
+        leg.statKey,
+        leg.line,
+        leg.modelDirection,
+        leg.projection.projection,
+        leg.projection.probability,
+        null,
+        leg.projection.riskScore,
+        leg.projection.trapScore,
+        null,
+        null,
+        'SGP',
+        MLB_MODEL_VERSION,
+        JSON.stringify(inputsJson),
+      ],
+    );
+    inserted += 1;
   }
   return { inserted };
 }
