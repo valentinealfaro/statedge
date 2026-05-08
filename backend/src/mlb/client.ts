@@ -750,3 +750,60 @@ export function daysInMonth(year: number, month1Indexed: number): number {
   // 1-indexed month directly lines up: Date.UTC(2026, 4, 0) = April 30.
   return new Date(Date.UTC(year, month1Indexed, 0)).getUTCDate();
 }
+
+// ---------- Game preview (Phase B): lineups + injuries ----------
+//
+// The boxscore endpoint returns lineups (battingOrder = ordered list
+// of player IDs) plus the per-player object with name + position +
+// season stats baked in. Pre-game it's typically empty until ~2 hours
+// before first pitch, when MLB posts the official lineups.
+
+export type MlbBoxscorePlayer = {
+  person: { id: number; fullName: string };
+  position: { code: string; abbreviation: string; type?: string };
+  battingOrder?: string;            // "100","200" etc, hundreds = batting order
+  status: { code: string; description: string };
+  seasonStats?: {
+    batting?: { avg?: string; homeRuns?: number; rbi?: number; ops?: string };
+    pitching?: { era?: string; wins?: number; losses?: number; strikeOuts?: number };
+  };
+  stats?: {
+    batting?: { atBats?: number; hits?: number; runs?: number; rbi?: number };
+    pitching?: { inningsPitched?: string; strikeOuts?: number; hits?: number; earnedRuns?: number };
+  };
+};
+
+export type MlbBoxscoreSide = {
+  team: { id: number; name: string; abbreviation?: string };
+  battingOrder?: number[];
+  players: Record<string, MlbBoxscorePlayer>;
+};
+
+export type MlbBoxscore = {
+  teams: { home: MlbBoxscoreSide; away: MlbBoxscoreSide };
+};
+
+export async function getBoxscore(gamePk: number): Promise<MlbBoxscore> {
+  return fetchJson<MlbBoxscore>(`/game/${gamePk}/boxscore`);
+}
+
+export type MlbRosterEntry = {
+  person: { id: number; fullName: string };
+  position: { abbreviation?: string; name?: string };
+  status: { code?: string; description?: string };
+};
+
+// Players currently on the team's IL. The MLB Stats API exposes
+// /teams/:id/roster?rosterType=injuredList — the older "injuryList"
+// alias was deprecated; per the docs `injuredList` is the canonical
+// roster code in 2024+. Returns [] silently if the endpoint changes.
+export async function getTeamInjuredList(teamId: number): Promise<MlbRosterEntry[]> {
+  try {
+    const data = await fetchJson<{ roster?: MlbRosterEntry[] }>(
+      `/teams/${teamId}/roster?rosterType=injuredList`,
+    );
+    return data.roster ?? [];
+  } catch {
+    return [];
+  }
+}

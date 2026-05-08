@@ -1831,6 +1831,56 @@ export async function getMlbTeamLast5(teamId: number): Promise<MlbTeamLast5> {
   return (await res.json()) as MlbTeamLast5;
 }
 
+// =============================================================
+// MLB Game Preview (Phase B): lineups + injuries + team leaders
+// =============================================================
+
+export type MlbLineupBatter = {
+  playerId: number;
+  name: string;
+  position: string;
+  battingOrder: number;
+  avg: string | null;
+  hr: number | null;
+  rbi: number | null;
+  ops: string | null;
+};
+
+export type MlbInjuryEntry = {
+  playerId: number;
+  name: string;
+  position: string | null;
+  status: string;
+};
+
+export type MlbLeader = {
+  playerId: number;
+  name: string;
+  stat: string;
+  value: string;
+  context: string;
+};
+
+export type MlbGamePreview = {
+  gamePk: number;
+  lineups: { away: MlbLineupBatter[]; home: MlbLineupBatter[] };
+  injuries: { away: MlbInjuryEntry[]; home: MlbInjuryEntry[] };
+  leaders: {
+    away: { hittingAvg: MlbLeader[]; hittingHr: MlbLeader[]; pitchingEra: MlbLeader[] };
+    home: { hittingAvg: MlbLeader[]; hittingHr: MlbLeader[]; pitchingEra: MlbLeader[] };
+  };
+  disclaimer: string;
+};
+
+export async function getMlbGamePreview(gamePk: number): Promise<MlbGamePreview> {
+  const res = await fetch(`${API_BASE}/api/mlb/game/${gamePk}/preview`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbGamePreview;
+}
+
 export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
   const url = date
     ? `${API_BASE}/api/mlb/today?date=${date}`

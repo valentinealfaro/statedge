@@ -13,10 +13,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   getMlbDailySlate,
+  getMlbGamePreview,
   getMlbStandings,
   getMlbTeamLast5,
   getMlbToday,
   type MlbDailySlateResponse,
+  type MlbGamePreview,
   type MlbStandingRow,
   type MlbTeamLast5,
   type MlbTodayGame,
@@ -85,10 +87,28 @@ function GameView({ game }: { game: MlbTodayGame }) {
       <GameOddsAndPredictor game={game} />
       <ProbablePitchers game={game} />
       <SameGameParlay game={game} />
+      <Lineups game={game} />
+      <Leaders game={game} />
+      <Injuries game={game} />
       <TeamSplits game={game} />
       <LastFiveStrip game={game} />
     </>
   );
+}
+
+// Phase B preview hook — single fetch, shared across the three sections
+// below so we don't hit /preview three times.
+function useGamePreview(gamePk: number): { preview: MlbGamePreview | null; error: string | null } {
+  const [preview, setPreview] = useState<MlbGamePreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMlbGamePreview(gamePk)
+      .then((p) => { if (!cancelled) setPreview(p); })
+      .catch((err: Error) => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [gamePk]);
+  return { preview, error };
 }
 
 function GameHeader({ game }: { game: MlbTodayGame }) {
@@ -437,6 +457,192 @@ function LastFiveStrip({ game }: { game: MlbTodayGame }) {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
         <Block data={away} abbr={game.away.abbreviation} />
         <Block data={home} abbr={game.home.abbreviation} />
+      </div>
+    </details>
+  );
+}
+
+function Lineups({ game }: { game: MlbTodayGame }) {
+  const { preview, error } = useGamePreview(game.gamePk);
+  if (error) return null;
+  const away = preview?.lineups.away ?? null;
+  const home = preview?.lineups.home ?? null;
+  const empty = (!away || away.length === 0) && (!home || home.length === 0);
+
+  const Side = ({ side, abbr }: { side: typeof away; abbr: string }) => {
+    if (!side || side.length === 0) {
+      return (
+        <div style={{ flex: 1, minWidth: 280 }}>
+          <div className="muted small" style={{ marginBottom: 4 }}>{abbr} lineup</div>
+          <p className="muted small">Lineup not posted yet (typically ~2h before first pitch).</p>
+        </div>
+      );
+    }
+    return (
+      <div style={{ flex: 1, minWidth: 280 }}>
+        <div className="muted small" style={{ marginBottom: 4 }}>{abbr} lineup</div>
+        <table className="mlb-standings-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Player</th>
+              <th>Pos</th>
+              <th className="num">AVG</th>
+              <th className="num">HR</th>
+              <th className="num">RBI</th>
+              <th className="num">OPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {side.map((b) => (
+              <tr key={b.playerId}>
+                <td>{b.battingOrder || '—'}</td>
+                <td><strong>{b.name}</strong></td>
+                <td>{b.position}</td>
+                <td className="num">{b.avg ?? '—'}</td>
+                <td className="num">{b.hr ?? '—'}</td>
+                <td className="num">{b.rbi ?? '—'}</td>
+                <td className="num">{b.ops ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  return (
+    <details className="mlb-context" open={!empty}>
+      <summary className="mlb-context-heading">
+        Lineups <span className="muted small">— posted batting orders</span>
+      </summary>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+        <Side side={away} abbr={game.away.abbreviation} />
+        <Side side={home} abbr={game.home.abbreviation} />
+      </div>
+    </details>
+  );
+}
+
+function Leaders({ game }: { game: MlbTodayGame }) {
+  const { preview } = useGamePreview(game.gamePk);
+  if (!preview) return null;
+
+  const Side = ({
+    side,
+    abbr,
+  }: {
+    side: MlbGamePreview['leaders']['away'];
+    abbr: string;
+  }) => {
+    const empty =
+      side.hittingAvg.length === 0 &&
+      side.hittingHr.length === 0 &&
+      side.pitchingEra.length === 0;
+    if (empty) {
+      return (
+        <div style={{ flex: 1, minWidth: 280 }}>
+          <div className="muted small" style={{ marginBottom: 4 }}>{abbr} leaders</div>
+          <p className="muted small">Not enough sample yet (need 80 PA / 90 outs).</p>
+        </div>
+      );
+    }
+    return (
+      <div style={{ flex: 1, minWidth: 280 }}>
+        <div className="muted small" style={{ marginBottom: 4 }}>{abbr} leaders</div>
+        {side.hittingAvg.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Top hitters · AVG</div>
+            {side.hittingAvg.map((l) => (
+              <div key={`avg-${l.playerId}`} className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-stat">{l.value} <span className="muted small">({l.context})</span></span>
+              </div>
+            ))}
+          </div>
+        )}
+        {side.hittingHr.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Power · HR</div>
+            {side.hittingHr.map((l) => (
+              <div key={`hr-${l.playerId}`} className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-stat">{l.value} HR <span className="muted small">({l.context})</span></span>
+              </div>
+            ))}
+          </div>
+        )}
+        {side.pitchingEra.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Starting rotation · ERA</div>
+            {side.pitchingEra.map((l) => (
+              <div key={`era-${l.playerId}`} className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.name}</span>
+                <span className="best-pick-leg-stat">{l.value} ERA <span className="muted small">({l.context})</span></span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading">
+        Team leaders <span className="muted small">— top performers this season</span>
+      </summary>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+        <Side side={preview.leaders.away} abbr={game.away.abbreviation} />
+        <Side side={preview.leaders.home} abbr={game.home.abbreviation} />
+      </div>
+    </details>
+  );
+}
+
+function Injuries({ game }: { game: MlbTodayGame }) {
+  const { preview } = useGamePreview(game.gamePk);
+  if (!preview) return null;
+  const away = preview.injuries.away;
+  const home = preview.injuries.home;
+  if (away.length === 0 && home.length === 0) return null;
+
+  const Side = ({ side, abbr }: { side: typeof away; abbr: string }) => (
+    <div style={{ flex: 1, minWidth: 280 }}>
+      <div className="muted small" style={{ marginBottom: 4 }}>{abbr} injured list ({side.length})</div>
+      {side.length === 0 ? (
+        <p className="muted small">No players on IL.</p>
+      ) : (
+        <table className="mlb-standings-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Pos</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {side.map((p) => (
+              <tr key={p.playerId}>
+                <td>{p.name}</td>
+                <td>{p.position ?? '—'}</td>
+                <td className="muted small">{p.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+
+  return (
+    <details className="mlb-context">
+      <summary className="mlb-context-heading">
+        Injury report <span className="muted small">— current IL ({away.length + home.length} players)</span>
+      </summary>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+        <Side side={away} abbr={game.away.abbreviation} />
+        <Side side={home} abbr={game.home.abbreviation} />
       </div>
     </details>
   );

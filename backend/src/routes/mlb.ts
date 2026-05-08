@@ -16,7 +16,9 @@ import {
   type MlbStoredDailyLine,
 } from '../db.js';
 import {
+  getBoxscore,
   getEspnMlbOddsByMatchup,
+  getTeamInjuredList,
   getTodaysMlbGames,
   MLB_DISCLAIMER,
   type MlbTodayGame,
@@ -1054,6 +1056,197 @@ mlbRouter.get('/team/:teamId/last-5', async (req, res) => {
   } catch (err) {
     console.error('mlb/team/last-5 failed', err);
     res.status(500).json({ error: 'mlb team last-5 failed' });
+  }
+});
+
+// GET /api/mlb/game/:gamePk/preview
+//
+// Phase B of the game-detail page. Returns:
+//   - lineups: posted batting orders (empty until ~2h before first
+//     pitch, when MLB posts official lineups)
+//   - injuries: players on each team's IL with status descriptions
+//   - leaders: top 3 hitters by AVG (min 80 PA), top 3 by HR, and
+//     top 3 starters by ERA (min 30 IP) — computed from our local
+//     mlb_hitting_stats / mlb_pitching_stats tables for both teams
+//
+// All three pieces are independent — partial data still renders.
+mlbRouter.get('/game/:gamePk/preview', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const gamePk = Number(req.params.gamePk);
+  if (!Number.isFinite(gamePk) || gamePk <= 0) {
+    res.status(400).json({ error: 'gamePk must be a positive integer' });
+    return;
+  }
+
+  try {
+    // 1) Boxscore (lineups). Failure here means lineups are TBD — we
+    //    return empty arrays so the UI can show "Lineup TBD."
+    const boxscore = await getBoxscore(gamePk).catch((err) => {
+      console.warn('mlb/game/preview boxscore failed:', (err as Error).message);
+      return null;
+    });
+
+    const homeTeamId = boxscore?.teams.home.team.id ?? null;
+    const awayTeamId = boxscore?.teams.away.team.id ?? null;
+
+    // 2) Injuries — parallel fetch, non-fatal on miss.
+    const [awayIl, homeIl] = await Promise.all([
+      awayTeamId ? getTeamInjuredList(awayTeamId) : Promise.resolve([]),
+      homeTeamId ? getTeamInjuredList(homeTeamId) : Promise.resolve([]),
+    ]);
+
+    // 3) Team leaders from our local DB. Single query per team /
+    //    category so we don't blow up the request when one side is
+    //    missing data. Bayesian-friendly thresholds: 80 PA / 30 IP.
+    const teamLeaders = async (teamId: number | null) => {
+      if (!teamId) {
+        return { hittingAvg: [], hittingHr: [], pitchingEra: [] };
+      }
+      const pool = getPool();
+      const [avgRows, hrRows, eraRows] = await Promise.all([
+        pool.query<{
+          player_id: number;
+          full_name: string;
+          pa: string;
+          hits: string;
+          ab: string;
+          avg: string;
+        }>(
+          `SELECT p.id AS player_id, p.full_name,
+                  SUM(s.plate_appearances)::text AS pa,
+                  SUM(s.hits)::text AS hits,
+                  SUM(s.at_bats)::text AS ab,
+                  ROUND(SUM(s.hits)::numeric / NULLIF(SUM(s.at_bats),0), 3)::text AS avg
+             FROM mlb_hitting_stats s
+             JOIN mlb_players p ON p.id = s.player_id
+            WHERE s.team_id = $1
+            GROUP BY p.id, p.full_name
+           HAVING SUM(s.plate_appearances) >= 80
+            ORDER BY (SUM(s.hits)::numeric / NULLIF(SUM(s.at_bats),0)) DESC NULLS LAST
+            LIMIT 3`,
+          [teamId],
+        ),
+        pool.query<{ player_id: number; full_name: string; hr: string; pa: string }>(
+          `SELECT p.id AS player_id, p.full_name,
+                  SUM(s.home_runs)::text AS hr,
+                  SUM(s.plate_appearances)::text AS pa
+             FROM mlb_hitting_stats s
+             JOIN mlb_players p ON p.id = s.player_id
+            WHERE s.team_id = $1
+            GROUP BY p.id, p.full_name
+            ORDER BY SUM(s.home_runs) DESC NULLS LAST
+            LIMIT 3`,
+          [teamId],
+        ),
+        pool.query<{
+          player_id: number;
+          full_name: string;
+          ip: string;
+          er: string;
+          era: string;
+          k: string;
+        }>(
+          `SELECT p.id AS player_id, p.full_name,
+                  SUM(s.outs_recorded)::numeric / 3 AS ip_num,
+                  ROUND((SUM(s.outs_recorded)::numeric / 3)::numeric, 1)::text AS ip,
+                  SUM(s.earned_runs_allowed)::text AS er,
+                  ROUND( SUM(s.earned_runs_allowed)::numeric * 9
+                         / NULLIF(SUM(s.outs_recorded)::numeric / 3, 0), 2)::text AS era,
+                  SUM(s.strikeouts)::text AS k
+             FROM mlb_pitching_stats s
+             JOIN mlb_players p ON p.id = s.player_id
+            WHERE s.team_id = $1 AND s.is_starter = true
+            GROUP BY p.id, p.full_name
+           HAVING SUM(s.outs_recorded) >= 90
+            ORDER BY ( SUM(s.earned_runs_allowed)::numeric * 9
+                       / NULLIF(SUM(s.outs_recorded)::numeric / 3, 0) ) ASC NULLS LAST
+            LIMIT 3`,
+          [teamId],
+        ),
+      ]);
+      return {
+        hittingAvg: avgRows.rows.map((r) => ({
+          playerId: r.player_id,
+          name: r.full_name,
+          stat: 'AVG',
+          value: r.avg,
+          context: `${r.pa} PA · ${r.hits}/${r.ab}`,
+        })),
+        hittingHr: hrRows.rows.map((r) => ({
+          playerId: r.player_id,
+          name: r.full_name,
+          stat: 'HR',
+          value: r.hr,
+          context: `${r.pa} PA`,
+        })),
+        pitchingEra: eraRows.rows.map((r) => ({
+          playerId: r.player_id,
+          name: r.full_name,
+          stat: 'ERA',
+          value: r.era,
+          context: `${r.ip} IP · ${r.k} K · ${r.er} ER`,
+        })),
+      };
+    };
+
+    const [awayLeaders, homeLeaders] = await Promise.all([
+      teamLeaders(awayTeamId).catch(() => ({ hittingAvg: [], hittingHr: [], pitchingEra: [] })),
+      teamLeaders(homeTeamId).catch(() => ({ hittingAvg: [], hittingHr: [], pitchingEra: [] })),
+    ]);
+
+    // Lineups — turn battingOrder into ordered cards. The API stores
+    // batting order codes like "100","200"…"900"; sort numerically.
+    const buildLineup = (side: typeof boxscore extends null ? null : NonNullable<typeof boxscore>['teams']['home']) => {
+      if (!side) return [];
+      const players = Object.values(side.players ?? {});
+      const lineup = players
+        .filter((p) => p.battingOrder)
+        .sort((a, b) => Number(a.battingOrder ?? 0) - Number(b.battingOrder ?? 0))
+        .map((p) => ({
+          playerId: p.person.id,
+          name: p.person.fullName,
+          position: p.position?.abbreviation ?? '',
+          battingOrder: Math.floor(Number(p.battingOrder ?? 0) / 100),
+          avg: p.seasonStats?.batting?.avg ?? null,
+          hr: p.seasonStats?.batting?.homeRuns ?? null,
+          rbi: p.seasonStats?.batting?.rbi ?? null,
+          ops: p.seasonStats?.batting?.ops ?? null,
+        }));
+      return lineup;
+    };
+
+    const lineups = {
+      away: boxscore ? buildLineup(boxscore.teams.away) : [],
+      home: boxscore ? buildLineup(boxscore.teams.home) : [],
+    };
+
+    const formatIl = (entries: typeof awayIl) =>
+      entries.map((e) => ({
+        playerId: e.person.id,
+        name: e.person.fullName,
+        position: e.position?.abbreviation ?? null,
+        status: e.status?.description ?? e.status?.code ?? 'IL',
+      }));
+
+    res.json({
+      gamePk,
+      lineups,
+      injuries: {
+        away: formatIl(awayIl),
+        home: formatIl(homeIl),
+      },
+      leaders: {
+        away: awayLeaders,
+        home: homeLeaders,
+      },
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/game/preview failed', err);
+    res.status(500).json({ error: 'mlb game preview failed' });
   }
 });
 
