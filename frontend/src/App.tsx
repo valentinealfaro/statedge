@@ -4,6 +4,7 @@ import { Compare } from './Compare';
 import { ErrorBoundary } from './ErrorBoundary';
 import { EspnGameDetail } from './EspnGameDetail';
 import { GameDetail } from './GameDetail';
+import { MlbCalibration } from './MlbCalibration';
 import { MlbCompare } from './MlbCompare';
 import { MlbSlate } from './MlbSlate';
 import { Pricing } from './Pricing';
@@ -23,6 +24,7 @@ export function App() {
           <Route path="/slate" element={<Slate />} />
           <Route path="/mlb" element={<MlbCompare />} />
           <Route path="/mlb/slate" element={<MlbSlate />} />
+          <Route path="/mlb/calibration" element={<MlbCalibration />} />
           <Route path="/pricing" element={<Pricing />} />
         </Routes>
       </ErrorBoundary>

@@ -20,6 +20,12 @@ import { projectMlbStat } from '../services/mlbProjectionEngine.js';
 import { resolveMlbSlate, type RawMlbLine } from '../services/mlbSlatePipeline.js';
 import { buildMlbSlate, type MlbSlateMode } from '../services/mlbSlateBuilder.js';
 import {
+  recordMlbSlateProjections,
+  type RecordableMlbCombo,
+} from '../services/mlbProjectionHistory.js';
+import { gradeMlbProjections } from '../services/mlbGrader.js';
+import { computeMlbCalibration } from '../services/mlbCalibration.js';
+import {
   listStatsForPlayerType,
   statMeta,
   type MlbPlayerType,
@@ -311,10 +317,14 @@ mlbRouter.post('/slate', async (req, res) => {
     res.status(503).json({ error: 'MLB requires DB' });
     return;
   }
-  const body = req.body as { lines?: RawMlbLine[]; mode?: MlbSlateMode } | undefined;
+  const body = req.body as {
+    lines?: RawMlbLine[];
+    mode?: MlbSlateMode;
+    gameDate?: string;
+  } | undefined;
   if (!body || !Array.isArray(body.lines) || body.lines.length === 0) {
     res.status(400).json({
-      error: 'POST body must be { lines: RawMlbLine[], mode?: SlateMode }.',
+      error: 'POST body must be { lines: RawMlbLine[], mode?: SlateMode, gameDate?: YYYY-MM-DD }.',
     });
     return;
   }
@@ -323,18 +333,90 @@ mlbRouter.post('/slate', async (req, res) => {
       || body.mode === 'insane' || body.mode === 'auto'
       ? body.mode
       : 'balanced';
+  // gameDate is optional. When supplied, the slate is persisted to
+  // mlb_projection_history for grading + calibration. Without it,
+  // the slate is built but not stored — useful for dev / one-off
+  // exploration without polluting the calibration data.
+  const gameDate = body.gameDate;
+  if (gameDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(gameDate)) {
+    res.status(400).json({ error: 'gameDate must be YYYY-MM-DD when provided.' });
+    return;
+  }
   try {
     const { lines, unresolved } = await resolveMlbSlate(body.lines);
     const slate = buildMlbSlate(lines, mode);
+
+    // Persist if gameDate provided. Failure to persist doesn't fail
+    // the response — we still return the built slate. Calibration
+    // gracefully reports "no data" if writes are missing.
+    let recorded: number | null = null;
+    if (gameDate) {
+      try {
+        const recordable: RecordableMlbCombo[] = slate.combos
+          .filter((c) => c.combo !== null)
+          .map((c) => ({ combo: c.combo!, cardType: c.label }));
+        if (recordable.length > 0) {
+          const r = await recordMlbSlateProjections({
+            combos: recordable,
+            gameDate,
+          });
+          recorded = r.inserted;
+        }
+      } catch (err) {
+        console.warn('mlb/slate persistence failed (slate still served):', (err as Error).message);
+      }
+    }
+
     res.json({
       ...slate,
       requestedMode: mode,
       lineCount: lines.length,
       unresolved,
+      gameDate: gameDate ?? null,
+      recordedProjections: recorded,
       disclaimer: MLB_DISCLAIMER,
     });
   } catch (err) {
     console.error('mlb/slate failed', err);
     res.status(500).json({ error: 'mlb slate construction failed' });
+  }
+});
+
+// GET /api/mlb/calibration?windowDays=30
+//
+// Returns predicted-vs-actual buckets across the rolling window.
+// Lazy-grades any ungraded rows whose game_date is now in the past
+// before aggregating, so the report always reflects whatever stats
+// have synced. Bayesian-smoothed hit rates ensure thin samples don't
+// fake-claim accuracy. Mission alignment: this IS the truth surface.
+mlbRouter.get('/calibration', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const windowRaw = req.query.windowDays as string | undefined;
+  const windowDays =
+    windowRaw !== undefined && Number.isFinite(Number(windowRaw))
+      ? Math.max(7, Math.min(365, Math.round(Number(windowRaw))))
+      : 30;
+  try {
+    // Lazy-grade first — if the daily MLB sync ran since we last
+    // queried, ripe rows now have stat-table matches. Failure here
+    // doesn't block the report (graceful degradation).
+    let gradeResult: Awaited<ReturnType<typeof gradeMlbProjections>> | null = null;
+    try {
+      gradeResult = await gradeMlbProjections({ windowDays });
+    } catch (err) {
+      console.warn('mlb/calibration lazy grade failed:', (err as Error).message);
+    }
+    const report = await computeMlbCalibration({ windowDays });
+    res.json({
+      ...report,
+      gradedThisRequest: gradeResult,
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/calibration failed', err);
+    res.status(500).json({ error: 'mlb calibration fetch failed' });
   }
 });

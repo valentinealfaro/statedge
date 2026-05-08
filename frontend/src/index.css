@@ -5439,3 +5439,38 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--text-2);
 }
 
+/* MLB calibration bucket table — predicted vs observed accuracy
+   per probability bucket / stat type / risk tier / card type. */
+.mlb-bucket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mlb-bucket-table thead th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mlb-bucket-table tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.mlb-bucket-table tbody tr.mlb-bucket-empty td {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+.mlb-bucket-label { font-weight: 700; }
+.mlb-bucket-tier {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--warn, #ffa726);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+

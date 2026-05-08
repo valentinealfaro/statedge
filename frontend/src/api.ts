@@ -1461,6 +1461,47 @@ export async function buildMlbSlateRequest(
   return (await res.json()) as MlbSlateResponse;
 }
 
+export type MlbCalibrationBucket = {
+  label: string;
+  predictedAverage: number;
+  observedHitRate: number;
+  smoothedHitRate: number;
+  graded: number;
+  hits: number;
+  misses: number;
+  sampleTier: 'thin' | 'small' | 'medium' | 'strong';
+};
+
+export type MlbCalibrationReport = {
+  windowDays: number;
+  totalGraded: number;
+  totalHits: number;
+  totalMisses: number;
+  overallHitRate: number;
+  smoothedHitRate: number;
+  averagePredicted: number;
+  calibrationGap: number;
+  byProbability: MlbCalibrationBucket[];
+  byStatType: MlbCalibrationBucket[];
+  byRiskTier: MlbCalibrationBucket[];
+  byCardType: MlbCalibrationBucket[];
+  gradedThisRequest: {
+    scanned: number;
+    graded: number;
+    hits: number;
+    misses: number;
+    pushes: number;
+    noGame: number;
+  } | null;
+  disclaimer: string;
+};
+
+export async function getMlbCalibration(windowDays = 30): Promise<MlbCalibrationReport> {
+  const res = await fetch(`${API_BASE}/api/mlb/calibration?windowDays=${windowDays}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as MlbCalibrationReport;
+}
+
 export async function getMlbHealth(): Promise<MlbHealth> {
   const res = await fetch(`${API_BASE}/api/mlb/health`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
