@@ -19,6 +19,20 @@ import { ensureMlbTables } from '../mlb/db.js';
 import { statMeta, type MlbStatKey } from '../mlb/stats.js';
 import type { RawMlbLine } from './mlbSlatePipeline.js';
 
+// Strip diacritics + lowercase. Mirrors Postgres unaccent() so the JS
+// side of name resolution matches the SQL filter regardless of which
+// form (accented vs ASCII) the DB or the user uses. Without this,
+// "José Ramírez" → 'josé ramírez' on the JS side never equals the
+// SQL's unaccent'd 'jose ramirez', and 40+ Latino-named players fail
+// to resolve on every paste.
+function unaccentLower(s: string): string {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+// Exported solely so tests can pin the unaccent behavior — never call
+// from product code, use unaccentLower directly.
+export const _unaccentLowerForTest: (s: string) => string = unaccentLower;
+
 export type SlateTextParseResult = {
   lines: RawMlbLine[];
   unresolved: Array<{
@@ -123,15 +137,19 @@ async function resolvePlayerIds(
 ): Promise<Map<string, number>> {
   await ensureMlbTables();
   if (partials.length === 0) return new Map();
-  // Deduplicate (name, team) pairs.
+  // Deduplicate (name, team) pairs. Use the unaccent'd-lowercase form
+  // as the dedup key so 'José Ramírez' and 'Jose Ramirez' don't both
+  // get queried.
   const pairs = new Map<string, { name: string; team: string }>();
   for (const p of partials) {
-    const key = `${p.playerName.toLowerCase()}::${p.team.toUpperCase()}`;
+    const key = `${unaccentLower(p.playerName)}::${p.team.toUpperCase()}`;
     if (!pairs.has(key)) pairs.set(key, { name: p.playerName, team: p.team });
   }
-  // Build a single OR'd query. Using ANY($1) would be cleaner but
-  // mixed-column matching is simpler with explicit parameters.
-  const names = Array.from(pairs.values()).map((v) => v.name);
+  // SQL filters with unaccent(lower(...)) — must send already-folded
+  // names so the equality check actually matches. Sending raw 'José'
+  // here while the SQL folds the DB to 'jose' is the bug that left
+  // every Latino-named player unresolvable.
+  const names = Array.from(pairs.values()).map((v) => unaccentLower(v.name));
   const teams = Array.from(pairs.values()).map((v) => v.team.toUpperCase());
   const { rows } = await getPool().query<{
     id: number;
@@ -143,14 +161,14 @@ async function resolvePlayerIds(
        JOIN mlb_teams t ON t.id = p.team_id
       WHERE unaccent(lower(p.full_name)) = ANY($1::text[])
         AND t.abbreviation = ANY($2::text[])`,
-    [names.map((n) => n.toLowerCase()), teams],
+    [names, teams],
   );
-  // Build a lookup by (lower-name, team-abbr) → id. Some teams
-  // (e.g. ATH for Athletics) need exact-match enforcement on team
-  // since names can repeat across teams.
+  // Build a lookup by (folded-name, team-abbr) → id. Both sides
+  // must use the same unaccentLower form so 'José' / 'Jose' /
+  // 'JOSÉ' all collapse to one key.
   const result = new Map<string, number>();
   for (const r of rows) {
-    const key = `${r.full_name.toLowerCase()}::${r.abbreviation.toUpperCase()}`;
+    const key = `${unaccentLower(r.full_name)}::${r.abbreviation.toUpperCase()}`;
     result.set(key, r.id);
   }
   return result;
@@ -197,7 +215,7 @@ export async function parseMlbSlateText(
   const ids = await resolvePlayerIds(partials.map((p) => p.partial));
 
   for (const { partial, raw } of partials) {
-    const key = `${partial.playerName.toLowerCase()}::${partial.team.toUpperCase()}`;
+    const key = `${unaccentLower(partial.playerName)}::${partial.team.toUpperCase()}`;
     const id = ids.get(key);
     if (id === undefined) {
       // Soft fallback: try matching unaccented lower of the partial's

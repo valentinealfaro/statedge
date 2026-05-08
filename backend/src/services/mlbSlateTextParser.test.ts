@@ -3,7 +3,10 @@
 // per-line parsing math (parseOneLine via _parseLineForTest).
 
 import { describe, expect, test } from 'vitest';
-import { _parseLineForTest } from './mlbSlateTextParser.js';
+import {
+  _parseLineForTest,
+  _unaccentLowerForTest as unaccentLower,
+} from './mlbSlateTextParser.js';
 
 describe('mlbSlateTextParser — single-line parsing', () => {
   test('Standard line parses cleanly', () => {
@@ -98,5 +101,37 @@ describe('mlbSlateTextParser — single-line parsing', () => {
   test('Direction is case-insensitive', () => {
     const r = _parseLineForTest('Aaron Judge|NYY|hits|1.5|OVER');
     expect(typeof r === 'object' && r.direction).toBe('over');
+  });
+});
+
+describe('mlbSlateTextParser — unaccentLower (player name folding)', () => {
+  test('Standard ASCII passes through unchanged (just lowercased)', () => {
+    expect(unaccentLower('Aaron Judge')).toBe('aaron judge');
+  });
+
+  test('Common Spanish diacritics fold to ASCII', () => {
+    expect(unaccentLower('José Ramírez')).toBe('jose ramirez');
+    expect(unaccentLower('Vázquez')).toBe('vazquez');
+    expect(unaccentLower('Adolis García')).toBe('adolis garcia');
+    expect(unaccentLower('Yoán Moncada')).toBe('yoan moncada');
+    expect(unaccentLower('Núñez')).toBe('nunez');
+    expect(unaccentLower('Jiménez')).toBe('jimenez');
+    expect(unaccentLower('Díaz')).toBe('diaz');
+    expect(unaccentLower('Pérez')).toBe('perez');
+    expect(unaccentLower('Sánchez')).toBe('sanchez');
+  });
+
+  test('Already-folded names are stable (idempotent)', () => {
+    expect(unaccentLower('jose ramirez')).toBe('jose ramirez');
+    expect(unaccentLower(unaccentLower('José Ramírez'))).toBe('jose ramirez');
+  });
+
+  test('Mixed accented + ASCII folds correctly', () => {
+    expect(unaccentLower('Jesús Luzardo')).toBe('jesus luzardo');
+    expect(unaccentLower('Heriberto Hernández')).toBe('heriberto hernandez');
+  });
+
+  test('Hyphenated names preserve hyphens', () => {
+    expect(unaccentLower('Hao-Yu Lee')).toBe('hao-yu lee');
   });
 });
