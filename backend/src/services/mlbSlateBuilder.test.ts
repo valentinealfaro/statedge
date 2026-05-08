@@ -202,32 +202,43 @@ describe('buildMlbSlate — L8 per-size fragility caps', () => {
   });
 });
 
-describe('buildMlbSlate — L8 strict subset (Best N+1 ⊇ Best N)', () => {
-  test('Best 5 player IDs are a subset of Best 6 in Balanced mode', () => {
-    const r = buildMlbSlate(strongSlate(8), 'balanced');
-    const best6 = r.combos.find((c) => c.size === 6)?.combo;
-    const best5 = r.combos.find((c) => c.size === 5)?.combo;
-    if (best5 && best6) {
-      const ids6 = new Set(best6.legs.map((l) => l.playerId));
-      for (const leg of best5.legs) {
-        expect(ids6.has(leg.playerId)).toBe(true);
+// Phase 58 Exposure Control & Portfolio Protection Engine. The
+// previous L8 strict-subset rule (Best N+1 ⊇ Best N) was DELIBERATELY
+// REMOVED — the spec calls strict subsets "catastrophic portfolio
+// fragility, one player failure destroys the entire slate." The new
+// engine builds smallest-first and rotates exposure across cards.
+describe('buildMlbSlate — Phase 58 portfolio diversification', () => {
+  test('No player appears on all 6 cards (slate-wide hard cap)', () => {
+    const r = buildMlbSlate(strongSlate(10), 'balanced');
+    const playerCardCount = new Map<number, number>();
+    for (const slot of r.combos) {
+      if (!slot.combo) continue;
+      const seenInThisCard = new Set<number>();
+      for (const leg of slot.combo.legs) seenInThisCard.add(leg.playerId);
+      for (const pid of seenInThisCard) {
+        playerCardCount.set(pid, (playerCardCount.get(pid) ?? 0) + 1);
+      }
+    }
+    const builtCardCount = r.combos.filter((c) => c.combo !== null).length;
+    for (const [, cnt] of playerCardCount) {
+      // No player on more than 4 cards (5 if institutional). With 5+
+      // cards built, that's a strict cap.
+      if (builtCardCount >= 5) {
+        expect(cnt).toBeLessThanOrEqual(5);
       }
     }
   });
 
-  test('Best 2 ⊆ Best 3 ⊆ Best 4 ⊆ Best 5 ⊆ Best 6 chain holds', () => {
+  test('Best 6 has at least 4 distinct players not on Best 2', () => {
+    // The whole point of diversification: bigger cards rotate fresh
+    // names so single-player failure can't sink the entire slate.
     const r = buildMlbSlate(strongSlate(10), 'balanced');
-    let prev: Set<number> | null = null;
-    for (const size of [2, 3, 4, 5, 6]) {
-      const combo = r.combos.find((c) => c.size === size)?.combo;
-      if (!combo) continue;
-      const cur = new Set(combo.legs.map((l) => l.playerId));
-      if (prev !== null) {
-        for (const id of prev) {
-          expect(cur.has(id)).toBe(true);     // smaller card's IDs all in larger card
-        }
-      }
-      prev = cur;
+    const best2 = r.combos.find((c) => c.size === 2)?.combo;
+    const best6 = r.combos.find((c) => c.size === 6)?.combo;
+    if (best2 && best6) {
+      const best2Ids = new Set(best2.legs.map((l) => l.playerId));
+      const fresh = best6.legs.filter((l) => !best2Ids.has(l.playerId)).length;
+      expect(fresh).toBeGreaterThanOrEqual(4);
     }
   });
 });
@@ -474,8 +485,12 @@ describe('buildMlbSlate — correlation penalty (Phase 7)', () => {
     }
   });
 
-  test('Three legs from same game → 3 pairs (high correlation)', () => {
-    // 3 legs all in gpk:9 → C(3,2) = 3 pairs.
+  test('Best 3 caps same-game stacks at 2 (Phase 58 environmental-fragility rule)', () => {
+    // 3 legs in gpk:9 are the highest-edge candidates, but the new
+    // exposure engine caps same-game legs at 2 on Best 3+ to prevent
+    // weather/bullpen/dominant-pitcher events from killing the entire
+    // card. Builder should pick 2 from gpk:9 and rotate the 3rd in
+    // from a different game.
     const slate = [
       leg(920, { team: { id: 10, abbr: 'A' }, gameKey: 'gpk:9' }, { edgePercent: 18 }),
       leg(921, { team: { id: 11, abbr: 'B' }, gameKey: 'gpk:9' }, { edgePercent: 18 }),
@@ -486,9 +501,12 @@ describe('buildMlbSlate — correlation penalty (Phase 7)', () => {
     const r = buildMlbSlate(slate, 'balanced');
     const best3 = r.combos.find((c) => c.size === 3)?.combo;
     if (best3) {
-      // Top 3 by edge will be ids 920, 921, 922 (all gpk:9).
-      expect(best3.correlationPairs).toBe(3);
-      expect(best3.correlationRisk).toBe('High');
+      const gameKeys = best3.legs
+        .map((l) => slate.find((s) => s.playerId === l.playerId)?.gameKey ?? null);
+      const sameGame = gameKeys.filter((k) => k === 'gpk:9').length;
+      expect(sameGame).toBeLessThanOrEqual(2);
+      // 1 same-game pair max → Low correlation tier.
+      expect(best3.correlationPairs).toBeLessThanOrEqual(1);
     }
   });
 

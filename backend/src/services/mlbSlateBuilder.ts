@@ -324,17 +324,162 @@ const INSANE_PREFERRED_STATS: Partial<Record<string, number>> = {
   home_runs_allowed: 10,
 };
 
-// Per-game offensive-over cap. Spec: "same-game offensive overs"
-// is a dangerous correlation — if the game scores zero, every
-// offensive OVER dies together. Cap depends on card size: small
-// cards tolerate more concentrated stacks; 6-leg cards must
-// diversify by spec ("a 6-leg MLB card should behave like a
-// diversified institutional portfolio, NOT a fan-made same-game
-// stack").
+// Per-game offensive-over cap. Tightened per the Exposure Control
+// & Portfolio Protection Engine spec: every card ≥3 legs caps
+// same-game exposure at 2. Best 2 has only 2 legs anyway, so
+// effectively the rule is "no card may have >2 legs from the same
+// game." This kills the bullpen-collapse / weather-out / pitcher-
+// dominates failure modes that used to wipe Best 5+6 together.
 function maxLegsPerGame(cardSize: number): number {
-  if (cardSize >= 6) return 2;
-  if (cardSize >= 4) return 3;
-  return 4;
+  if (cardSize >= 3) return 2;
+  return 4;     // Best 2 unrestricted (only 2 legs total)
+}
+
+// ---------- Stat family taxonomy ----------
+//
+// Slates that load up on strikeouts-only or HRs-only fail in correlated
+// ways: one weather event, one ace-pitcher dominant night, etc. The
+// portfolio engine penalizes over-concentration in any one family
+// across the whole slate. Family ids are used by both intra-card caps
+// AND slate-wide exposure tracking.
+const STAT_FAMILY_MAP: Record<string, string> = {
+  // Production — single offensive opportunity rolls all of these
+  hits:                'production',
+  total_bases:         'production',
+  runs:                'production',
+  rbis:                'production',
+  hits_runs_rbis:      'production',
+  hitter_fantasy_score:'production',
+  // Power — rare-event, asymmetric upside
+  home_runs:           'power',
+  triples:             'power',
+  doubles:             'power',
+  // Discipline — plate skills, lower correlation w/ team scoring
+  walks:               'discipline',
+  hit_by_pitch:        'discipline',
+  strikeouts:          'discipline',     // hitter K
+  // Speed
+  stolen_bases:        'speed',
+  // Pitcher — separate families because they move with different forces
+  pitcher_strikeouts:  'pitcher_dominance',
+  outs_recorded:       'pitcher_volume',
+  pitching_outs:       'pitcher_volume',
+  pitcher_fantasy_score: 'pitcher_volume',
+  hits_allowed:        'pitcher_damage',
+  earned_runs_allowed: 'pitcher_damage',
+  walks_allowed:       'pitcher_damage',
+  home_runs_allowed:   'pitcher_damage',
+};
+
+function statFamilyOf(statKey: string): string {
+  return STAT_FAMILY_MAP[statKey] ?? 'other';
+}
+
+// Per-card same-family cap. Spec calls out 6 strikeouts on Best 6 as
+// the BAD anti-pattern. We hard-cap large cards (5/6) at 3 same-family
+// legs so the worst monoculture is impossible. Smaller cards (2-4)
+// are intentionally NOT family-capped — focused 2-3-4-leg cards on
+// one stat type are valid plays (e.g. an ace-pitcher Ks-stack on an
+// elite K matchup) and the slate-wide family penalty already pushes
+// LATER cards to rotate.
+function maxLegsPerFamilyInCard(cardSize: number): number {
+  if (cardSize >= 5) return 3;
+  return cardSize;     // no in-card cap on Best 2/3/4
+}
+
+// ---------- Slate-wide exposure tracker (Phase 58) ----------
+//
+// Counts each player / game / team / stat-family across cards already
+// committed in this slate build. Subsequent card builds apply a soft
+// penalty proportional to prior exposure so the slate as a whole
+// looks like a DIVERSIFIED PORTFOLIO instead of a copy-paste of the
+// best individual props onto every card.
+
+type SlateExposure = {
+  player: Map<number, number>;
+  game: Map<string, number>;
+  team: Map<string, number>;
+  family: Map<string, number>;
+};
+
+function newSlateExposure(): SlateExposure {
+  return {
+    player: new Map(),
+    game: new Map(),
+    team: new Map(),
+    family: new Map(),
+  };
+}
+
+function addLegToExposure(exp: SlateExposure, leg: ResolvedMlbLine): void {
+  exp.player.set(leg.playerId, (exp.player.get(leg.playerId) ?? 0) + 1);
+  if (leg.gameKey) exp.game.set(leg.gameKey, (exp.game.get(leg.gameKey) ?? 0) + 1);
+  if (leg.team.abbr) exp.team.set(leg.team.abbr, (exp.team.get(leg.team.abbr) ?? 0) + 1);
+  const fam = statFamilyOf(leg.statKey);
+  exp.family.set(fam, (exp.family.get(fam) ?? 0) + 1);
+}
+
+// "Core institutional exposure" — the only legs allowed to repeat on
+// 4+ cards. Per spec: highest confidence + lowest fragility + clean
+// edge + no trap-tier flags. Strict on purpose; this should be the
+// minority of any slate.
+function isInstitutionalGrade(leg: ResolvedMlbLine): boolean {
+  const p = leg.projection;
+  return p.probability >= 70
+    && p.edgePercent  >= 12
+    && p.confidence   >= 70
+    && p.fragilityScore <= 40
+    && p.trapScore    <= 35;
+}
+
+// Hard slate-wide exposure cap. Standard picks max out at 4 of the 6
+// possible card slots (Best 2/3/4/5/6 + Wild Card). Institutional
+// picks may extend to 5. NEVER 6 — the spec is explicit about this.
+function maxCardAppearances(leg: ResolvedMlbLine): number {
+  return isInstitutionalGrade(leg) ? 5 : 4;
+}
+
+// Soft penalty applied to legScore when picking subsequent cards.
+// Heavily punishes the 4th+ appearance of a non-institutional player;
+// also discourages stat-family monoculture and same-game/team stacks
+// that span multiple cards.
+function exposurePenalty(leg: ResolvedMlbLine, exp: SlateExposure): number {
+  let penalty = 0;
+  // Player exposure — the dominant signal. Spec schedule: 1st free,
+  // 2nd small, 3rd moderate, 4th heavy, 5th near-prohibitive (the
+  // hard cap blocks it anyway, but penalty keeps it from leading).
+  const playerPrior = exp.player.get(leg.playerId) ?? 0;
+  const isInst = isInstitutionalGrade(leg);
+  const playerSchedule = isInst
+    ? [0, 0, 4,  10, 30, 1000]
+    : [0, 0, 8,  22, 60, 1000];
+  penalty += playerSchedule[Math.min(playerPrior, 5)] ?? 1000;
+
+  // Game exposure — same-game across cards = environmental fragility
+  // (weather, bullpen, pitcher dominance hit every leg simultaneously).
+  if (leg.gameKey) {
+    const gPrior = exp.game.get(leg.gameKey) ?? 0;
+    if (gPrior >= 2) penalty += (gPrior - 1) * 4;
+  }
+  // Team exposure — softer than game but still real.
+  if (leg.team.abbr) {
+    const tPrior = exp.team.get(leg.team.abbr) ?? 0;
+    if (tPrior >= 2) penalty += (tPrior - 1) * 2.5;
+  }
+  // Stat-family monoculture — start penalizing once a family hits 3
+  // appearances across the slate. Stops Ks-on-every-card.
+  const fam = statFamilyOf(leg.statKey);
+  const fPrior = exp.family.get(fam) ?? 0;
+  if (fPrior >= 3) penalty += (fPrior - 2) * 1.5;
+  return penalty;
+}
+
+function diversifiedScore(
+  leg: ResolvedMlbLine,
+  mode: MlbResolvedSlateMode,
+  exp: SlateExposure,
+): number {
+  return legScore(leg, mode) - exposurePenalty(leg, exp);
 }
 
 // Per-team-side cap. Spec: "same-team hitter overs" is dangerous
@@ -355,26 +500,52 @@ function maxLegsPerTeamSide(cardSize: number): number {
 }
 
 // Pick top-N legs with same-player + stat-family + correlation
-// rules per the MLB Slate Engine spec.
+// rules + slate-wide exposure penalty (Phase 58 portfolio engine).
+//
+// `slateExposure` is OPTIONAL. When provided, it:
+//   1. Re-ranks the pool so legs already heavily used on prior cards
+//      sink in priority (soft penalty).
+//   2. Applies the slate-wide hard cap — a player who's already on
+//      4 cards (5 if institutional) is blocked entirely from this
+//      card so the spec's "no player on all 6 cards" rule holds.
+//   3. Caps stat-family concentration WITHIN this card so we don't
+//      ship a Best-6 of all strikeouts.
+// When `slateExposure` is null we fall back to plain legScore — used
+// by tests and any future caller that wants to pick a single card
+// without slate-context. Production builds always pass exposure.
 function pickTopN(
   pool: ResolvedMlbLine[],
   n: number,
   mode: MlbResolvedSlateMode,
+  slateExposure: SlateExposure | null = null,
 ): ResolvedMlbLine[] {
   // Apply per-mode stat blocklists BEFORE ranking.
   const filtered = mode === 'safe'
     ? pool.filter((l) => !SAFE_BLOCKED_STATS.has(l.statKey))
     : pool;
-  const ranked = [...filtered].sort((a, b) => legScore(b, mode) - legScore(a, mode));
+  const ranked = [...filtered].sort((a, b) =>
+    slateExposure
+      ? diversifiedScore(b, mode, slateExposure) - diversifiedScore(a, mode, slateExposure)
+      : legScore(b, mode) - legScore(a, mode),
+  );
   const picked: ResolvedMlbLine[] = [];
   const playerLegCount = new Map<number, number>();
   const playerStatsUsed = new Map<number, Set<string>>();
   const gameLegCount = new Map<string, number>();
   const teamSideLegCount = new Map<string, number>();
+  const familyLegCount = new Map<string, number>();
   const cap = maxLegsPerPlayer(n);
   const gameCap = maxLegsPerGame(n);
   const teamSideCap = maxLegsPerTeamSide(n);
+  const famCap = maxLegsPerFamilyInCard(n);
   for (const l of ranked) {
+    // Slate-wide HARD cap: respects Phase 58 spec "NO player on all 6
+    // cards." Institutional-grade picks may go to 5 of 6 slots; the
+    // rest top out at 4. Bypassed when no exposure tracker provided.
+    if (slateExposure) {
+      const slatePrior = slateExposure.player.get(l.playerId) ?? 0;
+      if (slatePrior >= maxCardAppearances(l)) continue;
+    }
     const seen = playerLegCount.get(l.playerId) ?? 0;
     if (seen >= cap) continue;
     const usedStats = playerStatsUsed.get(l.playerId) ?? new Set();
@@ -396,12 +567,19 @@ function pickTopN(
       const tsSeen = teamSideLegCount.get(tsKey) ?? 0;
       if (tsSeen >= teamSideCap) continue;
     }
+    // Within-card stat-family cap. Stops a Best 6 from being all-Ks
+    // or all-HRs (the "boring + public" / "fragile correlation"
+    // anti-patterns the Exposure Engine spec calls out).
+    const fam = statFamilyOf(l.statKey);
+    const famSeen = familyLegCount.get(fam) ?? 0;
+    if (famSeen >= famCap) continue;
     picked.push(l);
     playerLegCount.set(l.playerId, seen + 1);
     usedStats.add(l.statKey);
     playerStatsUsed.set(l.playerId, usedStats);
     if (gameKey) gameLegCount.set(gameKey, (gameLegCount.get(gameKey) ?? 0) + 1);
     if (tsKey) teamSideLegCount.set(tsKey, (teamSideLegCount.get(tsKey) ?? 0) + 1);
+    familyLegCount.set(fam, famSeen + 1);
     if (picked.length >= n) break;
   }
   return picked;
@@ -615,22 +793,29 @@ export function buildMlbSlate(
 
   const slots: MlbSlateResult['combos'] = [];
 
-  // L8 strict subset guarantee: Best 6 ⊇ Best 5 ⊇ Best 4 ⊇ Best 3 ⊇ Best 2.
-  // Build the LARGEST size first using the strictest fragility cap,
-  // then derive smaller sizes by trimming the weakest leg by score.
-  // This honors the spec: "Cards build top-down. Best 6 contains Best 5..."
-  // Smaller cards remain valid because fragility caps are LOOSER for them
-  // — every leg that passes a tight cap also passes a loose one.
-  // We keep `previousPicks` to enforce the subset relationship.
-  let previousPicks: ResolvedMlbLine[] | null = null;
-  // Walk allowed sizes in DESCENDING order. Largest is the parent set;
-  // each smaller size becomes a strict subset by dropping the weakest.
-  const sizes = [...cfg.allowedSizes].sort((a, b) => b - a);
+  // Phase 58 — Exposure Control & Portfolio Protection Engine.
+  //
+  // The previous algorithm built the LARGEST card first and derived
+  // smaller cards as strict subsets. That maximized internal coherence
+  // but produced catastrophic portfolio fragility — the same player
+  // showed up on every card, so one bad night sank the whole slate.
+  //
+  // The new algorithm walks sizes ASCENDING (Best 2 → Best 6) and
+  // tracks slate-wide exposure across player / game / team / stat-
+  // family. Each subsequent card pays a soft penalty for reusing
+  // already-exposed picks, so larger cards naturally rotate in fresh
+  // names. A hard cap (4 of 6 slots, or 5 for institutional-grade)
+  // prevents any single player from dominating the entire slate.
+  //
+  // Best 2 still gets the highest-confidence picks — by going first
+  // it has the cleanest pool. Best 6 by going last is the most
+  // diversified — exactly the spec's "feels like a professionally
+  // diversified portfolio" goal.
+  const slateExposure = newSlateExposure();
+  const sizes = [...cfg.allowedSizes].sort((a, b) => a - b);
+
   for (const size of sizes) {
     const label = (`Best ${size}`) as MlbCombo['label'];
-    // Per L8 spec: "rotate fragile picks out of larger cards." Apply a
-    // size-specific fragility cap BEFORE picking — every leg in a Best 6
-    // compounds failure, so 6-leg cards demand sturdier legs than 2-leg.
     const sizeFragCap = cfg.perSize[size]?.maxLegFragility;
     const sizePool = sizeFragCap !== undefined
       ? eligible.filter((l) => l.projection.fragilityScore <= sizeFragCap)
@@ -646,31 +831,21 @@ export function buildMlbSlate(
       });
       continue;
     }
-    // Subset enforcement: when a parent (larger) set already exists,
-    // derive this size by slicing the top-N of it (sorted by score).
-    // This guarantees Best N ⊆ Best N+1. Otherwise pick fresh from
-    // the size-specific pool.
-    let picks: ResolvedMlbLine[];
-    if (previousPicks !== null && previousPicks.length >= size) {
-      const sortedParent = [...previousPicks].sort(
-        (a, b) => legScore(b, resolvedMode) - legScore(a, resolvedMode),
-      );
-      picks = sortedParent.slice(0, size);
-    } else {
-      picks = pickTopN(sizePool, size, resolvedMode);
-    }
+    // Diversified pick: respects intra-card caps + slate-wide exposure
+    // penalty + hard cap on max card appearances per player.
+    const picks = pickTopN(sizePool, size, resolvedMode, slateExposure);
     if (picks.length < size) {
-      // Same-player uniqueness shrunk the pool below target.
       slots.push({
         size,
         label,
         combo: null,
-        reason: `Not enough distinct players to fill ${size} legs.`,
+        reason:
+          `Not enough diversified legs to fill ${size}: only ${picks.length} pass intra-card ` +
+          `caps + slate-wide exposure limits. Smaller cards already absorbed the strongest ` +
+          `non-overlapping picks.`,
       });
       continue;
     }
-    // Per-size edge concentration gate. Mission says "card size must
-    // be earned" — small cards from soft slates aren't worth shipping.
     const sizeReq = cfg.perSize[size];
     const avgEdge = avg(picks.map((l) => l.projection.edgePercent));
     if (sizeReq && avgEdge < sizeReq.minAvgEdge) {
@@ -688,19 +863,23 @@ export function buildMlbSlate(
       combo: makeCombo(size, picks, resolvedMode),
       reason: 'OK',
     });
-    // Anchor for the next (smaller) size's subset derivation.
-    previousPicks = picks;
+    // Commit this card's legs into slate exposure so subsequent cards
+    // diversify away from these names / games / families.
+    for (const leg of picks) addLegToExposure(slateExposure, leg);
   }
-  // Re-sort slots in ascending size order for the API response — UI
-  // expects small-to-large in the rendered list.
-  slots.sort((a, b) => a.size - b.size);
+  // Already in ascending order, no re-sort needed.
 
-  // Wild Card slot. Per the 2026-05-08 MLB Slate Engine spec, MLB
-  // ALLOWS same-player across cards (the NBA-style block was wrong
-  // for MLB — elite matchup leverage justifies heavy exposure). We
-  // pass an empty set so Wild Card can re-pick the slate's best
-  // legs if they qualify on the wildCardScore formula.
-  const wildCard = buildMlbWildCard(lines, new Set<number>());
+  // Wild Card — must feel "independent, sharp, less public" per spec.
+  // We hard-exclude players who already appear on 3+ Best cards so
+  // Wild Card never reads as a copy of Best 6. Mild reuse (2 prior
+  // cards) is OK if Wild Card's own scoring formula picks them up
+  // — that means the same name is genuinely the strongest signal in
+  // multiple lenses, not just lazy duplication.
+  const heavySlatePlayers = new Set<number>();
+  for (const [pid, cnt] of slateExposure.player) {
+    if (cnt >= 3) heavySlatePlayers.add(pid);
+  }
+  const wildCard = buildMlbWildCard(lines, heavySlatePlayers);
 
   return { resolvedMode, combos: slots, wildCard };
 }
