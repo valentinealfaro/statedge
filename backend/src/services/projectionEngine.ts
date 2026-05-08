@@ -14,6 +14,10 @@
 import type { PlayerGame } from '../nba/client.js';
 import { STAT_MAP, type Last10StatId } from './last10.js';
 import { computeNbaFragility } from './nbaFragilityEngine.js';
+// L2 momentumExpansionScore module is sport-agnostic — same formula
+// works for NBA with NBA-derived inputs. (File name is "mlb…" for
+// archaeology only; the math has no MLB assumptions.)
+import { computeMomentumExpansionScore } from './mlbMomentumExpansion.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +93,11 @@ export type ProjectionResult = {
       minutesUncertainty: number | null;
     };
   };
+  // L2 momentumExpansionScore — direction-aware composite of recent
+  // production lift / season trend / projection separation. 50 =
+  // neutral, ≥65 = real momentum, ≤35 = anti-momentum. Same module
+  // MLB uses (formula is sport-agnostic).
+  momentumExpansionScore: number;
   historicalHitRates: {
     season: number | null;
     last10: number | null;
@@ -739,6 +748,30 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     components: fragilityRaw.components,
   };
 
+  // L2 momentumExpansionScore — direction-aware composite of L5/L10
+  // production lift + L10/season lift + projection separation + L10
+  // hit rate. Sport-agnostic module; NBA derives direction from
+  // `lean` (Strong/Slight Over → OVER, Strong/Slight Under → UNDER).
+  // For 'No Clear Edge' we default to OVER (matches the lean math
+  // when overProb ≥ 50).
+  const momentumDirection: 'OVER' | 'UNDER' =
+    /Under/.test(lean) ? 'UNDER' : 'OVER';
+  const distanceUnits = blendedStdDev > 0
+    ? Math.abs(contextAdjusted - line) / blendedStdDev
+    : 0;
+  const projectionDistanceScore = Math.max(0, Math.min(100, Math.round(distanceUnits * 50)));
+  const last10HitRate =
+    momentumDirection === 'OVER' ? historicalHitRates.last10 : null;
+  const momentumExpansionScore = computeMomentumExpansionScore({
+    direction: momentumDirection,
+    last10Average: last10W?.avg ?? 0,
+    last5Average: last5W?.avg ?? null,
+    seasonAverage: seasonW?.avg ?? null,
+    seasonGames: seasonW?.n ?? 0,
+    projectionDistanceScore,
+    last10HitRate,
+  });
+
   return {
     selectedStat: stat,
     lineValue: line,
@@ -754,6 +787,7 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     risk: { score: riskScore, label: riskLabel(riskScore) },
     edge: { score: edgeScore, label: edgeLabel(edgeScore), lean },
     fragility,
+    momentumExpansionScore,
     historicalHitRates,
     factorBreakdown: {
       seasonAvg: seasonW ? round(seasonW.avg, 2) : null,
@@ -836,6 +870,7 @@ function makeNoProjection(stat: Last10StatId, line: number, reason: string): Pro
         minutesUncertainty: 60,
       },
     },
+    momentumExpansionScore: 50,
     historicalHitRates: { season: null, last10: null, last5: null, vsOpponent: null, homeAway: null },
     factorBreakdown: {
       seasonAvg: null, last10Avg: null, last5Avg: null, vsOpponentAvg: null, homeAwayAvg: null,

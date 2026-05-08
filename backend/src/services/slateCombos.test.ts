@@ -45,6 +45,7 @@ function makeProjection(over: Partial<ProjectionResult> = {}): ProjectionResult 
         minutesUncertainty: 0,
       },
     },
+    momentumExpansionScore: 50,
     historicalHitRates: {
       season: 60, last10: 60, last5: 60, vsOpponent: 60, homeAway: 60,
     },

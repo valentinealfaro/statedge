@@ -2056,6 +2056,17 @@ function ProjectionPanel({ projection }: { projection: SlateProjection }) {
               <strong>{projection.fragility.tier}</strong>
               <span className="muted small">{projection.fragility.score.toFixed(0)}</span>
             </div>
+            <div className="slate-projection-cell" title="L2 Momentum Expansion — direction-aware composite of recent production lift, season trend, projection separation, and L10 hit rate. 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.">
+              <span className="muted small">Momentum</span>
+              <strong>
+                {projection.momentumExpansionScore >= 75 ? 'Strong'
+                  : projection.momentumExpansionScore >= 60 ? 'Expanding'
+                  : projection.momentumExpansionScore >= 40 ? 'Neutral'
+                  : projection.momentumExpansionScore >= 25 ? 'Cooling'
+                  : 'Fading'}
+              </strong>
+              <span className="muted small">{projection.momentumExpansionScore.toFixed(0)}</span>
+            </div>
           </div>
 
           <div className="slate-projection-factors">

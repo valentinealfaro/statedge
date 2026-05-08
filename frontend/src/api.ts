@@ -583,6 +583,9 @@ export type SlateProjection = {
       minutesUncertainty: number | null;
     };
   };
+  // L2 momentumExpansionScore — direction-aware. 50 = neutral,
+  // ≥65 = real momentum, ≤35 = anti-momentum.
+  momentumExpansionScore: number;
   historicalHitRates: {
     season: number | null;
     last10: number | null;
