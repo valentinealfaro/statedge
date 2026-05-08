@@ -1172,6 +1172,26 @@ export type EspnTeamSummary = {
   leaders: EspnLeader[];
 };
 
+export type EspnQuarterScore = {
+  period: number;
+  awayPoints: number | null;
+  homePoints: number | null;
+};
+
+export type EspnWinProbabilityEntry = {
+  homeWinPercentage: number;
+  awayWinPercentage: number;
+  playId?: string;
+};
+
+export type EspnLastFiveGame = {
+  date: string;
+  atVs: 'vs' | '@' | null;
+  opponentAbbr: string;
+  result: 'W' | 'L' | null;
+  score: string;
+};
+
 export type EspnGameSummary = {
   eventId: string;
   date: string;
@@ -1181,6 +1201,11 @@ export type EspnGameSummary = {
   attendance?: number;
   away: EspnTeamSummary;
   home: EspnTeamSummary;
+  quarters: EspnQuarterScore[];
+  totals: { away: number | null; home: number | null };
+  predictor: { homeWinPct: number | null; awayWinPct: number | null };
+  winProbability: EspnWinProbabilityEntry[];
+  lastFive: { away: EspnLastFiveGame[]; home: EspnLastFiveGame[] };
 };
 
 export async function getEspnGameSummary(eventId: string): Promise<EspnGameSummary> {

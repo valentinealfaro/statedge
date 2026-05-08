@@ -75,6 +75,8 @@ export function EspnGameDetail() {
             </Link>
           </div>
 
+          <Linescore data={data} />
+          <WinProbability data={data} />
           <SameGameParlay data={data} />
 
           {data.state === 'pre' ? (
@@ -82,6 +84,8 @@ export function EspnGameDetail() {
           ) : (
             <LiveOrFinalView data={data} />
           )}
+
+          <LastFiveGames data={data} />
         </>
       )}
     </div>
@@ -293,38 +297,68 @@ function SameGameParlay({ data }: { data: EspnGameSummary }) {
   );
 }
 
-// Header: matchup + final score / start-time + venue.
+// Header — 2-row stacked layout matching MLB game detail. Away on
+// top, home below, status chip right-aligned.
 function Header({ data }: { data: EspnGameSummary }) {
+  const live = data.state === 'in';
+  const final = data.state === 'post';
   return (
-    <>
-      <div className="matchup">
-        <SideHeader side={data.away} />
-        <div className="vs">
-          <div className={data.state === 'in' ? 'bs-final live' : 'bs-final'}>
-            {data.state === 'pre' ? 'TIPOFF' : data.state === 'in' ? 'LIVE' : 'FINAL'}
-          </div>
-          <div className="bs-date">{data.statusDetail}</div>
-          {data.venue && <div className="bs-date">{data.venue}</div>}
+    <div className="mlb-projection" style={{ marginBottom: 12 }}>
+      <div className="mlb-projection-head" style={{ alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+          <SideRow side={data.away} score={data.totals.away} />
+          <SideRow side={data.home} score={data.totals.home} />
         </div>
-        <SideHeader side={data.home} />
+        <span
+          className="mlb-projection-verdict"
+          style={live ? { color: '#ef5350', fontWeight: 700 } : final ? { opacity: 0.7 } : {}}
+          title={data.statusDetail}
+        >
+          {live ? '● LIVE' : final ? 'FINAL' : 'TIPOFF'}
+        </span>
       </div>
-    </>
+      <div className="mlb-projection-grid" style={{ marginTop: 10 }}>
+        <div className="mlb-stat">
+          <span className="mlb-stat-label">{data.away.abbreviation}</span>
+          <span className="mlb-stat-value">{data.totals.away ?? '—'}</span>
+          <span className="mlb-stat-sub">{data.away.record ?? ''}</span>
+        </div>
+        <div className="mlb-stat">
+          <span className="mlb-stat-label">{data.home.abbreviation}</span>
+          <span className="mlb-stat-value">{data.totals.home ?? '—'}</span>
+          <span className="mlb-stat-sub">{data.home.record ?? ''}</span>
+        </div>
+        <div className="mlb-stat">
+          <span className="mlb-stat-label">Status</span>
+          <span className="mlb-stat-value" style={{ fontSize: 14 }}>{data.statusDetail}</span>
+        </div>
+        {data.venue && (
+          <div className="mlb-stat">
+            <span className="mlb-stat-label">Venue</span>
+            <span className="mlb-stat-value" style={{ fontSize: 13 }}>{data.venue}</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-function SideHeader({ side }: { side: EspnTeamSummary }) {
+function SideRow({ side, score }: { side: EspnTeamSummary; score: number | null }) {
   const won = !!side.isWinner;
   return (
-    <div className={won ? 'side bs-side won' : 'side bs-side'}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       {side.logo
-        ? <img className="avatar lg team" src={side.logo} alt={side.displayName} />
+        ? <img className="avatar lg team" src={side.logo} alt={side.displayName} style={{ width: 40, height: 40 }} />
         : null}
-      <div className="big">{side.displayName}</div>
-      <div className="small">
-        {side.homeAway === 'home' ? 'Home' : 'Away'}
-        {side.record && ` · ${side.record}`}
-      </div>
-      <div className="bs-score">{side.score || '—'}</div>
+      <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.2, fontWeight: won ? 800 : 500 }}>
+        {side.displayName}
+        <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>
+          ({side.record ?? '—'})
+        </span>
+      </h1>
+      <span style={{ marginLeft: 'auto', fontSize: 22, fontWeight: 700, opacity: won ? 1 : 0.7 }}>
+        {score ?? '—'}
+      </span>
     </div>
   );
 }
@@ -517,4 +551,250 @@ function InjuryRow({ injury }: { injury: EspnInjury }) {
 // abbr→nba-id map from teams.ts.
 function nbaTeamIdFromEspn(side: EspnTeamSummary): number {
   return teamIdFromAbbr(side.abbreviation) ?? 0;
+}
+
+// ---------- Linescore (NBA per-quarter scoring) ----------
+//
+// NBA equivalent of MLB's per-inning R/H/E table. Always padded to 4
+// quarters even mid-game. OT periods append automatically.
+function Linescore({ data }: { data: EspnGameSummary }) {
+  if (data.quarters.length === 0) return null;
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading">Linescore</summary>
+      <div className="mlb-game-twocol-scroll" style={{ marginTop: 8 }}>
+        <table className="mlb-mini-table">
+          <thead>
+            <tr>
+              <th></th>
+              {data.quarters.map((q) => (
+                <th key={q.period} className="num">
+                  {q.period <= 4 ? q.period : `OT${q.period - 4}`}
+                </th>
+              ))}
+              <th
+                className="num"
+                style={{ paddingLeft: 12, borderLeft: '1px solid var(--border-subtle)' }}
+              >
+                T
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {(['away', 'home'] as const).map((side) => {
+              const teamData = side === 'away' ? data.away : data.home;
+              const total = side === 'away' ? data.totals.away : data.totals.home;
+              return (
+                <tr key={side}>
+                  <td><strong>{teamData.abbreviation}</strong></td>
+                  {data.quarters.map((q) => {
+                    const v = side === 'away' ? q.awayPoints : q.homePoints;
+                    return (
+                      <td key={q.period} className="num">
+                        {v === null || v === undefined ? '—' : v}
+                      </td>
+                    );
+                  })}
+                  <td
+                    className="num"
+                    style={{
+                      fontWeight: 800,
+                      paddingLeft: 12,
+                      borderLeft: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    {total ?? '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+// ---------- Win probability chart (NBA) ----------
+//
+// Inline SVG line chart of home win probability over the course of
+// the game. Pre-game shows the predictor snapshot only. Live/final
+// shows the rolling per-play history.
+function WinProbability({ data }: { data: EspnGameSummary }) {
+  const history = data.winProbability;
+  const predictor = data.predictor;
+
+  // Pre-game: just the predictor snapshot, no chart.
+  if (history.length === 0) {
+    if (predictor.homeWinPct === null && predictor.awayWinPct === null) return null;
+    return (
+      <details className="mlb-context" open>
+        <summary
+          className="mlb-context-heading"
+          style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}
+        >
+          <span>Matchup predictor</span>
+          <span style={{ display: 'flex', gap: 12, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}>
+            <span style={{ color: (predictor.homeWinPct ?? 0) >= (predictor.awayWinPct ?? 0) ? '#66bb6a' : '#7aa2ff' }}>
+              {data.home.abbreviation} {predictor.homeWinPct?.toFixed(1) ?? '—'}%
+            </span>
+            <span style={{ opacity: 0.5 }}>/</span>
+            <span style={{ color: (predictor.awayWinPct ?? 0) >= (predictor.homeWinPct ?? 0) ? '#66bb6a' : '#7aa2ff' }}>
+              {data.away.abbreviation} {predictor.awayWinPct?.toFixed(1) ?? '—'}%
+            </span>
+          </span>
+        </summary>
+        <p className="muted small" style={{ marginTop: 8 }}>
+          ESPN's pre-game matchup predictor. Becomes a live rolling chart once tipoff hits.
+        </p>
+      </details>
+    );
+  }
+
+  const homeAbbr = data.home.abbreviation;
+  const awayAbbr = data.away.abbreviation;
+  const W = 600;
+  const H = 120;
+  const PAD_X = 30;
+  const PAD_Y = 8;
+  const innerW = W - PAD_X * 2;
+  const innerH = H - PAD_Y * 2;
+
+  const points = history.map((e, i) => {
+    const x = PAD_X + (i / Math.max(1, history.length - 1)) * innerW;
+    const y = PAD_Y + (1 - e.homeWinPercentage / 100) * innerH;
+    return { x, y, e };
+  });
+  const path = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ');
+  const midY = PAD_Y + 0.5 * innerH;
+  const current = history[history.length - 1]!;
+
+  return (
+    <details className="mlb-context" open>
+      <summary
+        className="mlb-context-heading"
+        style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}
+      >
+        <span>Win probability</span>
+        <span style={{ display: 'flex', gap: 12, fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}>
+          <span style={{ color: current.homeWinPercentage >= current.awayWinPercentage ? '#66bb6a' : '#7aa2ff' }}>
+            {homeAbbr} {current.homeWinPercentage.toFixed(1)}%
+          </span>
+          <span style={{ opacity: 0.5 }}>/</span>
+          <span style={{ color: current.awayWinPercentage >= current.homeWinPercentage ? '#66bb6a' : '#7aa2ff' }}>
+            {awayAbbr} {current.awayWinPercentage.toFixed(1)}%
+          </span>
+        </span>
+      </summary>
+      <div style={{ marginTop: 8, overflowX: 'auto' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          height={H}
+          style={{ display: 'block', maxWidth: '100%' }}
+          role="img"
+          aria-label={`Win probability — ${homeAbbr} home line`}
+        >
+          <line
+            x1={PAD_X} x2={W - PAD_X} y1={midY} y2={midY}
+            stroke="rgba(255,255,255,0.18)"
+            strokeDasharray="3 4"
+          />
+          {[0, 25, 50, 75, 100].map((v) => {
+            const y = PAD_Y + (1 - v / 100) * innerH;
+            return (
+              <text
+                key={v}
+                x={PAD_X - 4} y={y + 3}
+                textAnchor="end"
+                fontSize="9"
+                fill="rgba(255,255,255,0.45)"
+              >
+                {v}
+              </text>
+            );
+          })}
+          <path
+            d={path}
+            fill="none"
+            stroke="#7aa2ff"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {points.length > 0 && (
+            <circle
+              cx={points[points.length - 1]!.x}
+              cy={points[points.length - 1]!.y}
+              r="3"
+              fill="#7aa2ff"
+            />
+          )}
+        </svg>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.45)', padding: `0 ${PAD_X}px` }}>
+          <span>{awayAbbr} (top of chart = home favored)</span>
+          <span>{homeAbbr}</span>
+        </div>
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        ESPN's per-play win probability. Each turning point on the line is a play that materially changed
+        the win odds.
+      </p>
+    </details>
+  );
+}
+
+// ---------- Last 5 games ----------
+//
+// ESPN ships recent-form data per team. Mirrors the MLB last-5 strip
+// for visual parity.
+function LastFiveGames({ data }: { data: EspnGameSummary }) {
+  const away = data.lastFive.away;
+  const home = data.lastFive.home;
+  if (away.length === 0 && home.length === 0) return null;
+
+  const Block = ({ side, abbr }: { side: typeof away; abbr: string }) => {
+    if (side.length === 0) return null;
+    return (
+      <div>
+        <div className="muted small" style={{ marginBottom: 4 }}>{abbr} last 5</div>
+        <div className="mlb-game-twocol-scroll">
+          <table className="mlb-mini-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Opp</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {side.map((g, i) => (
+                <tr key={`${g.date}-${i}`}>
+                  <td>{g.date}</td>
+                  <td>
+                    {g.atVs === 'vs' ? `vs ${g.opponentAbbr}` : `@ ${g.opponentAbbr}`}
+                  </td>
+                  <td style={{ color: g.result === 'W' ? 'var(--hot, #66bb6a)' : '#ef5350' }}>
+                    <strong>{g.result ?? '—'}</strong> {g.score}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading">Last 5 games</summary>
+      <div className="mlb-game-twocol">
+        <Block side={away} abbr={data.away.abbreviation} />
+        <Block side={home} abbr={data.home.abbreviation} />
+      </div>
+    </details>
+  );
 }

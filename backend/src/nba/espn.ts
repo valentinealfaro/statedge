@@ -153,6 +153,26 @@ export type EspnTeamSummary = {
   leaders: EspnLeader[];
 };
 
+export type EspnQuarterScore = {
+  period: number;
+  awayPoints: number | null;
+  homePoints: number | null;
+};
+
+export type EspnWinProbabilityEntry = {
+  homeWinPercentage: number;        // 0-100
+  awayWinPercentage: number;        // 0-100
+  playId?: string;
+};
+
+export type EspnLastFiveGame = {
+  date: string;
+  atVs: 'vs' | '@' | null;
+  opponentAbbr: string;
+  result: 'W' | 'L' | null;
+  score: string;
+};
+
 export type EspnGameSummary = {
   eventId: string;
   date: string;
@@ -162,6 +182,19 @@ export type EspnGameSummary = {
   attendance?: number;
   away: EspnTeamSummary;
   home: EspnTeamSummary;
+  // Per-quarter scoring (NBA equivalent of MLB linescore). Padded
+  // with nulls if a quarter hasn't been played yet.
+  quarters: EspnQuarterScore[];
+  // Cumulative R/H/E equivalent — just final scores per side.
+  totals: { away: number | null; home: number | null };
+  // Matchup predictor (current win-prob snapshot pre-game; rolling
+  // probability throughout the game once it starts). ESPN ships
+  // pre-game projection in `predictor` and per-play history in
+  // `winProbability[]` — we surface both.
+  predictor: { homeWinPct: number | null; awayWinPct: number | null };
+  winProbability: EspnWinProbabilityEntry[];
+  // Last 5 games per team (what ESPN shows below the boxscore).
+  lastFive: { away: EspnLastFiveGame[]; home: EspnLastFiveGame[] };
 };
 
 export async function fetchGameSummary(eventId: string): Promise<EspnGameSummary> {
@@ -306,6 +339,70 @@ export async function fetchGameSummary(eventId: string): Promise<EspnGameSummary
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const away = competitors.find((c: any) => c.homeAway === 'away');
 
+  // Per-quarter linescore. ESPN ships `linescores: [{value: 28}, ...]`
+  // on each competitor — one entry per period played. Pad to 4 so the
+  // table reads like a real NBA boxscore even mid-game.
+  const homeLines = (home?.linescores ?? []) as Array<{ value?: number }>;
+  const awayLines = (away?.linescores ?? []) as Array<{ value?: number }>;
+  const periods = Math.max(4, homeLines.length, awayLines.length);
+  const quarters: EspnQuarterScore[] = [];
+  for (let i = 0; i < periods; i++) {
+    const h = homeLines[i]?.value;
+    const a = awayLines[i]?.value;
+    quarters.push({
+      period: i + 1,
+      awayPoints: typeof a === 'number' ? a : null,
+      homePoints: typeof h === 'number' ? h : null,
+    });
+  }
+
+  // Predictor (pre-game / live snapshot of win prob).
+  const predictor = (j.predictor ?? {}) as {
+    homeTeam?: { gameProjection?: string };
+    awayTeam?: { gameProjection?: string };
+  };
+  const homeProj = Number(predictor.homeTeam?.gameProjection ?? NaN);
+  const awayProj = Number(predictor.awayTeam?.gameProjection ?? NaN);
+
+  // Win-probability rolling history (per-play). ESPN ships an array
+  // of `{playId, homeWinPercentage, awayWinPercentage}` once the
+  // game starts. Empty array pre-game (predictor still has the
+  // pre-game snapshot).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wpRaw = (j.winProbability ?? []) as any[];
+  const winProbability: EspnWinProbabilityEntry[] = wpRaw.map((w) => ({
+    homeWinPercentage: Number(w?.homeWinPercentage ?? 0) * 100,    // ESPN sends 0-1
+    awayWinPercentage: 100 - Number(w?.homeWinPercentage ?? 0) * 100,
+    playId: w?.playId ? String(w.playId) : undefined,
+  }));
+
+  // Last-five games per team (ESPN's recent-form box).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lastFiveRaw = (j.lastFiveGames ?? []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildLastFive = (block: any): EspnLastFiveGame[] => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const events: any[] = block?.events ?? [];
+    return events.map((e) => {
+      // ESPN sometimes ships gameDate or date
+      const dateStr = String(e.gameDate ?? e.date ?? '');
+      const date = dateStr ? dateStr.slice(0, 10) : '';
+      const atVsRaw = String(e.atVs ?? '').toLowerCase();
+      const atVs = atVsRaw === 'vs' ? 'vs' : atVsRaw === '@' || atVsRaw === 'at' ? '@' : null;
+      return {
+        date,
+        atVs,
+        opponentAbbr: String(e.opponent?.abbreviation ?? e.team?.abbreviation ?? ''),
+        result: e.gameResult === 'W' ? 'W' : e.gameResult === 'L' ? 'L' : null,
+        score: String(e.score ?? ''),
+      };
+    });
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const homeLastFive = lastFiveRaw.find((b: any) => String(b.team?.id ?? '') === String(home?.team?.id ?? ''));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const awayLastFive = lastFiveRaw.find((b: any) => String(b.team?.id ?? '') === String(away?.team?.id ?? ''));
+
   return {
     eventId: String(j.header?.id ?? eventId),
     date: String(competition?.date ?? ''),
@@ -315,5 +412,19 @@ export async function fetchGameSummary(eventId: string): Promise<EspnGameSummary
     attendance: j.gameInfo?.attendance ? Number(j.gameInfo.attendance) : undefined,
     away: buildSide(away ?? {}),
     home: buildSide(home ?? {}),
+    quarters,
+    totals: {
+      away: away?.score !== undefined ? Number(away.score) : null,
+      home: home?.score !== undefined ? Number(home.score) : null,
+    },
+    predictor: {
+      homeWinPct: Number.isFinite(homeProj) ? homeProj : null,
+      awayWinPct: Number.isFinite(awayProj) ? awayProj : null,
+    },
+    winProbability,
+    lastFive: {
+      away: buildLastFive(awayLastFive),
+      home: buildLastFive(homeLastFive),
+    },
   };
 }
