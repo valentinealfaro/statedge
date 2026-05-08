@@ -229,17 +229,43 @@ export function MlbSlate() {
   const [adminMode, setAdminMode] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const isAdmin = adminSecret.trim().length > 0;
 
   // Fetch today's published slate on mount + after every publish.
+  // Retries transient failures (cold-start, deploy churn) up to 3
+  // times with exponential backoff before surfacing the error. The
+  // /slate/today path can take 20s+ on cache MISS while resolving
+  // 3000+ legs; a flaky proxy or browser timeout can drop the
+  // first call. Auto-retry covers that without user intervention.
   useEffect(() => {
     let cancelled = false;
     setTodayError(null);
-    getMlbDailySlate('balanced')
-      .then((r) => { if (!cancelled) setToday(r); })
-      .catch((err: Error) => { if (!cancelled) setTodayError(err.message); });
+    setToday(null);
+
+    async function fetchWithRetry(): Promise<void> {
+      const delays = [0, 1500, 4000];     // 0s, 1.5s, 4s
+      let lastErr: Error | null = null;
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (cancelled) return;
+        if (delays[attempt] > 0) {
+          await new Promise((r) => setTimeout(r, delays[attempt]));
+        }
+        if (cancelled) return;
+        try {
+          const r = await getMlbDailySlate('balanced');
+          if (!cancelled) setToday(r);
+          return;
+        } catch (err) {
+          lastErr = err as Error;
+        }
+      }
+      if (!cancelled && lastErr) setTodayError(lastErr.message);
+    }
+    fetchWithRetry();
+
     return () => { cancelled = true; };
-  }, [publishMessage]);    // re-fetch after a successful publish
+  }, [publishMessage, retryTick]);    // re-fetch after publish or manual retry
 
   // Persist admin secret across reloads.
   useEffect(() => {
@@ -423,7 +449,11 @@ export function MlbSlate() {
 
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (
-          <PublicTodaySlate today={today} error={todayError} />
+          <PublicTodaySlate
+            today={today}
+            error={todayError}
+            onRetry={() => setRetryTick((t) => t + 1)}
+          />
         )}
 
         {/* ADMIN VIEW — paste lines + Publish button. */}
@@ -627,14 +657,47 @@ export function MlbSlate() {
 function PublicTodaySlate({
   today,
   error,
+  onRetry,
 }: {
   today: MlbDailySlateResponse | null;
   error: string | null;
+  onRetry?: () => void;
 }) {
   if (error) {
+    // Friendlier copy for the most common transient — Vercel cold
+    // start can take 20-30s for a fresh slate resolve; a browser-
+    // side timeout reads as "Failed to fetch." First attempt already
+    // auto-retried twice; the manual Retry button lets users try
+    // again without reloading the whole page.
+    const isTransient = /failed to fetch|networkerror|timeout/i.test(error);
     return (
       <div className="mlb-info-banner mlb-info-error" style={{ marginTop: 12 }}>
-        Couldn't load today's slate: {error}
+        <div>
+          {isTransient
+            ? 'Slate is loading slowly — backend is warming up. This usually resolves in a few seconds.'
+            : `Couldn't load today's slate: ${error}`}
+        </div>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            style={{
+              marginTop: 8,
+              padding: '6px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              background: 'rgba(122, 162, 255, 0.16)',
+              border: '1px solid rgba(122, 162, 255, 0.4)',
+              borderRadius: 4,
+              color: '#7aa2ff',
+              cursor: 'pointer',
+            }}
+          >
+            Retry now
+          </button>
+        )}
       </div>
     );
   }
