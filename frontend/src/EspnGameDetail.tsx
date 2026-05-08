@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   getEspnGameSummary,
+  getNbaLiveToday,
+  getTodaySlate,
   type EspnGameSummary,
   type EspnInjury,
   type EspnLeader,
   type EspnPlayerLine,
   type EspnTeamSummary,
+  type NbaLiveTodayPlayer,
+  type NbaLiveTodayResponse,
+  type SlateCombo,
+  type SlateComboLeg,
+  type SlateResponse,
 } from './api';
 import { FreshnessBanner } from './FreshnessBanner';
 import { NavBar } from './NavBar';
@@ -20,6 +27,7 @@ export function EspnGameDetail() {
   const { eventId } = useParams();
   const [data, setData] = useState<EspnGameSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useTitle([
     data ? `${data.away.abbreviation} @ ${data.home.abbreviation}` : 'Game',
@@ -27,12 +35,24 @@ export function EspnGameDetail() {
 
   useEffect(() => {
     if (!eventId) return;
-    setData(null);
     setError(null);
+    let cancelled = false;
     getEspnGameSummary(eventId)
-      .then(setData)
-      .catch((e) => setError((e as Error).message));
-  }, [eventId]);
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setError((e as Error).message); });
+    return () => { cancelled = true; };
+  }, [eventId, tick]);
+
+  // Auto-refresh while game is live (30s) — same cadence MLB uses.
+  // Pre-game polls slowly (90s) in case lineups drop; final games
+  // freeze after one fetch.
+  useEffect(() => {
+    if (!data || data.state === 'post') return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, data.state === 'in' ? 30_000 : 90_000);
+    return () => window.clearInterval(interval);
+  }, [data?.state]);
 
   return (
     <div className="app">
@@ -55,6 +75,8 @@ export function EspnGameDetail() {
             </Link>
           </div>
 
+          <SameGameParlay data={data} />
+
           {data.state === 'pre' ? (
             <PreGameView data={data} />
           ) : (
@@ -63,6 +85,211 @@ export function EspnGameDetail() {
         </>
       )}
     </div>
+  );
+}
+
+// ---------- Same-Game Parlay with live grading ----------
+//
+// Filters today's published slate to legs whose player team matches
+// either side of this matchup, ranks by edge%, and live-grades each
+// against ESPN's box-score stats. Same pattern as MLB, mapped to NBA.
+function nbaLiveValueForStat(stats: NbaLiveTodayPlayer, statKey: string): number | null {
+  switch (statKey) {
+    case 'points':              return stats.points;
+    case 'rebounds':            return stats.rebounds;
+    case 'assists':             return stats.assists;
+    case 'three_pt_made':       return stats.threePtMade;
+    case 'fg_made':             return stats.fgMade;
+    case 'fg_attempted':        return stats.fgAttempted;
+    case 'ft_made':             return stats.ftMade;
+    case 'ft_attempted':        return stats.ftAttempted;
+    case 'personal_fouls':      return stats.personalFouls;
+    case 'steals':              return stats.steals;
+    case 'blocks':              return stats.blocks;
+    case 'turnovers':           return stats.turnovers;
+    case 'pra':                 return stats.pra;
+    case 'pr':                  return stats.pr;
+    case 'pa':                  return stats.pa;
+    case 'ra':                  return stats.ra;
+    case 'stocks':              return stats.stocks;
+    case 'double_double':       return stats.doubleDouble;
+    default:                    return null;
+  }
+}
+
+type LegGrade = 'HIT' | 'MISS' | 'PROGRESS' | 'PUSH' | 'PENDING';
+
+function gradeNbaLeg(
+  direction: 'OVER' | 'UNDER',
+  line: number,
+  current: number | null,
+  state: 'pregame' | 'live' | 'final' | undefined,
+): LegGrade {
+  if (current === null || !state || state === 'pregame') return 'PENDING';
+  const isFinal = state === 'final';
+  if (direction === 'OVER') {
+    if (current > line) return 'HIT';
+    if (isFinal) return current === line ? 'PUSH' : 'MISS';
+    return 'PROGRESS';
+  }
+  if (current > line) return 'MISS';
+  if (isFinal) return current === line ? 'PUSH' : 'HIT';
+  return 'PROGRESS';
+}
+
+function SameGameParlay({ data }: { data: EspnGameSummary }) {
+  const [slate, setSlate] = useState<SlateResponse | null>(null);
+  const [live, setLive] = useState<NbaLiveTodayResponse | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getTodaySlate('balanced')
+      .then((d) => { if (!cancelled) setSlate(d.resolved ?? null); })
+      .catch(() => { /* slate may not be published yet — fall back to no SGP */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getNbaLiveToday()
+      .then((d) => { if (!cancelled) setLive(d); })
+      .catch(() => { /* silent */ });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  useEffect(() => {
+    if (live?.byGame[data.eventId]?.state !== 'live') return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [live?.byGame, data.eventId]);
+
+  const sgpLegs = useMemo(() => {
+    if (!slate?.combos) return [] as SlateComboLeg[];
+    const teamAbbrs = new Set([data.away.abbreviation, data.home.abbreviation]);
+    const map = new Map<string, SlateComboLeg>();
+    for (const c of slate.combos as SlateCombo[]) {
+      for (const l of c.legs) {
+        const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
+        if (l.team && teamAbbrs.has(l.team) && !map.has(key)) {
+          map.set(key, l);
+        }
+      }
+    }
+    return [...map.values()]
+      .sort((a, b) => (b.edgePercent ?? 0) - (a.edgePercent ?? 0))
+      .slice(0, 4);
+  }, [slate, data.away.abbreviation, data.home.abbreviation]);
+
+  if (sgpLegs.length === 0) return null;
+
+  const gameState = live?.byGame[data.eventId]?.state;
+  const isLiveOrFinal = gameState === 'live' || gameState === 'final';
+  const isFinal = gameState === 'final';
+
+  const graded = sgpLegs.map((l) => {
+    if (!isLiveOrFinal || !live) {
+      return { leg: l, current: null as number | null, grade: 'PENDING' as LegGrade };
+    }
+    const ps = live.byPlayer[String(l.playerId)] ?? null;
+    if (!ps) return { leg: l, current: null, grade: 'PENDING' as LegGrade };
+    const current = nbaLiveValueForStat(ps, l.statKey);
+    return { leg: l, current, grade: gradeNbaLeg(l.direction, l.line, current, gameState) };
+  });
+
+  const tally = {
+    hit: graded.filter((g) => g.grade === 'HIT').length,
+    miss: graded.filter((g) => g.grade === 'MISS').length,
+    progress: graded.filter((g) => g.grade === 'PROGRESS').length,
+    push: graded.filter((g) => g.grade === 'PUSH').length,
+  };
+
+  const combinedHit = sgpLegs.reduce((p, l) => p * (l.probability / 100), 1) * 100;
+  const avgEdge =
+    sgpLegs.reduce((s, l) => s + (l.edgePercent ?? 0), 0) / sgpLegs.length;
+
+  return (
+    <details className="mlb-context" open style={{ margin: '16px 0' }}>
+      <summary className="mlb-context-heading">
+        Same-Game Parlay <span className="muted small">— top edge legs from this matchup</span>
+        {isLiveOrFinal && (
+          <span style={{ marginLeft: 10, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}>
+            <span style={{ color: '#66bb6a' }}>● {tally.hit} HIT</span>
+            {tally.miss > 0 && <span style={{ color: '#ef5350', marginLeft: 8 }}>● {tally.miss} MISS</span>}
+            {tally.progress > 0 && <span style={{ color: '#7aa2ff', marginLeft: 8 }}>● {tally.progress} LIVE</span>}
+            {tally.push > 0 && <span style={{ color: '#ffb74d', marginLeft: 8 }}>● {tally.push} PUSH</span>}
+          </span>
+        )}
+      </summary>
+      <div className="mlb-projection-grid" style={{ marginTop: 8 }}>
+        <div className="mlb-stat" title="Independent-leg combined probability. Same-game legs share game-script risk so the true hit rate is typically 5-15% lower.">
+          <span className="mlb-stat-label">{isFinal ? 'Final' : isLiveOrFinal ? 'Hit/Legs' : 'Raw hit %'}</span>
+          <span className="mlb-stat-value">
+            {isLiveOrFinal ? `${tally.hit}/${sgpLegs.length}` : `${combinedHit.toFixed(1)}%`}
+          </span>
+        </div>
+        <div className="mlb-stat">
+          <span className="mlb-stat-label">Legs</span>
+          <span className="mlb-stat-value">{sgpLegs.length}</span>
+        </div>
+        <div className="mlb-stat" title="Average per-leg edge%">
+          <span className="mlb-stat-label">Avg edge</span>
+          <span className="mlb-stat-value">+{avgEdge.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div className="best-pick-legs" style={{ marginTop: 10 }}>
+        {graded.map(({ leg: l, current, grade }, i) => (
+          <div key={i} className="best-pick-leg-block">
+            <div className="best-pick-leg">
+              <span className="best-pick-leg-name">{l.playerName}</span>
+              <span className="best-pick-leg-stat">
+                {l.statLabel} {l.line}
+              </span>
+              <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+              </span>
+            </div>
+            <div className="best-pick-leg-evbar">
+              {l.edgePercent !== undefined && (
+                <span
+                  className={`best-pick-leg-edge ${(l.edgePercent ?? 0) >= 5 ? 'pos' : 'flat'}`}
+                >
+                  {(l.edgePercent ?? 0) >= 0 ? '+' : ''}{(l.edgePercent ?? 0).toFixed(0)}% edge
+                </span>
+              )}
+              {l.team && <span className="best-pick-leg-cat">{l.team}</span>}
+              {grade !== 'PENDING' && (
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    color:
+                      grade === 'HIT' ? '#66bb6a'
+                      : grade === 'MISS' ? '#ef5350'
+                      : grade === 'PUSH' ? '#ffb74d'
+                      : '#7aa2ff',
+                  }}
+                  title={current !== null ? `Current: ${current}` : 'Game not started'}
+                >
+                  {grade}{current !== null ? ` · ${current}` : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        {!isLiveOrFinal
+          ? '⚠ Same-game legs share game-script risk. Treat the raw hit % as an upper bound.'
+          : isFinal
+          ? `Final result: ${tally.hit} hit, ${tally.miss} miss${tally.push ? `, ${tally.push} push` : ''}.`
+          : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 30s.`}
+      </p>
+    </details>
   );
 }
 
