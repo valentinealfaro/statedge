@@ -324,6 +324,20 @@ export function MlbSlate() {
 }
 
 function SlateResultView({ data }: { data: MlbSlateResponse }) {
+  // Engine activity summary — what did the engine actually do? Counts
+  // are derived from the response so the user sees the work.
+  const totalCombos = data.combos.length;
+  const builtCombos = data.combos.filter((c) => c.combo !== null).length;
+  const blockedReasons = data.combos
+    .filter((c) => c.combo === null)
+    .map((c) => ({ size: c.size, reason: c.reason }));
+  const calibrationAdjusted = data.combos
+    .flatMap((c) => c.combo?.legs ?? [])
+    .reduce((n, l) => {
+      const hits = (l.reasonCodes ?? []).filter((r) => /calibration/i.test(r)).length;
+      return n + (hits > 0 ? 1 : 0);
+    }, 0);
+
   return (
     <div className="mlb-slate-result">
       <div className="mlb-info-banner">
@@ -333,6 +347,16 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
         )}
         {' · '}{data.lineCount} eligible leg{data.lineCount === 1 ? '' : 's'} from your input
       </div>
+
+      <EngineActivityPanel
+        eligible={data.lineCount}
+        unresolved={data.unresolved.length}
+        builtCombos={builtCombos}
+        totalCombos={totalCombos}
+        wildCardKind={data.wildCard.kind}
+        blockedReasons={blockedReasons}
+        calibrationAdjusted={calibrationAdjusted}
+      />
 
       {data.unresolved.length > 0 && (
         <div className="mlb-info-banner mlb-info-error">
@@ -355,6 +379,62 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
       </div>
 
       <p className="mlb-disclaimer">{data.disclaimer}</p>
+    </div>
+  );
+}
+
+// Engine activity panel — surfaces what the engine actually did when
+// processing the slate. Mission-aligned transparency: users see the
+// work, not just the output. Per spec L8 / L9: when a card slot
+// fails, we name the reason; when calibration adjusts probabilities,
+// the count is visible.
+function EngineActivityPanel({
+  eligible,
+  unresolved,
+  builtCombos,
+  totalCombos,
+  wildCardKind,
+  blockedReasons,
+  calibrationAdjusted,
+}: {
+  eligible: number;
+  unresolved: number;
+  builtCombos: number;
+  totalCombos: number;
+  wildCardKind: string;
+  blockedReasons: Array<{ size: number; reason: string }>;
+  calibrationAdjusted: number;
+}) {
+  return (
+    <div className="mlb-context" style={{ marginTop: 12 }} title="What the engine did with your slate.">
+      <div className="mlb-context-heading">Engine activity</div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--text-2)' }}>
+        <li>
+          <strong>{eligible}</strong> leg{eligible === 1 ? '' : 's'} projected
+          {unresolved > 0 && <> · {unresolved} couldn't be resolved (see below)</>}
+        </li>
+        <li>
+          Built <strong>{builtCombos}/{totalCombos}</strong> card slots
+          {blockedReasons.length > 0 && <> · {blockedReasons.length} blocked</>}
+        </li>
+        {blockedReasons.length > 0 && (
+          <ul style={{ paddingLeft: 18, marginTop: 2, color: 'var(--text-3)' }}>
+            {blockedReasons.map((b, i) => (
+              <li key={i}>
+                <strong>Best {b.size}</strong>: {b.reason}
+              </li>
+            ))}
+          </ul>
+        )}
+        <li>
+          Wild Card tier: <strong>{wildCardKind.replace('_', ' ')}</strong>
+        </li>
+        {calibrationAdjusted > 0 && (
+          <li>
+            <strong>{calibrationAdjusted}</strong> leg{calibrationAdjusted === 1 ? '' : 's'} probability tuned by historical calibration (L9 → L6 feedback).
+          </li>
+        )}
+      </ul>
     </div>
   );
 }
