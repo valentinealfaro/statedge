@@ -708,7 +708,7 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
         </div>
       )}
 
-      <div className="mlb-slate-grid">
+      <div className="best-picks-rail">
         {data.combos.map((slot) => (
           <ComboCard key={slot.size} slot={slot} />
         ))}
@@ -776,9 +776,8 @@ function EngineActivityPanel({
   );
 }
 
-// Wild Card card — different visual treatment from the size-numbered
-// cards because it's NOT a size slot, it's a tier-classified extra.
-// Renders empty-state cleanly when the chain falls through to no_edge.
+// Wild Card — uses the same `best-pick-card wild` styling as NBA so
+// users see one unified visual system across both sports.
 function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
   const kindLabel =
     wildCard.kind === 'standard' ? 'Standard'
@@ -787,171 +786,367 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
     : wildCard.kind === 'matchup_spike' ? 'Matchup Spike'
     : wildCard.kind === 'high_variance' ? 'High Variance'
     : 'No Edge';
-  const kindClass = `wild-kind-${wildCard.kind.replace('_', '-')}`;
 
   if (wildCard.kind === 'no_edge') {
     return (
-      <div className="mlb-slate-card mlb-wild-card empty">
-        <div className="mlb-slate-card-head">
-          <span className="mlb-slate-card-label">Wild Card</span>
-          <span className={`mlb-wild-kind ${kindClass}`}>{kindLabel}</span>
+      <div className="best-pick-card wild empty">
+        <div className="best-pick-head">
+          <div className="best-pick-titles">
+            <span className="best-pick-label">Wild Card</span>
+            <span className="best-pick-subtitle">{kindLabel} · {wildCard.subtitle}</span>
+          </div>
         </div>
-        <p className="mlb-slate-card-empty-reason">
-          {wildCard.subtitle}. No tier qualified — closest candidates by
-          projection separation are below.
+        <p className="muted small" style={{ padding: '12px 16px' }}>
+          No tier qualified — closest candidates by projection separation are below.
         </p>
         {wildCard.closestCandidates && wildCard.closestCandidates.length > 0 && (
-          <ul className="mlb-slate-legs">
+          <div className="best-pick-legs">
             {wildCard.closestCandidates.map((leg, i) => (
-              <li key={i} className="mlb-slate-leg">
-                <div className="mlb-slate-leg-row">
-                  <span className="mlb-slate-leg-name">{leg.playerName}</span>
-                  <span className="mlb-slate-leg-stat">
-                    {leg.statLabel} {leg.direction === 'OVER' ? '↑' : '↓'} {leg.line}
+              <div key={i} className="best-pick-leg-block">
+                <div className="best-pick-leg">
+                  <span className="best-pick-leg-name">{leg.playerName}</span>
+                  <span className="best-pick-leg-stat">
+                    {leg.statLabel} {leg.line}
                   </span>
-                  <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
+                  <span className={`best-pick-leg-dir ${leg.direction === 'OVER' ? 'over' : 'under'}`}>
+                    {leg.direction === 'OVER' ? '↑' : '↓'} {Math.round(leg.probability)}%
+                  </span>
                 </div>
-                <div className="mlb-slate-leg-edge">{leg.wildCardReason}</div>
-              </li>
+                <div className="best-pick-wild-evidence">{leg.wildCardReason}</div>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     );
   }
 
+  // Treat Wild Card legs as a small card for EV/warning purposes.
+  const size = wildCard.legs.length;
+  const payout = FLEX_PAYOUTS[size] ?? 1;
+  const winProb = wildCard.adjustedCombinedHit / 100;
+  const ev = winProb * payout - 1;
+  const evVerdict = ev >= 0.05 ? 'Positive EV' : ev <= -0.05 ? 'Negative EV' : 'Neutral EV';
+  const evClass = ev >= 0.05 ? 'positive-ev' : ev <= -0.05 ? 'negative-ev' : 'neutral-ev';
+  const trapExp = trapExposureLabel(wildCard.averageTrap);
+  const mktDisagree = marketDisagreementLabel(wildCard.averageEdge);
+  const projGap =
+    wildCard.legs.reduce((sum, l) => sum + Math.abs(l.projection - l.line), 0) / wildCard.legs.length;
+  const warnings = computeCardWarnings(wildCard.legs, size);
+
   return (
-    <div className="mlb-slate-card mlb-wild-card">
-      <div className="mlb-slate-card-head">
-        <span className="mlb-slate-card-label">Wild Card</span>
-        <span className={`mlb-wild-kind ${kindClass}`}>{kindLabel}</span>
-        <span className="mlb-slate-card-subtitle">{wildCard.subtitle}</span>
+    <div className="best-pick-card wild">
+      <div className="best-pick-head">
+        <div className="best-pick-titles">
+          <span className="best-pick-label">Wild Card</span>
+          <span className="best-pick-subtitle">{kindLabel} · {wildCard.subtitle}</span>
+        </div>
+        <span className="best-pick-size">{size}-LEG</span>
       </div>
-      <div className="mlb-slate-card-summary">
-        <Stat
-          label="Adjusted hit"
-          value={`${wildCard.adjustedCombinedHit.toFixed(1)}%`}
-          hint={wildCard.correlationPairs > 0
-            ? `Raw ${wildCard.rawCombinedHit.toFixed(1)}% × correlation penalty (${wildCard.correlationRisk})`
-            : `No correlated stacks.`}
-        />
-        <Stat label="Avg edge" value={`${wildCard.averageEdge >= 0 ? '+' : ''}${wildCard.averageEdge.toFixed(1)}%`} />
-        <Stat label="Avg trap" value={`${wildCard.averageTrap.toFixed(0)}/100`} />
-        {wildCard.averageWildCardScore !== undefined && (
-          <Stat
-            label="WC score"
-            value={`${wildCard.averageWildCardScore.toFixed(0)}/100`}
-            hint="Phase 29 spec composite: projGap×0.25 + momentum×0.25 + matchup×0.15 + marketLag×0.15 + upside×0.10 - trap×0.10. ≥60 = real institutional edge tonight."
-          />
+      <div
+        className="best-pick-pct"
+        title={`Adjusted combined hit %. Raw: ${wildCard.rawCombinedHit.toFixed(1)}%, ${wildCard.correlationRisk} correlation penalty.`}
+      >
+        {wildCard.adjustedCombinedHit.toFixed(1)}%
+      </div>
+      <div className="best-pick-pct-label">
+        adjusted hit · {wildCard.correlationRisk} correlation
+      </div>
+      <div
+        className={`best-pick-ev ${evClass}`}
+        title={`Win prob ${wildCard.adjustedCombinedHit.toFixed(1)}% × payout ${payout}× − $1 = ${ev >= 0 ? '+' : ''}${ev.toFixed(2)}.`}
+      >
+        {evVerdict} · {ev >= 0 ? '+' : ''}{ev.toFixed(2)} EV
+        <span className="best-pick-ev-payout"> · {payout}× payout</span>
+      </div>
+      <div className="best-pick-signals">
+        <div className="best-pick-signal">
+          <span className="muted small">Avg Edge</span>
+          <strong className={wildCard.averageEdge >= 10 ? 'pos' : wildCard.averageEdge <= -5 ? 'neg' : ''}>
+            {wildCard.averageEdge >= 0 ? '+' : ''}{wildCard.averageEdge.toFixed(1)}%
+          </strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Proj Gap</span>
+          <strong>+{projGap.toFixed(1)}</strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Trap</span>
+          <strong className={`trap-${trapExp.toLowerCase()}`}>{trapExp}</strong>
+        </div>
+        {wildCard.averageWildCardScore !== undefined ? (
+          <div className="best-pick-signal" title="Phase 29 spec composite: projGap×0.25 + momentum×0.25 + matchup×0.15 + marketLag×0.15 + upside×0.10 - trap×0.10. ≥60 = real institutional edge.">
+            <span className="muted small">WC Score</span>
+            <strong className={wildCard.averageWildCardScore >= 60 ? 'pos' : wildCard.averageWildCardScore <= 35 ? 'neg' : ''}>
+              {wildCard.averageWildCardScore.toFixed(0)}/100
+            </strong>
+          </div>
+        ) : (
+          <div className="best-pick-signal">
+            <span className="muted small">Mkt Disagree</span>
+            <strong className={`disagree-${mktDisagree.toLowerCase()}`}>{mktDisagree}</strong>
+          </div>
         )}
       </div>
-      {wildCard.correlationRisk !== 'None' && (
-        <div className={`mlb-correlation-chip corr-${wildCard.correlationRisk.toLowerCase().replace(' ', '-')}`}
-             title="Same-game / same-team leg pairs share game-script risk.">
-          ⚠ {wildCard.correlationRisk} correlation · {wildCard.correlationPairs} pair{wildCard.correlationPairs === 1 ? '' : 's'}
+
+      <div className="best-pick-legs">
+        {wildCard.legs.map((l, i) => {
+          const conf = legConfidenceLabel(l.probability);
+          return (
+            <div key={i} className="best-pick-leg-block">
+              <div className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-stat">
+                  {l.statLabel} {l.line}
+                </span>
+                <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                  {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+                </span>
+                <span className={`best-pick-leg-conf conf-${conf.toLowerCase()}`}>
+                  {conf}
+                </span>
+              </div>
+              <div className="best-pick-leg-evbar">
+                <span
+                  className={`best-pick-leg-edge ${l.edgePercent >= 5 ? 'pos' : l.edgePercent <= -5 ? 'neg' : 'flat'}`}
+                >
+                  {l.edgePercent >= 0 ? '+' : ''}{l.edgePercent.toFixed(0)}% edge
+                </span>
+                {l.trapScore >= 60 && (
+                  <span className="best-pick-leg-trap">
+                    ⚠ {l.trapScore >= 80 ? 'EXTREME TRAP RISK' : 'HIGH TRAP RISK'}
+                  </span>
+                )}
+              </div>
+              <div className="best-pick-wild-evidence">{l.wildCardReason}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {warnings.length > 0 && (
+        <div className="best-pick-warnings">
+          {warnings.map((w, i) => (
+            <span key={i} className="best-pick-warning">⚠ {w}</span>
+          ))}
         </div>
       )}
-      <ul className="mlb-slate-legs">
-        {wildCard.legs.map((leg, i) => (
-          <li key={i} className="mlb-slate-leg">
-            <div className="mlb-slate-leg-row">
-              <span className="mlb-slate-leg-name">{leg.playerName}</span>
-              <span className="mlb-slate-leg-stat">
-                {leg.statLabel} {leg.direction === 'OVER' ? '↑' : '↓'} {leg.line}
-              </span>
-              <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
-            </div>
-            <div className="mlb-slate-leg-edge">
-              {leg.wildCardReason}
-              {' · '}
-              <span title={`L5 Fragility — ${leg.fragilityTier}.`}>
-                fragility {leg.fragilityScore.toFixed(0)}
-              </span>
-              {' · '}
-              <span title="L2 momentumExpansionScore: ≥65 = real momentum.">
-                momentum {leg.momentumExpansionScore.toFixed(0)}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
 
+// PrizePicks Flex Play payouts (memory-validated): 2/2 = 3×, 3/3 = 5×,
+// 4/4 = 10×, 5/5 = 7× partial / 20× full, 6/6 = 25×. We use the 6/6
+// (full hit) numbers because Adjusted Hit % already represents that.
+const FLEX_PAYOUTS: Record<number, number> = { 2: 3, 3: 5, 4: 10, 5: 7, 6: 25 };
+
+// Card-level trap-score gates per size — flagged on the warning strip
+// when too many legs exceed. Mirrors NBA conventions (see Slate.tsx).
+const TRAP_GATE: Record<number, number> = { 2: 50, 3: 45, 4: 40, 5: 35, 6: 30 };
+
+// Per-leg confidence chip from probability tier. Same banding as NBA
+// so the chips read identically across sports.
+function legConfidenceLabel(prob: number): string {
+  if (prob >= 75) return 'ELITE';
+  if (prob >= 65) return 'STRONG';
+  if (prob >= 55) return 'MEDIUM';
+  return 'WEAK';
+}
+
+// Per-leg category — Safe Core / Value / Ceiling / Contrarian. Mirrors
+// the NBA categorization so users see the same chips regardless of sport.
+function legCategory(leg: MlbSlateResponse['combos'][number]['combo'] extends infer T
+  ? T extends { legs: Array<infer L> } ? L : never : never): string | null {
+  const prob = leg.probability;
+  const edge = leg.edgePercent;
+  const trap = leg.trapScore;
+  const fragility = leg.fragilityScore ?? 50;
+  if (prob >= 72 && trap <= 35 && fragility <= 50) return 'SAFE CORE';
+  if (edge >= 15 && prob >= 55) return 'VALUE';
+  if (fragility >= 65 && edge >= 10) return 'CEILING';
+  if (leg.direction === 'UNDER' && edge >= 8) return 'CONTRARIAN';
+  return null;
+}
+
+function trapExposureLabel(avgTrap: number): 'Low' | 'Medium' | 'High' {
+  if (avgTrap < 30) return 'Low';
+  if (avgTrap < 60) return 'Medium';
+  return 'High';
+}
+
+function marketDisagreementLabel(avgEdge: number): 'Low' | 'Medium' | 'High' {
+  if (avgEdge < 5) return 'Low';
+  if (avgEdge < 15) return 'Medium';
+  return 'High';
+}
+
+// Compute card-level warnings — same shape NBA shows ("X legs flagged",
+// "X legs exceed trap-score gate", "Injury uncertainty").
+function computeCardWarnings(
+  legs: MlbSlateResponse['combos'][number]['combo'] extends infer T
+    ? T extends { legs: Array<infer L> } ? L[] : never : never,
+  size: number,
+): string[] {
+  const warnings: string[] = [];
+  const trapHits = legs.filter((l) => l.trapScore >= 60).length;
+  if (trapHits > 0) {
+    warnings.push(
+      `${trapHits} leg${trapHits === 1 ? '' : 's'} flagged as possible public-trap line — interpret with caution.`,
+    );
+  }
+  const gate = TRAP_GATE[size] ?? 40;
+  const overGate = legs.filter((l) => l.trapScore > gate).length;
+  if (overGate > 0) {
+    warnings.push(
+      `${overGate} leg${overGate === 1 ? '' : 's'} exceed${overGate === 1 ? 's' : ''} the trap-score gate for a ${size}-leg card (≤${gate}) — consider a smaller card.`,
+    );
+  }
+  const fragHits = legs.filter((l) => (l.fragilityScore ?? 0) >= 70).length;
+  if (fragHits >= 2) {
+    warnings.push(
+      `${fragHits} legs flagged as Very Fragile — failure modes compound on a ${size}-leg card.`,
+    );
+  }
+  return warnings;
+}
+
+// Render a polished MLB combo card matching the NBA `best-pick-card`
+// design system: dense 4-stat grid, per-leg confidence + category +
+// trap badges, warnings strip, "Load parlay" CTA.
 function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
   if (!slot.combo) {
     return (
-      <div className="mlb-slate-card empty">
-        <div className="mlb-slate-card-head">
-          <span className="mlb-slate-card-label">{slot.label}</span>
-          <span className="mlb-slate-card-empty-tag">No card</span>
+      <div className="best-pick-card empty">
+        <div className="best-pick-head">
+          <div className="best-pick-titles">
+            <span className="best-pick-label">{slot.label}</span>
+            <span className="best-pick-subtitle">No card</span>
+          </div>
         </div>
-        <p className="mlb-slate-card-empty-reason">{slot.reason}</p>
+        <p className="muted small" style={{ padding: '12px 16px' }}>{slot.reason}</p>
       </div>
     );
   }
   const c = slot.combo;
+  const payout = FLEX_PAYOUTS[c.size] ?? 1;
+  const winProb = c.adjustedCombinedHit / 100;
+  const ev = winProb * payout - 1;
+  const evVerdict = ev >= 0.05 ? 'Positive EV' : ev <= -0.05 ? 'Negative EV' : 'Neutral EV';
+  const evClass = ev >= 0.05 ? 'positive-ev' : ev <= -0.05 ? 'negative-ev' : 'neutral-ev';
+  const trapExp = trapExposureLabel(c.averageTrap);
+  const mktDisagree = marketDisagreementLabel(c.averageEdge);
+  // Average projection gap = mean of |projection − line| / line across legs.
+  const projGap =
+    c.legs.reduce((sum, l) => sum + Math.abs(l.projection - l.line), 0) / c.legs.length;
+  const warnings = computeCardWarnings(c.legs, c.size);
+
   return (
-    <div className="mlb-slate-card">
-      <div className="mlb-slate-card-head">
-        <span className="mlb-slate-card-label">{c.label}</span>
-        <span className="mlb-slate-card-subtitle">{c.subtitle}</span>
+    <div className="best-pick-card">
+      <div className="best-pick-head">
+        <div className="best-pick-titles">
+          <span className="best-pick-label">{c.label}</span>
+          <span className="best-pick-subtitle">{c.subtitle}</span>
+        </div>
+        <span className="best-pick-size">{c.size}-LEG</span>
       </div>
-      <div className="mlb-slate-card-summary">
-        <Stat
-          label="Adjusted hit"
-          value={`${c.adjustedCombinedHit.toFixed(1)}%`}
-          hint={c.correlationPairs > 0
-            ? `Raw ${c.rawCombinedHit.toFixed(1)}% × correlation penalty (${c.correlationRisk}, ${c.correlationPairs} same-game pair${c.correlationPairs === 1 ? '' : 's'})`
-            : `No correlated stacks — independent legs.`}
-        />
-        <Stat label="Avg edge" value={`${c.averageEdge >= 0 ? '+' : ''}${c.averageEdge.toFixed(1)}%`} />
-        <Stat label="Avg trap" value={`${c.averageTrap.toFixed(0)}/100`} />
+      <div
+        className="best-pick-pct"
+        title={`Adjusted combined hit %. Multiplies each leg's probability and applies a correlation penalty (${c.correlationRisk} risk this card). Raw uncorrected: ${c.rawCombinedHit.toFixed(1)}%.`}
+      >
+        {c.adjustedCombinedHit.toFixed(1)}%
       </div>
-      {c.correlationRisk !== 'None' && (
-        <div className={`mlb-correlation-chip corr-${c.correlationRisk.toLowerCase().replace(' ', '-')}`}
-             title="Same-game / same-team leg pairs share game-script risk. Adjusted hit % already accounts for this.">
-          ⚠ {c.correlationRisk} correlation · {c.correlationPairs} pair{c.correlationPairs === 1 ? '' : 's'}
+      <div className="best-pick-pct-label">
+        adjusted hit · {c.correlationRisk} correlation
+      </div>
+      <div
+        className={`best-pick-ev ${evClass}`}
+        title={`Expected value per $1 staked. Win prob ${c.adjustedCombinedHit.toFixed(1)}% × payout ${payout}× − $1 = ${ev >= 0 ? '+' : ''}${ev.toFixed(2)}.`}
+      >
+        {evVerdict} · {ev >= 0 ? '+' : ''}{ev.toFixed(2)} EV
+        <span className="best-pick-ev-payout"> · {payout}× payout</span>
+      </div>
+      <div className="best-pick-signals">
+        <div className="best-pick-signal">
+          <span className="muted small">Avg Edge</span>
+          <strong className={c.averageEdge >= 10 ? 'pos' : c.averageEdge <= -5 ? 'neg' : ''}>
+            {c.averageEdge >= 0 ? '+' : ''}{c.averageEdge.toFixed(1)}%
+          </strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Proj Gap</span>
+          <strong>+{projGap.toFixed(1)}</strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Trap</span>
+          <strong className={`trap-${trapExp.toLowerCase()}`}>{trapExp}</strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Mkt Disagree</span>
+          <strong className={`disagree-${mktDisagree.toLowerCase()}`}>{mktDisagree}</strong>
+        </div>
+      </div>
+
+      <div className="best-pick-legs">
+        {c.legs.map((l, i) => {
+          const conf = legConfidenceLabel(l.probability);
+          const cat = legCategory(l);
+          return (
+            <div key={i} className="best-pick-leg-block">
+              <div className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-stat">
+                  {l.statLabel} {l.line}
+                </span>
+                <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
+                  {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
+                </span>
+                <span className={`best-pick-leg-conf conf-${conf.toLowerCase()}`}>
+                  {conf}
+                </span>
+              </div>
+              <div className="best-pick-leg-evbar">
+                <span
+                  className={`best-pick-leg-edge ${l.edgePercent >= 5 ? 'pos' : l.edgePercent <= -5 ? 'neg' : 'flat'}`}
+                  title="Edge % vs implied break-even. Positive = market underpricing."
+                >
+                  {l.edgePercent >= 0 ? '+' : ''}{l.edgePercent.toFixed(0)}% edge
+                </span>
+                {cat && (
+                  <span className={`best-pick-leg-cat cat-${cat.toLowerCase().replace(' ', '-')}`}>
+                    {cat}
+                  </span>
+                )}
+                {l.trapScore >= 60 && (
+                  <span
+                    className="best-pick-leg-trap"
+                    title={`Trap score ${l.trapScore}. Possible public-trap line.`}
+                  >
+                    ⚠ {l.trapScore >= 80 ? 'EXTREME TRAP RISK' : 'HIGH TRAP RISK'}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {warnings.length > 0 && (
+        <div className="best-pick-warnings">
+          {warnings.map((w, i) => (
+            <span key={i} className="best-pick-warning">⚠ {w}</span>
+          ))}
         </div>
       )}
-      <ul className="mlb-slate-legs">
-        {c.legs.map((leg, i) => (
-          <li key={i} className="mlb-slate-leg">
-            <div className="mlb-slate-leg-row">
-              <span className="mlb-slate-leg-name">{leg.playerName}</span>
-              <span className="mlb-slate-leg-stat">
-                {leg.statLabel} {leg.direction === 'OVER' ? '↑' : '↓'} {leg.line}
-              </span>
-              <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
-            </div>
-            <div className="mlb-slate-leg-edge">
-              edge {leg.edgePercent >= 0 ? '+' : ''}{leg.edgePercent.toFixed(1)}%
-              {' · '}trap {leg.trapScore}
-              {' · '}
-              <span title={`L5 Fragility — ${leg.fragilityTier}. How little must go wrong for this leg to fail. SEPARATE from probability + trap.`}>
-                fragility {leg.fragilityScore.toFixed(0)}
-              </span>
-              {' · '}
-              <span title="L2 momentumExpansionScore: ≥65 = real momentum, ≤35 = anti-momentum.">
-                momentum {leg.momentumExpansionScore.toFixed(0)}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
+
       {c.constructionNotes && (
         <div
           className="muted small"
-          style={{ marginTop: 8, fontStyle: 'italic' }}
-          title="Plain-language summary of what the engine built. Same-player and same-game caps are spec-driven (Phase 28-32) — diversification is a feature, not noise."
+          style={{ padding: '6px 16px', fontStyle: 'italic' }}
+          title="Plain-language summary of what the engine built. Same-player and same-game caps are spec-driven (Phase 28-32)."
         >
           {c.constructionNotes.summary}
         </div>
       )}
-      <div className="mlb-slate-card-weakest">
-        ⚠ Weakest leg: <strong>{c.weakestLegName}</strong> — {c.weakestLegReason}
-      </div>
     </div>
   );
 }
