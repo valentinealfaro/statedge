@@ -340,11 +340,25 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
                 <th className="num">Misses</th>
                 <th className="num">Pending</th>
                 <th className="num">Hit %</th>
+                <th className="num" title="Sum of $1-stake P/L across every card on that day. Cleared cards = +(payout-1), dead = -1.">Daily P/L</th>
                 <th>Cards</th>
               </tr>
             </thead>
             <tbody>
-              {days.map((d) => (
+              {days.map((d) => {
+                // Daily P/L: walk the day's byCardType and sum the
+                // $1-stake outcome of each card. Pending cards
+                // contribute 0.
+                let dailyProfit = 0;
+                let anySettled = false;
+                if (d.byCardType) {
+                  for (const [name, card] of Object.entries(d.byCardType)) {
+                    const payout = FLEX_PAYOUTS[name] ?? 1;
+                    if (card.cleared === true)  { dailyProfit += payout - 1; anySettled = true; }
+                    else if (card.cleared === false) { dailyProfit -= 1;     anySettled = true; }
+                  }
+                }
+                return (
                 <tr key={d.date}>
                   <td><strong>{d.date}</strong></td>
                   <td className="num">{d.totalLegs}</td>
@@ -354,6 +368,18 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
                   <td className="num">{d.pending}</td>
                   <td className="num">
                     {d.hitRate !== null ? `${d.hitRate.toFixed(1)}%` : '—'}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      fontWeight: 700,
+                      color: !anySettled ? undefined
+                        : dailyProfit > 0 ? 'var(--hot, #66bb6a)'
+                        : dailyProfit < 0 ? '#ef5350'
+                        : undefined,
+                    }}
+                  >
+                    {!anySettled ? '—' : `${dailyProfit >= 0 ? '+' : ''}$${dailyProfit.toFixed(2)}`}
                   </td>
                   <td>
                     {d.byCardType && Object.keys(d.byCardType).length > 0 ? (
@@ -391,7 +417,8 @@ function HistoryTable({ days }: { days: DayBucket[] }) {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
