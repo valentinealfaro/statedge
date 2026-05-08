@@ -86,30 +86,56 @@ function GameCard({ game }: { game: MlbTodayGame }) {
       <div className="mlb-today-row">
         <span className="mlb-today-team">
           <strong>{game.away.abbreviation}</strong>
-          {game.away.record && <span className="muted small"> {game.away.record}</span>}
+          {game.away.record && (
+            <span className="muted small">
+              {' '}{game.away.record}
+              {game.away.awayRecord && <>, {game.away.awayRecord} away</>}
+            </span>
+          )}
         </span>
         <span className="mlb-today-score">{game.away.score ?? '—'}</span>
       </div>
       <div className="mlb-today-row">
         <span className="mlb-today-team">
           <strong>{game.home.abbreviation}</strong>
-          {game.home.record && <span className="muted small"> {game.home.record}</span>}
+          {game.home.record && (
+            <span className="muted small">
+              {' '}{game.home.record}
+              {game.home.homeRecord && <>, {game.home.homeRecord} home</>}
+            </span>
+          )}
           <span className="mlb-today-home-mark"> · home</span>
         </span>
         <span className="mlb-today-score">{game.home.score ?? '—'}</span>
       </div>
 
-      {/* Implied win probability from ML odds. Mission-framed: this
-          is sportsbook consensus, NOT our model's prediction. */}
-      {isPregame && game.odds && (game.odds.homeImpliedWinProb !== null || game.odds.awayImpliedWinProb !== null) && (
+      {/* Both moneylines + implied probabilities. Raw American odds
+          are the institutional way to read the line; implied % is
+          a derived companion. */}
+      {isPregame && game.odds && (game.odds.homeMl !== null || game.odds.awayMl !== null) && (
         <div className="mlb-today-odds"
-             title={`Moneyline ${game.away.abbreviation} ${formatMl(game.odds.awayMl)} / ${game.home.abbreviation} ${formatMl(game.odds.homeMl)} via ${game.odds.provider ?? 'ESPN'}. Implied = sportsbook consensus, NOT StatEdge's model.`}>
-          <span className="mlb-today-odds-label">Vegas implied</span>
+             title={`Moneyline via ${game.odds.provider ?? 'ESPN'}. Implied = sportsbook consensus, NOT StatEdge's model.`}>
+          <span className="mlb-today-odds-label">ML</span>
           <span className="mlb-today-odds-prob">
-            {game.away.abbreviation} {fmtPct(game.odds.awayImpliedWinProb)}
-            {' · '}
-            {game.home.abbreviation} {fmtPct(game.odds.homeImpliedWinProb)}
+            {game.away.abbreviation} {formatMl(game.odds.awayMl)}
+            {' @ '}
+            {game.home.abbreviation} {formatMl(game.odds.homeMl)}
+            {(game.odds.awayImpliedWinProb !== null || game.odds.homeImpliedWinProb !== null) && (
+              <span className="muted small" style={{ marginLeft: 6 }}>
+                ({fmtPct(game.odds.awayImpliedWinProb)} / {fmtPct(game.odds.homeImpliedWinProb)})
+              </span>
+            )}
           </span>
+        </div>
+      )}
+
+      {/* Weather (when MLB API ships it — outdoor parks have it,
+          domes typically don't or report "Roof Closed"). */}
+      {game.weather && (game.weather.temp || game.weather.condition) && (
+        <div className="muted small" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {game.weather.temp && <span><strong>{game.weather.temp}°</strong></span>}
+          {game.weather.condition && <span>{game.weather.condition}</span>}
+          {game.weather.wind && <span>· {game.weather.wind}</span>}
         </div>
       )}
 

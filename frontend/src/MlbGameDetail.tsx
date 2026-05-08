@@ -122,13 +122,15 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
   const live = game.status.inProgress;
   const final = game.status.abstractGameState === 'Final';
   const time = new Date(game.gameDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const awaySplit = game.away.awayRecord;
+  const homeSplit = game.home.homeRecord;
   return (
     <div className="mlb-projection" style={{ marginBottom: 12 }}>
       <div className="mlb-projection-head" style={{ alignItems: 'baseline' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>
-          {game.away.name} ({game.away.record ?? '—'})
+          {game.away.name} ({game.away.record ?? '—'}{awaySplit ? `, ${awaySplit} away` : ''})
           {' @ '}
-          {game.home.name} ({game.home.record ?? '—'})
+          {game.home.name} ({game.home.record ?? '—'}{homeSplit ? `, ${homeSplit} home` : ''})
         </h1>
         <span
           className="mlb-projection-verdict"
@@ -142,12 +144,16 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
         <div className="mlb-stat" title={`${game.away.name} record + score`}>
           <span className="mlb-stat-label">{game.away.abbreviation}</span>
           <span className="mlb-stat-value">{game.away.score ?? '—'}</span>
-          <span className="mlb-stat-sub">{game.away.record ?? ''}</span>
+          <span className="mlb-stat-sub">
+            {game.away.record ?? ''}{awaySplit ? ` · ${awaySplit} away` : ''}
+          </span>
         </div>
         <div className="mlb-stat" title={`${game.home.name} record + score`}>
           <span className="mlb-stat-label">{game.home.abbreviation}</span>
           <span className="mlb-stat-value">{game.home.score ?? '—'}</span>
-          <span className="mlb-stat-sub">{game.home.record ?? ''}</span>
+          <span className="mlb-stat-sub">
+            {game.home.record ?? ''}{homeSplit ? ` · ${homeSplit} home` : ''}
+          </span>
         </div>
         <div className="mlb-stat" title={`Status: ${game.status.detailedState}`}>
           <span className="mlb-stat-label">Status</span>
@@ -157,6 +163,19 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
           <div className="mlb-stat" title="Venue">
             <span className="mlb-stat-label">Venue</span>
             <span className="mlb-stat-value" style={{ fontSize: 13 }}>{game.venue}</span>
+          </div>
+        )}
+        {game.weather && (game.weather.temp || game.weather.condition) && (
+          <div className="mlb-stat" title={`Weather${game.weather.wind ? ` · wind ${game.weather.wind}` : ''}`}>
+            <span className="mlb-stat-label">Weather</span>
+            <span className="mlb-stat-value" style={{ fontSize: 14 }}>
+              {game.weather.temp ? `${game.weather.temp}°` : ''}
+              {game.weather.temp && game.weather.condition ? ' ' : ''}
+              {game.weather.condition ?? ''}
+            </span>
+            {game.weather.wind && (
+              <span className="mlb-stat-sub">{game.weather.wind}</span>
+            )}
           </div>
         )}
       </div>
@@ -171,7 +190,9 @@ function GameOddsAndPredictor({ game }: { game: MlbTodayGame }) {
   return (
     <details className="mlb-context" open>
       <summary className="mlb-context-heading">
-        Game odds + matchup predictor <span className="muted small">— vegas implied win prob</span>
+        Game odds + matchup predictor <span className="muted small">
+          — ML: {game.away.abbreviation} {fmt(o.awayMl)} @ {game.home.abbreviation} {fmt(o.homeMl)}
+        </span>
       </summary>
       <div className="mlb-context-grid" style={{ marginTop: 8 }}>
         <div className="mlb-context-chip neutral" title="Away moneyline + implied win probability">

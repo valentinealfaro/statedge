@@ -396,7 +396,9 @@ export type MlbTodayGame = {
     abbreviation: string;
     name: string;
     score: number | null;
-    record: string | null;            // "12-8"
+    record: string | null;            // "12-8" overall
+    homeRecord: string | null;        // "10-8 Home"
+    awayRecord: string | null;        // (always null on home side)
   };
   away: {
     id: number;
@@ -404,8 +406,15 @@ export type MlbTodayGame = {
     name: string;
     score: number | null;
     record: string | null;
+    homeRecord: string | null;
+    awayRecord: string | null;        // "6-13 Away"
   };
   venue: string | null;
+  weather: {
+    condition: string | null;        // "Sunny" / "Cloudy" / "Rain"
+    temp: string | null;             // "69" (degrees F)
+    wind: string | null;             // "5 mph, In From RF"
+  } | null;
   probablePitchers: {
     home: MlbProbablePitcher | null;
     away: MlbProbablePitcher | null;
@@ -435,6 +444,11 @@ type RawScheduleGame = {
     away: RawScheduleTeam;
   };
   venue?: { name?: string };
+  weather?: {
+    condition?: string;
+    temp?: string;       // degrees F as string
+    wind?: string;
+  };
 };
 
 type RawScheduleTeam = {
@@ -442,6 +456,15 @@ type RawScheduleTeam = {
     id: number;
     abbreviation?: string;
     name?: string;
+    record?: {
+      // The records hydrate returns splitRecords keyed by `type`:
+      // 'home', 'away', 'left', 'right', 'day', 'night', etc.
+      splitRecords?: Array<{
+        wins?: number;
+        losses?: number;
+        type?: string;
+      }>;
+    };
   };
   score?: number;
   leagueRecord?: { wins?: number; losses?: number };
@@ -518,13 +541,22 @@ function buildRecord(t: RawScheduleTeam): string | null {
   return `${w}-${l}`;
 }
 
+// Pull a specific split record out of the team(record) hydrate.
+// Returns "10-8" or null if the split is missing.
+function buildSplitRecord(t: RawScheduleTeam, splitType: 'home' | 'away'): string | null {
+  const splits = t.team.record?.splitRecords ?? [];
+  const match = splits.find((s) => (s.type ?? '').toLowerCase() === splitType);
+  if (!match || match.wins === undefined || match.losses === undefined) return null;
+  return `${match.wins}-${match.losses}`;
+}
+
 // Get every game on a given date (defaults to today). Hydrates
-// probable pitchers AND their season stats in a single API call.
-// Used by the "Tonight's MLB games" rail and (in a future slice)
-// the slate auto-publish path.
+// probable pitchers AND their season stats AND weather AND
+// home/away split records in a single API call. Used by the
+// "Tonight's MLB games" rail + the slate auto-publish path.
 export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> {
   const targetDate = date ?? new Date().toISOString().slice(0, 10);
-  const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team,linescore';
+  const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team(record),linescore,weather';
   const data = await fetchJson<RawScheduleResponse>(
     `/schedule?sportId=${SPORT_ID}&date=${targetDate}&hydrate=${encodeURIComponent(hydrate)}`,
   );
@@ -545,6 +577,8 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
       name: g.teams.home.team.name ?? '',
       score: g.teams.home.score ?? null,
       record: buildRecord(g.teams.home),
+      homeRecord: buildSplitRecord(g.teams.home, 'home'),
+      awayRecord: null,
     },
     away: {
       id: g.teams.away.team.id,
@@ -552,8 +586,17 @@ export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> 
       name: g.teams.away.team.name ?? '',
       score: g.teams.away.score ?? null,
       record: buildRecord(g.teams.away),
+      homeRecord: null,
+      awayRecord: buildSplitRecord(g.teams.away, 'away'),
     },
     venue: g.venue?.name ?? null,
+    weather: g.weather && (g.weather.condition || g.weather.temp || g.weather.wind)
+      ? {
+          condition: g.weather.condition ?? null,
+          temp: g.weather.temp ?? null,
+          wind: g.weather.wind ?? null,
+        }
+      : null,
     probablePitchers: {
       home: extractProbablePitcher(g.teams.home.probablePitcher),
       away: extractProbablePitcher(g.teams.away.probablePitcher),

@@ -1794,9 +1794,24 @@ export type MlbTodayGame = {
     detailedState: string;
     inProgress: boolean;
   };
-  home: { id: number; abbreviation: string; name: string; score: number | null; record: string | null };
-  away: { id: number; abbreviation: string; name: string; score: number | null; record: string | null };
+  home: {
+    id: number; abbreviation: string; name: string; score: number | null;
+    record: string | null;
+    homeRecord: string | null;
+    awayRecord: string | null;
+  };
+  away: {
+    id: number; abbreviation: string; name: string; score: number | null;
+    record: string | null;
+    homeRecord: string | null;
+    awayRecord: string | null;
+  };
   venue: string | null;
+  weather: {
+    condition: string | null;
+    temp: string | null;
+    wind: string | null;
+  } | null;
   probablePitchers: {
     home: MlbProbablePitcher | null;
     away: MlbProbablePitcher | null;
