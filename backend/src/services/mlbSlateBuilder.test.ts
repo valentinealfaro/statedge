@@ -94,10 +94,15 @@ function leg(
   };
 }
 
-// Helper: a slate of N strong legs, all distinct players.
+// Helper: a slate of N strong legs, all distinct players AND spread
+// across multiple teams. Phase 30 added a per-team-side cap (max 2-3
+// hitters from one team going OVER on a single card) — we spread to
+// avoid spurious test failures from synthetic same-team rosters.
+const TEST_TEAMS = ['NYY', 'BOS', 'TB', 'TOR', 'BAL', 'CLE', 'MIN', 'KC', 'CWS', 'DET'] as const;
 function strongSlate(n: number): ResolvedMlbLine[] {
   return Array.from({ length: n }, (_, i) =>
-    leg(100 + i, {}, { probability: 70 - i, edgePercent: 18 - i, trapScore: 25 }),
+    leg(100 + i, { team: { id: i + 1, abbr: TEST_TEAMS[i % TEST_TEAMS.length]! } },
+        { probability: 70 - i, edgePercent: 18 - i, trapScore: 25 }),
   );
 }
 
@@ -291,6 +296,29 @@ describe('buildMlbSlate — same-player + stat-family rules (Phase 28)', () => {
     if (allCardIds.length >= 2) {
       const overlapPresent = allCardIds[0]!.some((id) => allCardIds[1]!.includes(id));
       expect(overlapPresent).toBe(true);
+    }
+  });
+
+  test('Phase 30 — Best 6 caps same-team-side OVER hitters at 2 (no fan stack)', () => {
+    // 8 NYY hitters all going OVER on the same stat. Spec: a 6-leg
+    // card should NOT be a fan-made same-game stack — should be a
+    // diversified portfolio.
+    const slate = Array.from({ length: 8 }, (_, i) =>
+      leg(200 + i, { team: { id: 1, abbr: 'NYY' } },
+          { probability: 70 - i, edgePercent: 18 - i, trapScore: 25 }),
+    );
+    // Pad to 12 with 4 cross-team picks so eligibleLegs has variety.
+    for (let i = 0; i < 4; i += 1) {
+      slate.push(leg(300 + i, { team: { id: 5 + i, abbr: TEST_TEAMS[i + 1]! } },
+        { probability: 65, edgePercent: 14, trapScore: 25 }));
+    }
+    const r = buildMlbSlate(slate, 'balanced');
+    const best6 = r.combos.find((c) => c.size === 6)?.combo;
+    if (best6) {
+      const nyyOver = best6.legs.filter(
+        (l) => l.team === 'NYY' && l.direction === 'OVER' && !l.isPitcher,
+      );
+      expect(nyyOver.length).toBeLessThanOrEqual(2);
     }
   });
 

@@ -299,8 +299,38 @@ const SAFE_BLOCKED_STATS = new Set<string>([
   'home_runs', 'stolen_bases', 'rbis', 'triples', 'home_runs_allowed',
 ]);
 
-// Pick top-N legs with same-player + stat-family rules per the
-// MLB Slate Engine spec.
+// Per-game offensive-over cap. Spec: "same-game offensive overs"
+// is a dangerous correlation — if the game scores zero, every
+// offensive OVER dies together. Cap depends on card size: small
+// cards tolerate more concentrated stacks; 6-leg cards must
+// diversify by spec ("a 6-leg MLB card should behave like a
+// diversified institutional portfolio, NOT a fan-made same-game
+// stack").
+function maxLegsPerGame(cardSize: number): number {
+  if (cardSize >= 6) return 2;
+  if (cardSize >= 4) return 3;
+  return 4;
+}
+
+// Per-team-side cap. Spec: "same-team hitter overs" is dangerous
+// because a team scoring zero kills multiple legs. Allow 2 same-
+// team OVER hitters max per card. (UNDER picks for the OPPOSING
+// pitcher are different — they ARE positively correlated with the
+// hitter UNDERs but the spec wants those grouped, not blocked.)
+function teamSideKey(line: ResolvedMlbLine): string | null {
+  if (!line.team.abbr) return null;
+  // Hitters key by team + direction; pitchers don't trigger this
+  // (one starting pitcher per team, not a stack risk).
+  if (line.isPitcher) return null;
+  return `${line.team.abbr}::${line.modelDirection}`;
+}
+function maxLegsPerTeamSide(cardSize: number): number {
+  if (cardSize >= 5) return 2;
+  return 3;
+}
+
+// Pick top-N legs with same-player + stat-family + correlation
+// rules per the MLB Slate Engine spec.
 function pickTopN(
   pool: ResolvedMlbLine[],
   n: number,
@@ -314,17 +344,35 @@ function pickTopN(
   const picked: ResolvedMlbLine[] = [];
   const playerLegCount = new Map<number, number>();
   const playerFamiliesUsed = new Map<number, Set<string>>();
+  const gameLegCount = new Map<string, number>();
+  const teamSideLegCount = new Map<string, number>();
   const cap = maxLegsPerPlayer(n);
+  const gameCap = maxLegsPerGame(n);
+  const teamSideCap = maxLegsPerTeamSide(n);
   for (const l of ranked) {
     const seen = playerLegCount.get(l.playerId) ?? 0;
     if (seen >= cap) continue;
     const families = playerFamiliesUsed.get(l.playerId) ?? new Set();
     const family = statFamilyOf(l.statKey);
-    if (families.has(family)) continue;     // diversification rule
+    if (families.has(family)) continue;     // family diversification
+    // Same-game stack cap.
+    const gameKey = l.gameKey;
+    if (gameKey) {
+      const gameSeen = gameLegCount.get(gameKey) ?? 0;
+      if (gameSeen >= gameCap) continue;
+    }
+    // Same-team-direction stack cap (hitters only).
+    const tsKey = teamSideKey(l);
+    if (tsKey) {
+      const tsSeen = teamSideLegCount.get(tsKey) ?? 0;
+      if (tsSeen >= teamSideCap) continue;
+    }
     picked.push(l);
     playerLegCount.set(l.playerId, seen + 1);
     families.add(family);
     playerFamiliesUsed.set(l.playerId, families);
+    if (gameKey) gameLegCount.set(gameKey, (gameLegCount.get(gameKey) ?? 0) + 1);
+    if (tsKey) teamSideLegCount.set(tsKey, (teamSideLegCount.get(tsKey) ?? 0) + 1);
     if (picked.length >= n) break;
   }
   return picked;

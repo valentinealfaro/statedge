@@ -220,8 +220,27 @@ function computeWildCardScore(line: ResolvedMlbLine): number {
   const opp = s.opponentVsSeasonDelta ?? 0;
   const oppDirAdj = dir === 'OVER' ? opp : -opp;
   const matchupLeverage = Math.max(0, Math.min(100, 50 + oppDirAdj * 100));
-  // Market lag: 0 until Phase 30 wires the real signal.
-  const marketLagScore = 0;
+  // Market lag: how far ahead the engine's context layers are
+  // pointing relative to the bookmaker's static line. Each context
+  // multiplier's direction-aware deviation from 1.0 contributes.
+  // Spec: opportunityExpansion + roleChange + contextAcceleration
+  // + environmentShift. Available context proxies them:
+  //   weather + park + gameScript = environmentShift
+  //   lineup + bvp = opportunityExpansion + roleChange
+  //   ensemble deviation = contextAcceleration
+  const lagPctOf = (mult: number) => {
+    const helps = dir === 'OVER' ? mult > 1.0 : mult < 1.0;
+    if (!helps) return 0;
+    return Math.abs(mult - 1.0) * 100;     // % shift in player's direction
+  };
+  const ctxLag =
+    lagPctOf(p.contextAdjustments.weather)
+    + lagPctOf(p.contextAdjustments.park)
+    + lagPctOf(p.contextAdjustments.gameScript)
+    + lagPctOf(p.contextAdjustments.lineup)
+    + lagPctOf(p.contextAdjustments.bvp);
+  // 5 layers × 10% favorable shift each = 50; cap at 100.
+  const marketLagScore = Math.max(0, Math.min(100, ctxLag * 2));
   // Upside potential: derived from Monte Carlo P90 vs line. Scaled
   // 0-100. When MC isn't available (degenerate stddev), fall back
   // to projection separation as a coarse proxy.
