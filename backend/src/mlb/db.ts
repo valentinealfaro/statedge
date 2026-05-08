@@ -266,7 +266,12 @@ export async function upsertMlbPlayers(players: MlbPlayer[]): Promise<number> {
          id, team_id, first_name, last_name, full_name, position, bats, throws, is_active
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (id) DO UPDATE SET
-         team_id    = EXCLUDED.team_id,
+         -- COALESCE so a transient null from MLB API doesn't wipe a
+         -- previously-correct team_id. Found this when Nick Lodolo
+         -- (CIN, on IL) lost his team_id on a sync run where his
+         -- /people response transiently omitted currentTeam — every
+         -- subsequent slate-paste failed to resolve "Lodolo on CIN".
+         team_id    = COALESCE(EXCLUDED.team_id, mlb_players.team_id),
          first_name = EXCLUDED.first_name,
          last_name  = EXCLUDED.last_name,
          full_name  = EXCLUDED.full_name,
