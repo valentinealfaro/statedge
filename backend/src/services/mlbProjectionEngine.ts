@@ -143,6 +143,11 @@ export type ProjectionResult = {
   // available signals. The "expected value" of the stat for the
   // upcoming game.
   projection: number;
+  // The line the projection is being evaluated against. Echoes the
+  // input line UNLESS line raising fired — then this is the raised
+  // line and originalLine holds the input. probability + edgePercent +
+  // evScore reflect THIS line.
+  line: number;
   // 0-100, our model's probability the OVER (or UNDER, depending on
   // direction) hits the line.
   probability: number;
@@ -195,6 +200,19 @@ export type ProjectionResult = {
   // The pre-context baseline (so debugging can compare baseline vs
   // adjusted). projection field above is the post-adjustment value.
   baselineProjection: number;
+
+  // ---- Line raising (NBA-style elite-conviction signal) ----
+  // When the model has elite conviction (high probability + high
+  // confidence + low trap + projection well above line), we test
+  // raised lines in 0.5 steps to find the highest line that still
+  // clears the keep threshold. Surfaced as an analytical signal —
+  // PrizePicks doesn't actually offer alternate lines for most
+  // props, so this is "would the model still like this if the line
+  // moved" rather than a bookable bet.
+  originalLine: number | null;
+  originalProbability: number | null;
+  lineRaised: boolean;
+  lineRaiseReason: string | null;
 
   // Monte Carlo outcome distribution. 10k draws sampling around the
   // projected value with the L10 stddev. Surfaces floor/ceiling per
@@ -249,6 +267,7 @@ function emptyResult(
 ): ProjectionResult {
   return {
     projection: 0,
+    line,
     probability: 50,
     confidence: 0,
     riskScore: 100,
@@ -266,6 +285,176 @@ function emptyResult(
     },
     baselineProjection: 0,
     monteCarlo: null,
+    originalLine: null,
+    originalProbability: null,
+    lineRaised: false,
+    lineRaiseReason: null,
+  };
+}
+
+// ---------------- Line raising (MLB) ----------------
+//
+// Per-stat absolute cap on how far a line can be raised. Caps are
+// stat-aware — we don't raise HR by 5 (every hitter would clear),
+// and we don't raise hits by 0.1 (the half-step granularity wouldn't
+// cooperate). Numbers chosen to mirror real PrizePicks line ranges:
+// the cap is roughly "one full step away from the most aggressive
+// line the prop board ever offers."
+const MLB_LINE_RAISE_CAPS: Partial<Record<MlbStatKey, number>> = {
+  hits:                 1.5,    // 1.5 → 3.0 (3-hit games are rare but real)
+  singles:              1.5,
+  doubles:              1.0,
+  total_bases:          3.0,    // total bases swings widest
+  runs:                 1.5,
+  rbis:                 1.5,
+  walks:                1.0,
+  strikeouts:           2.0,
+  stolen_bases:         1.0,
+  home_runs:            0.5,    // HR boundaries are tight; one extra HR is huge
+  hits_runs_rbis:       3.0,
+  triples:              0.5,
+  hitter_fantasy_score: 8.0,
+  // Pitcher stats
+  ks:                   3.0,    // K floors are 4-5; extra step gives 7-8
+  pitcher_outs:         3.0,    // 18 → 21 outs is one extra inning
+  innings_pitched:      1.0,
+  hits_allowed:         2.0,
+  earned_runs_allowed:  1.5,
+  walks_allowed:        1.0,
+  home_runs_allowed:    0.5,
+  pitches_thrown:       15.0,
+};
+
+// Trigger thresholds — original projection must clear all of these
+// for line-raising to even be considered. Conservative on purpose;
+// raised lines are an analytical bonus, not a primary path.
+const MLB_LINE_RAISE_TRIGGER = {
+  probability: 70,
+  confidence: 70,
+  trapScore: 40,         // trap score must be low
+  edgeSigmas: 1.25,      // projection must be ≥1.25σ from line
+} as const;
+
+// Keep threshold — at each candidate raised line, the new
+// probability must clear this for the raise to "stick."
+const MLB_LINE_RAISE_KEEP = {
+  probability: 60,
+} as const;
+
+// Standard normal CDF (Abramowitz & Stegun) — same approximation the
+// projection engine uses internally. Duplicated here to keep the
+// line-raising code self-contained without exposing the engine's
+// private helper.
+function lineRaiseNormalCdf(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+  const p = d * t * (
+    0.319381530 + t * (
+      -0.356563782 + t * (
+        1.781477937 + t * (
+          -1.821255978 + t * 1.330274429
+        )
+      )
+    )
+  );
+  return z >= 0 ? 1 - p : p;
+}
+
+// Test whether the line should be raised given the candidate's
+// projection. Returns either the original line + null raise fields,
+// or the raised line with diagnostic context. Pure — no DB or async.
+export function maybeRaiseMlbLine(opts: {
+  statKey: MlbStatKey;
+  originalLine: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  confidence: number;
+  trapScore: number;
+  projection: number;
+  stddev: number;
+}): {
+  line: number;
+  probability: number;
+  originalLine: number | null;
+  originalProbability: number | null;
+  lineRaised: boolean;
+  lineRaiseReason: string | null;
+} {
+  const {
+    statKey, originalLine, direction, probability, confidence,
+    trapScore, projection, stddev,
+  } = opts;
+
+  const cap = MLB_LINE_RAISE_CAPS[statKey];
+  // Stats not eligible for raising (or degenerate stddev) → no raise.
+  if (cap === undefined || stddev <= 0) {
+    return {
+      line: originalLine,
+      probability,
+      originalLine: null,
+      originalProbability: null,
+      lineRaised: false,
+      lineRaiseReason: null,
+    };
+  }
+
+  // Trigger gates. All must pass on the original projection.
+  if (probability < MLB_LINE_RAISE_TRIGGER.probability ||
+      confidence < MLB_LINE_RAISE_TRIGGER.confidence ||
+      trapScore > MLB_LINE_RAISE_TRIGGER.trapScore) {
+    return {
+      line: originalLine, probability,
+      originalLine: null, originalProbability: null,
+      lineRaised: false, lineRaiseReason: null,
+    };
+  }
+
+  // Edge-in-stddev gate.
+  const edgeSigmas =
+    direction === 'OVER'
+      ? (projection - originalLine) / stddev
+      : (originalLine - projection) / stddev;
+  if (edgeSigmas < MLB_LINE_RAISE_TRIGGER.edgeSigmas) {
+    return {
+      line: originalLine, probability,
+      originalLine: null, originalProbability: null,
+      lineRaised: false, lineRaiseReason: null,
+    };
+  }
+
+  // Walk the line in 0.5 steps (capped by MLB_LINE_RAISE_CAPS).
+  // For OVER picks we walk UP; for UNDER we walk DOWN. Stop at the
+  // highest step where the keep threshold still passes.
+  const STEP = 0.5;
+  const sign = direction === 'OVER' ? 1 : -1;
+  let bestLine = originalLine;
+  let bestProb = probability;
+  for (let delta = STEP; delta <= cap + 1e-9; delta += STEP) {
+    const trialLine = originalLine + sign * delta;
+    const z = (trialLine - projection) / stddev;
+    const overP = (1 - lineRaiseNormalCdf(z)) * 100;
+    const trialProb = direction === 'OVER' ? overP : 100 - overP;
+    if (trialProb < MLB_LINE_RAISE_KEEP.probability) break;
+    bestLine = trialLine;
+    bestProb = trialProb;
+  }
+
+  if (bestLine === originalLine) {
+    return {
+      line: originalLine, probability,
+      originalLine: null, originalProbability: null,
+      lineRaised: false, lineRaiseReason: null,
+    };
+  }
+
+  return {
+    line: bestLine,
+    probability: Math.round(bestProb * 10) / 10,
+    originalLine,
+    originalProbability: probability,
+    lineRaised: true,
+    lineRaiseReason:
+      `Raised from ${originalLine} → ${bestLine} · projection still favors ${direction}.`,
   };
 }
 
@@ -602,17 +791,63 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     direction: inputs.direction,
   });
 
+  // Line raising (NBA-style). Re-run after we have probability +
+  // confidence + trap to gate on. When triggered, the engine swaps
+  // line + probability with the raised values; originalLine +
+  // originalProbability preserve what was passed in. Slate builder
+  // will use the raised line/prob for ranking — that's the whole
+  // point. Confidence and risk are preserved as-is (per NBA
+  // precedent — recomputing them at a raised line is a follow-up).
+  const raise = maybeRaiseMlbLine({
+    statKey: inputs.statKey,
+    originalLine: inputs.line,
+    direction: inputs.direction,
+    probability,
+    confidence,
+    trapScore,
+    projection,
+    stddev,
+  });
+  // After raise: probability reflects the raised line. Re-derive
+  // dependent fields (edgePercent, evScore, projectionDistanceScore)
+  // from the raised probability so they stay self-consistent.
+  let finalProbability = probability;
+  let finalEdgePercent = edgePercent;
+  let finalEdgeScore = edgeScore;
+  let finalEvScore = evScore;
+  let finalProjectionDistanceScore = projectionDistanceScore;
+  if (raise.lineRaised) {
+    // Soft-cap to [5, 95] same as the original probability — even an
+    // elite raised line shouldn't fake-claim 100% on a single game.
+    finalProbability = clamp(raise.probability, 5, 95);
+    finalEdgePercent = round1(finalProbability - 50);
+    finalEdgeScore = clamp(Math.round((finalEdgePercent + 25) * 2), 0, 100);
+    // Recompute projection distance against the RAISED line — distance
+    // shrinks because the line moved closer to the projection.
+    const newDistanceUnits = Math.abs(projection - raise.line) / stddev;
+    finalProjectionDistanceScore = clamp(Math.round(newDistanceUnits * 50), 0, 100);
+    finalEvScore = round1(
+      finalEdgePercent * 0.40
+      + confidence * 0.20
+      + finalProjectionDistanceScore * 0.20
+      - riskScore * 0.10
+      - trapScore * 0.10,
+    );
+    reasonCodes.push(`Line raised: ${raise.originalLine} → ${raise.line} (model still favors ${inputs.direction} at the raised line).`);
+  }
+
   return {
     projection: round2(projection),
-    probability: round1(probability),
+    line: raise.lineRaised ? raise.line : inputs.line,
+    probability: round1(finalProbability),
     confidence,
     riskScore,
     trapScore: Math.round(trapScore),
     trapTier,
-    projectionDistanceScore,
-    edgePercent,
-    edgeScore,
-    evScore,
+    projectionDistanceScore: finalProjectionDistanceScore,
+    edgePercent: finalEdgePercent,
+    edgeScore: finalEdgeScore,
+    evScore: finalEvScore,
     qualifiesForCards: { safe: qualifiesSafe, balanced: qualifiesBalanced },
     reasonCodes,
     weightsUsed,
@@ -626,6 +861,11 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     },
     baselineProjection: round2(baselineProjection),
     monteCarlo,
+    originalLine: raise.originalLine,
+    originalProbability:
+      raise.originalProbability !== null ? round1(raise.originalProbability) : null,
+    lineRaised: raise.lineRaised,
+    lineRaiseReason: raise.lineRaiseReason,
   };
 }
 

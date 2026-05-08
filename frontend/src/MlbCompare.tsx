@@ -425,6 +425,18 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
         </span>
       </div>
 
+      {data.lineRaised && data.originalLine !== null && (
+        <div className="mlb-line-raised"
+             title="Elite-conviction signal — model still favors this direction even at a raised line. Probability and edge below reflect the raised line, not the original. PrizePicks doesn't actually offer alternate lines for most props, so this is analytical confidence, not a bookable bet.">
+          ↑ Line raised: <strong>{data.originalLine} → {data.line}</strong>
+          {data.originalProbability !== null && (
+            <span className="mlb-line-raised-probs">
+              {' · '}probability {data.originalProbability.toFixed(0)}% → {data.probability.toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mlb-projection-grid">
         <div className="mlb-stat" title="Model's projected stat value for the upcoming game">
           <span className="mlb-stat-label">Projection</span>

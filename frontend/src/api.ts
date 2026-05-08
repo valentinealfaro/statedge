@@ -1324,6 +1324,9 @@ export type MlbMonteCarloResult = {
 
 export type MlbProjectionResponse = {
   projection: number;
+  // The line evaluated against. When line raising fires, this is the
+  // raised line; originalLine holds what was passed in.
+  line: number;
   baselineProjection: number;
   probability: number;
   confidence: number;
@@ -1353,6 +1356,14 @@ export type MlbProjectionResponse = {
   // with stat-aware distribution. Surfaces floor/ceiling per pick.
   // null when L10 stddev is degenerate.
   monteCarlo: MlbMonteCarloResult | null;
+  // Line-raising metadata. When the model has elite conviction, we
+  // test raised lines — surface the raised line + original here.
+  // PrizePicks doesn't actually offer alternate lines for most props,
+  // so this is a "model-conviction" signal, not a bookable bet.
+  originalLine: number | null;
+  originalProbability: number | null;
+  lineRaised: boolean;
+  lineRaiseReason: string | null;
   disclaimer: string;
 };
 

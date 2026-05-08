@@ -5630,6 +5630,30 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Line-raised banner — shows when the model has elite conviction
+   that the line should be moved up (or down for UNDER picks).
+   PrizePicks doesn't offer alternate lines for most props, so this
+   is a transparency signal: "model would still like this at line X."
+   Mission alignment: more depth, not bookable hype. */
+.mlb-line-raised {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, rgba(91, 141, 239, 0.12), rgba(124, 77, 255, 0.08));
+  border: 1px solid rgba(91, 141, 239, 0.40);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-1);
+  cursor: help;
+}
+.mlb-line-raised strong {
+  font-weight: 800;
+  color: var(--brand-blue);
+}
+.mlb-line-raised-probs {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
 /* MLB calibration bucket table — predicted vs observed accuracy
    per probability bucket / stat type / risk tier / card type. */
 .mlb-bucket-table {

@@ -10,6 +10,7 @@ import type { ProjectionResult } from './mlbProjectionEngine.js';
 function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
   return {
     projection: 1.5,
+    line: 1.5,
     baselineProjection: 1.5,
     probability: 65,
     confidence: 70,
@@ -25,6 +26,10 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     weightsUsed: { last10: 1.0 },
     contextAdjustments: { park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1 },
     monteCarlo: null,
+    originalLine: null,
+    originalProbability: null,
+    lineRaised: false,
+    lineRaiseReason: null,
     ...over,
   };
 }
