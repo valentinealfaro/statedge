@@ -2517,6 +2517,36 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
     var(--surface-1);
   color: var(--text-1);
 }
+/* Recommended mode (Balanced) — subtle default treatment so first-time
+   users see which mode the model recommends. Stays muted when the user
+   has selected another mode; reads cleanly without doubling up when
+   Balanced is also currently selected. Mission-aligned: informational
+   transparency, not a marketing nudge. */
+.slate-mode-btn.recommended {
+  position: relative;
+  border-color: rgba(91, 141, 239, 0.45);
+  background:
+    linear-gradient(135deg, rgba(91, 141, 239, 0.04), rgba(124, 77, 255, 0.03)),
+    var(--surface-1);
+}
+.slate-mode-btn.recommended:not(.active) .slate-mode-label {
+  color: var(--text-1);
+}
+.slate-mode-recommended-badge {
+  position: absolute;
+  top: -8px;
+  right: 10px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-blue);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(91, 141, 239, 0.30);
+  white-space: nowrap;
+}
 .slate-mode-label {
   font-size: 13px;
   font-weight: 700;

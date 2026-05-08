@@ -1902,10 +1902,17 @@ function SlateModeSelector({
   resolvedMode?: 'safe' | 'balanced' | 'aggressive' | 'insane';
 }) {
   // Risk-meter fill (out of 5) per mode — visual variance/aggression
-  // indicator from the spec.
-  const opts: Array<{ id: SlateMode; label: string; hint: string; meter: number }> = [
+  // indicator from the spec. `recommended` flags the model's tested
+  // default so first-time users see which mode to start with.
+  const opts: Array<{
+    id: SlateMode;
+    label: string;
+    hint: string;
+    meter: number;
+    recommended?: boolean;
+  }> = [
     { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
-    { id: 'balanced',   label: 'Balanced',   hint: 'Recommended for most users · all card sizes',       meter: 2 },
+    { id: 'balanced',   label: 'Balanced',   hint: 'Best risk-adjusted EV across all card sizes',       meter: 2, recommended: true },
     { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
     { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~50× target · Power Play + Demons',   meter: 5 },
     { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
@@ -1919,10 +1926,15 @@ function SlateModeSelector({
             key={o.id}
             role="tab"
             aria-selected={mode === o.id}
-            className={`slate-mode-btn ${mode === o.id ? 'active' : ''} mode-${o.id}`}
+            className={`slate-mode-btn ${mode === o.id ? 'active' : ''} ${o.recommended ? 'recommended' : ''} mode-${o.id}`}
             onClick={() => onChange(o.id)}
             title={o.hint}
           >
+            {o.recommended && (
+              <span className="slate-mode-recommended-badge" aria-label="Recommended">
+                Recommended
+              </span>
+            )}
             <span className="slate-mode-label">{o.label}</span>
             <span className="slate-mode-hint">{o.hint}</span>
             <span className="slate-mode-meter" aria-hidden>
