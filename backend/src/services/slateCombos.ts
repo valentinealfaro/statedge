@@ -379,16 +379,68 @@ const MODE_CONFIG: Record<ResolvedSlateMode, {
   },
 };
 
+// Opportunity Boost — small ranking nudge for Aggressive + Wild Card
+// when multiple existing acceleration signals agree. Spec'd 2026-05-08
+// from the Wild Card philosophy shift: don't rebuild the engine, just
+// nudge the ranker so momentum-aligned picks edge out flat picks of
+// similar edge. Hidden from users — purely an internal sort tweak.
+//
+// Gate: extreme trap kills the boost (no rewarding public-trap lines).
+// Counted signals (need ≥3 of 4 for any boost; max +10):
+//   1. L5 average meaningfully above (OVER) / below (UNDER) season
+//   2. L10 average confirms the trend
+//   3. Minutes trending up (minutesMultiplier ≥ 1.02)
+//   4. Projection separation strong (projectionDistanceScore ≥ 50)
+//
+// Designed to nudge, not override: max +10 vs 0-100 range scores can't
+// flip a weak pick into a strong one, but it can promote a momentum
+// pick over a flat pick at similar edge.
+function opportunityBoost(c: ComboCandidate): number {
+  // Need EnrichedCandidate-level context for L5 vs season + minutes
+  // multiplier. ComboCandidate alone (from snapshots) returns 0 — the
+  // boost only fires during live build where context is present.
+  const ctx = (c as { context?: { seasonAvg: number; last5Avg: number | null; minutesMultiplier: number } }).context;
+  if (!ctx) return 0;
+  // Gate: extreme trap kills the boost.
+  if (c.trapScore >= 60) return 0;
+  if (ctx.seasonAvg <= 0) return 0;
+
+  const overDir = c.direction === 'OVER';
+  let signals = 0;
+
+  // 1. L5 hot in chosen direction.
+  if (ctx.last5Avg !== null) {
+    if (overDir && ctx.last5Avg >= ctx.seasonAvg * 1.10) signals += 1;
+    else if (!overDir && ctx.last5Avg <= ctx.seasonAvg * 0.90) signals += 1;
+  }
+  // 2. L10 confirms direction.
+  if (overDir && c.l10Avg >= ctx.seasonAvg * 1.05) signals += 1;
+  else if (!overDir && c.l10Avg <= ctx.seasonAvg * 0.95) signals += 1;
+  // 3. Minutes trending up (helps either direction — more minutes = more
+  // chances at the over, but also more chances for the under to fail
+  // with garbage time. Net effect favors momentum picks generally).
+  if (ctx.minutesMultiplier >= 1.02) signals += 1;
+  // 4. Projection separation strong (projection ≥ 1σ from line).
+  if (c.projectionDistanceScore >= 50) signals += 1;
+
+  if (signals >= 4) return 10;
+  if (signals >= 3) return 5;
+  return 0;
+}
+
 function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
   if (mode === 'safe') return c.slateScore;
   if (mode === 'aggressive') {
     // Aggressive: rank by MarketDisagreementScore — "how mispriced
-    // is this leg" is the headline concept.
+    // is this leg" is the headline concept. Plus a small Opportunity
+    // Boost when momentum signals align (L5 hot + minutes up + proj
+    // separation, with trap-not-extreme gate).
     return (
       c.marketDisagreementScore * 0.60
       + c.edgePercent * 0.20
       - c.risk * 0.10
       + c.edgeScore * 0.10
+      + opportunityBoost(c)
     );
   }
   if (mode === 'insane') {
@@ -1772,8 +1824,16 @@ export function buildCombos(
       score += 4;
       tags.push('line raised');
     }
-    // +3 minutes trending up — stub: minutes time series not yet
-    // exposed on ResolvedLine. Skip.
+    // Opportunity Boost — same multi-signal nudge used by Aggressive
+    // mode. Rewards picks where L5/L10 vs season + minutes-up +
+    // projection-separation all agree, gated by trap-not-extreme. Helps
+    // Wild Card prefer accelerating-opportunity picks over flat ones
+    // when both pass the historical gate.
+    const oppBoost = opportunityBoost(c);
+    if (oppBoost > 0) {
+      score += oppBoost;
+      tags.push('opportunity expansion');
+    }
     // +3 role increased due to teammate injury — stub: teammate-injury
     // context not yet plumbed. Skip.
     if (

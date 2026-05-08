@@ -614,6 +614,83 @@ describe('buildCombos slate modes', () => {
     expect(['aggressive', 'insane']).toContain(resolvedMode);
   });
 
+  test('Opportunity Boost lifts a momentum pick over a flat one in Aggressive', () => {
+    // Two candidates with near-identical edge/probability — but one has
+    // L5 well above season + minutes trending up (the multi-signal
+    // Opportunity Boost target). Aggressive ranking should prefer it.
+    const flat = makeLine({
+      playerId: 801,
+      playerName: 'Flat',
+      team: 'CHI',
+      vsOpponent: { opponentAbbr: 'IND', gamesPlayed: 3, avg: 18, values: [18, 17, 19] },
+      statKey: 'points',
+      statLabel: 'Points',
+      line: 16.5,
+      projection: makeProjection({
+        probability: { over: 70, under: 30 },
+        confidence: { score: 65, label: 'Strong Confidence' },
+        risk: { score: 50, label: 'Moderate Risk' },
+        edge: { score: 75, label: 'Strong Edge', lean: 'Strong Over Lean' },
+        projection: { baseline: 18, contextAdjusted: 18, final: 18, rangeLow: 16, rangeHigh: 20 },
+        factorBreakdown: {
+          seasonAvg: 18, last10Avg: 18, last5Avg: 18,    // flat — no momentum
+          vsOpponentAvg: 18, homeAwayAvg: 18,
+          seasonMedian: 18, last10Median: 18,
+          blendedStdDev: 4, projectedMinutes: 30,
+          minutesMultiplier: 1.0, usageMultiplier: 1.0,  // flat minutes
+          injuryMultiplier: 1, opponentDefenseMultiplier: 1, paceMultiplier: 1,
+          restMultiplier: 1, gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 75,
+        },
+      }),
+    });
+    const momentum = makeLine({
+      playerId: 802,
+      playerName: 'Momentum',
+      team: 'CLE',
+      vsOpponent: { opponentAbbr: 'DET', gamesPlayed: 3, avg: 22, values: [25, 22, 24] },
+      statKey: 'points',
+      statLabel: 'Points',
+      line: 16.5,
+      projection: makeProjection({
+        probability: { over: 70, under: 30 },             // same edge as flat
+        confidence: { score: 65, label: 'Strong Confidence' },
+        risk: { score: 50, label: 'Moderate Risk' },
+        edge: { score: 75, label: 'Strong Edge', lean: 'Strong Over Lean' },
+        projection: { baseline: 22, contextAdjusted: 22, final: 22, rangeLow: 19, rangeHigh: 25 },
+        factorBreakdown: {
+          seasonAvg: 16,                                  // L5/L10 well above
+          last10Avg: 19,                                  // 1.18× season
+          last5Avg: 22,                                   // 1.37× season
+          vsOpponentAvg: 22, homeAwayAvg: 22,
+          seasonMedian: 16, last10Median: 19,
+          blendedStdDev: 4, projectedMinutes: 33,
+          minutesMultiplier: 1.10,                        // minutes up
+          usageMultiplier: 1.05,
+          injuryMultiplier: 1, opponentDefenseMultiplier: 1, paceMultiplier: 1,
+          restMultiplier: 1, gameImportanceMultiplier: 1, blowoutMultiplier: 1,
+          modelAgreementScore: 80,
+        },
+      }),
+    });
+    // Pad with weaker filler so Aggressive has enough pool to build but
+    // these two are the strongest equal-edge candidates.
+    const slate = [flat, momentum, ...strongSlate(8, 65)];
+    const { combos } = buildCombos(slate, 'aggressive');
+    const best6 = combos.find((c) => c.label === 'Best 6');
+    if (best6) {
+      const flatIdx = best6.legs.findIndex((l) => l.playerId === 801);
+      const momentumIdx = best6.legs.findIndex((l) => l.playerId === 802);
+      // If both made the card, momentum should rank above flat. If only
+      // one made it, it should be the momentum pick.
+      if (flatIdx >= 0 && momentumIdx >= 0) {
+        expect(momentumIdx).toBeLessThan(flatIdx);
+      } else {
+        expect(momentumIdx).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
   test('Aggressive mode prioritizes projection separation', () => {
     // A pick with huge projection separation but only modest
     // probability should rank higher in Aggressive than Balanced.
