@@ -92,6 +92,7 @@ export function SlateHistory() {
         if every leg hits its line; pushes count as survival.
       </p>
       <CardTrackRecord days={days} />
+      <StatTypePerformance days={days} />
       {days.map((day) => {
         const open = openDate === day.date;
         const wonCount = day.combos.filter((c) => c.status === 'won').length;
@@ -342,6 +343,127 @@ function ComboRow({ combo }: { combo: SlateHistoryCombo }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Per-stat-type+direction performance across the visible history
+// window. Mirrors the MLB version. Computed client-side since the
+// NBA history endpoint returns combo legs with outcomes already.
+function StatTypePerformance({ days }: { days: SlateHistoryDay[] }) {
+  type Bucket = {
+    stat: string;
+    direction: 'OVER' | 'UNDER';
+    legs: number;
+    hits: number;
+    misses: number;
+    pending: number;
+  };
+  const map = new Map<string, Bucket>();
+  for (const d of days) {
+    for (const c of d.combos) {
+      for (const l of c.legs) {
+        const key = `${l.statKey}::${l.direction}`;
+        let b = map.get(key);
+        if (!b) {
+          b = { stat: l.statKey, direction: l.direction, legs: 0, hits: 0, misses: 0, pending: 0 };
+          map.set(key, b);
+        }
+        b.legs += 1;
+        if (l.outcome === 'hit') b.hits += 1;
+        else if (l.outcome === 'miss') b.misses += 1;
+        else b.pending += 1;
+      }
+    }
+  }
+  if (map.size === 0) return null;
+  const buckets = [...map.values()]
+    .map((b) => {
+      const settled = b.hits + b.misses;
+      return {
+        ...b,
+        hitRate: settled > 0 ? Math.round((b.hits / settled) * 1000) / 10 : null,
+      };
+    })
+    .sort((a, b) => {
+      const aSettled = a.hits + a.misses;
+      const bSettled = b.hits + b.misses;
+      if (aSettled < 5 && bSettled >= 5) return 1;
+      if (bSettled < 5 && aSettled >= 5) return -1;
+      return (b.hitRate ?? 0) - (a.hitRate ?? 0);
+    });
+
+  const fmt = (s: string): string =>
+    s.replace(/_/g, ' ')
+      .replace(/\bpra\b/gi, 'PRA')
+      .replace(/\bpr\b/gi, 'PR')
+      .replace(/\bpa\b/gi, 'PA')
+      .replace(/\bra\b/gi, 'RA')
+      .replace(/\bft\b/gi, 'FT')
+      .replace(/\bfg\b/gi, 'FG')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <div className="mlb-context" style={{ marginBottom: 16 }}>
+      <div className="mlb-context-heading">
+        Stat-type performance <span className="muted small">— where the model has edge</span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="mlb-standings-table" style={{ marginTop: 6 }}>
+          <thead>
+            <tr>
+              <th>Stat</th>
+              <th>Side</th>
+              <th className="num">Legs</th>
+              <th className="num">Hits</th>
+              <th className="num">Misses</th>
+              <th className="num">Pending</th>
+              <th className="num">Hit %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buckets.map((b, i) => {
+              const settled = b.hits + b.misses;
+              const thin = settled < 5;
+              return (
+                <tr key={i} style={{ opacity: thin ? 0.55 : 1 }}>
+                  <td><strong>{fmt(b.stat)}</strong></td>
+                  <td>
+                    <span style={{
+                      color: b.direction === 'OVER' ? '#66bb6a' : '#7aa2ff',
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}>
+                      {b.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'}
+                    </span>
+                  </td>
+                  <td className="num">{b.legs}</td>
+                  <td className="num" style={{ color: b.hits > 0 ? 'var(--hot, #66bb6a)' : undefined }}>{b.hits}</td>
+                  <td className="num" style={{ color: b.misses > 0 ? '#ef5350' : undefined }}>{b.misses}</td>
+                  <td className="num">{b.pending}</td>
+                  <td
+                    className="num"
+                    title={thin ? 'Thin sample — interpret cautiously' : undefined}
+                    style={{
+                      fontWeight: 700,
+                      color: b.hitRate !== null && b.hitRate >= 60 ? 'var(--hot, #66bb6a)'
+                        : b.hitRate !== null && b.hitRate <= 40 ? '#ef5350'
+                        : undefined,
+                    }}
+                  >
+                    {b.hitRate !== null ? `${b.hitRate.toFixed(1)}%` : '—'}
+                    {thin && <span className="muted small" style={{ marginLeft: 4 }}>·thin</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small" style={{ marginTop: 8 }}>
+        Buckets with fewer than 5 settled legs are dimmed — too thin to read
+        as signal.
+      </p>
     </div>
   );
 }
