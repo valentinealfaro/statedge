@@ -2000,6 +2000,59 @@ export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   return (await res.json()) as MlbLiveTodayResponse;
 }
 
+// =============================================================
+// NBA Live Today (Phase 45): per-leg live grading on /nba/slate
+// =============================================================
+
+export type NbaLiveTodayPlayer = {
+  eventId: string;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  threePtMade: number;
+  threePtAttempted: number;
+  fgMade: number;
+  fgAttempted: number;
+  ftMade: number;
+  ftAttempted: number;
+  personalFouls: number;
+  offensiveRebounds: number;
+  defensiveRebounds: number;
+  pra: number;
+  pr: number;
+  pa: number;
+  ra: number;
+  stocks: number;
+  doubleDouble: number;
+};
+
+export type NbaLiveTodayGame = {
+  state: 'pregame' | 'live' | 'final';
+  detailedState: string;
+  awayAbbr: string;
+  homeAbbr: string;
+  awayScore: number | null;
+  homeScore: number | null;
+};
+
+export type NbaLiveTodayResponse = {
+  fetchedAt: string;
+  byGame: Record<string, NbaLiveTodayGame>;
+  byPlayer: Record<string, NbaLiveTodayPlayer>;
+};
+
+export async function getNbaLiveToday(): Promise<NbaLiveTodayResponse> {
+  const res = await fetch(`${API_BASE}/api/live/today`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as NbaLiveTodayResponse;
+}
+
 export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
   const url = date
     ? `${API_BASE}/api/mlb/today?date=${date}`

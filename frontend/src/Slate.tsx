@@ -4,12 +4,15 @@ import {
   analyzeSlateLegs,
   getBackendVersion,
   getDataFreshness,
+  getNbaLiveToday,
   getSlateAuto,
   getSlateInsight,
   getTodaySlate,
   postSlateImage,
   type BackendVersion,
   type DataFreshness,
+  type NbaLiveTodayPlayer,
+  type NbaLiveTodayResponse,
   type SlateCombo,
   type SlateMode,
   type SlateProjection,
@@ -776,6 +779,95 @@ function LineCard({
 // prevent over-concentration on one player/team/game/stat, and a
 // correlation-adjusted combined hit %. Frontend is a pure renderer
 // — every visitor sees the same combos the snapshot writer stores.
+// Polls /api/live/today every 30s while there's at least one live
+// game; otherwise re-fetches on a slower 60s cadence so the UI
+// catches the moment the first game starts. Server-side cache
+// debounces upstream traffic — clients can poll freely.
+function useNbaLiveToday(): NbaLiveTodayResponse | null {
+  const [feed, setFeed] = useState<NbaLiveTodayResponse | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getNbaLiveToday()
+      .then((d) => { if (!cancelled) setFeed(d); })
+      .catch(() => { /* silent — pre-game or out-of-season is fine */ });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  useEffect(() => {
+    const anyLive = feed
+      ? Object.values(feed.byGame).some((g) => g.state === 'live')
+      : false;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, anyLive ? 30_000 : 60_000);
+    return () => window.clearInterval(interval);
+  }, [feed]);
+
+  return feed;
+}
+
+// Map slate stat keys to live ESPN-projected fields. Keep in sync
+// with backend/src/services/last10.ts Last10StatId.
+function nbaLiveValueForStat(stats: NbaLiveTodayPlayer, statKey: string): number | null {
+  switch (statKey) {
+    case 'points':              return stats.points;
+    case 'rebounds':            return stats.rebounds;
+    case 'assists':             return stats.assists;
+    case 'three_pt_made':       return stats.threePtMade;
+    case 'fg_made':             return stats.fgMade;
+    case 'fg_attempted':        return stats.fgAttempted;
+    case 'ft_made':             return stats.ftMade;
+    case 'ft_attempted':        return stats.ftAttempted;
+    case 'personal_fouls':      return stats.personalFouls;
+    case 'steals':              return stats.steals;
+    case 'blocks':              return stats.blocks;
+    case 'turnovers':           return stats.turnovers;
+    case 'offensive_rebounds':  return stats.offensiveRebounds;
+    case 'defensive_rebounds':  return stats.defensiveRebounds;
+    case 'pra':                 return stats.pra;
+    case 'pr':                  return stats.pr;
+    case 'pa':                  return stats.pa;
+    case 'ra':                  return stats.ra;
+    case 'stocks':              return stats.stocks;
+    case 'double_double':       return stats.doubleDouble;
+    default:                    return null;
+  }
+}
+
+type LiveGrade = 'HIT' | 'MISS' | 'PROGRESS' | 'PUSH' | 'PENDING';
+
+function gradeNbaLeg(
+  direction: 'OVER' | 'UNDER',
+  line: number,
+  current: number | null,
+  state: 'pregame' | 'live' | 'final' | undefined,
+): LiveGrade {
+  if (current === null || !state || state === 'pregame') return 'PENDING';
+  const isFinal = state === 'final';
+  if (direction === 'OVER') {
+    if (current > line) return 'HIT';
+    if (isFinal) return current === line ? 'PUSH' : 'MISS';
+    return 'PROGRESS';
+  }
+  if (current > line) return 'MISS';
+  if (isFinal) return current === line ? 'PUSH' : 'HIT';
+  return 'PROGRESS';
+}
+
+function resolveNbaLegLive(
+  liveToday: NbaLiveTodayResponse | null,
+  leg: { playerId: number; statKey: string; line: number; direction: 'OVER' | 'UNDER' },
+): { grade: LiveGrade; current: number | null } {
+  if (!liveToday) return { grade: 'PENDING', current: null };
+  const ps = liveToday.byPlayer[String(leg.playerId)];
+  if (!ps) return { grade: 'PENDING', current: null };
+  const game = liveToday.byGame[ps.eventId];
+  const current = nbaLiveValueForStat(ps, leg.statKey);
+  return { grade: gradeNbaLeg(leg.direction, leg.line, current, game?.state), current };
+}
+
 function BestPicksRail({
   combos,
   onLoad,
@@ -789,6 +881,11 @@ function BestPicksRail({
   activeKeys: string[];
   cardKey: (l: SlateResolvedLine) => string;
 }) {
+  // Live grading — fetched once at the rail level, threaded into
+  // each card. When no games are live, every leg is PENDING and the
+  // cards render exactly as before.
+  const liveToday = useNbaLiveToday();
+
   if (combos.length === 0) return null;
 
   function legKey(l: SlateCombo['legs'][number]): string {
@@ -872,6 +969,20 @@ function BestPicksRail({
               </div>
             );
           }
+          // Live grading: evaluate each leg against current ESPN
+          // boxscore stats. When no game is live yet, every leg is
+          // PENDING and we render the static design unchanged.
+          const grades = c.legs.map((l) => resolveNbaLegLive(liveToday, l));
+          const tally = {
+            hit: grades.filter((g) => g.grade === 'HIT').length,
+            miss: grades.filter((g) => g.grade === 'MISS').length,
+            progress: grades.filter((g) => g.grade === 'PROGRESS').length,
+            push: grades.filter((g) => g.grade === 'PUSH').length,
+          };
+          const anyLive = tally.hit + tally.miss + tally.progress + tally.push > 0;
+          const cardDead = tally.miss > 0;
+          const cardCleared = !cardDead && tally.hit === c.legs.length;
+
           return (
             <button
               key={c.label}
@@ -886,6 +997,29 @@ function BestPicksRail({
                 </div>
                 <span className="best-pick-size">{c.legs.length}-leg</span>
               </div>
+              {anyLive && (
+                <div
+                  style={{
+                    margin: '0 16px 8px',
+                    padding: '6px 10px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    background: cardCleared ? 'rgba(102, 187, 106, 0.16)' : cardDead ? 'rgba(239, 83, 80, 0.16)' : 'rgba(122, 162, 255, 0.12)',
+                    color: cardCleared ? '#66bb6a' : cardDead ? '#ef5350' : '#7aa2ff',
+                    display: 'flex',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    textAlign: 'left',
+                  }}
+                  title="Live grading — each leg checked against current ESPN box score. ANY miss kills the whole parlay."
+                >
+                  {cardCleared && <span>✓ ALL {c.legs.length} HIT — CARD CLEARED</span>}
+                  {cardDead && <span>✗ {tally.miss} LEG{tally.miss === 1 ? '' : 'S'} DEAD</span>}
+                  {!cardCleared && !cardDead && <span>● {tally.hit}/{c.legs.length} HIT · {tally.progress} LIVE</span>}
+                </div>
+              )}
               <div
                 className="best-pick-pct"
                 title={`Adjusted combined hit %. Multiplies each leg's probability and applies a correlation penalty (${c.correlationRisk} risk this card). Raw uncorrected: ${c.rawCombinedHit.toFixed(1)}%.`}
@@ -982,7 +1116,9 @@ function BestPicksRail({
                 </div>
               )}
               <div className="best-pick-legs">
-                {c.legs.map((l, i) => (
+                {c.legs.map((l, i) => {
+                  const live = grades[i];
+                  return (
                   <div key={i} className="best-pick-leg-block">
                     <div className="best-pick-leg">
                       <span className="best-pick-leg-name">{l.playerName}</span>
@@ -1010,7 +1146,7 @@ function BestPicksRail({
                         how mispriced this leg is vs implied. Category
                         labels Safe Core / Value / Ceiling / Contrarian.
                         Trap badge only appears for High/Extreme tiers. */}
-                    {(l.edgePercent !== undefined || l.category) && (
+                    {(l.edgePercent !== undefined || l.category || live.grade !== 'PENDING') && (
                       <div className="best-pick-leg-evbar">
                         {l.edgePercent !== undefined && (
                           <span
@@ -1033,6 +1169,24 @@ function BestPicksRail({
                             ⚠ {l.trapTier}
                           </span>
                         )}
+                        {live.grade !== 'PENDING' && (
+                          <span
+                            style={{
+                              marginLeft: 'auto',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              color:
+                                live.grade === 'HIT' ? '#66bb6a'
+                                : live.grade === 'MISS' ? '#ef5350'
+                                : live.grade === 'PUSH' ? '#ffb74d'
+                                : '#7aa2ff',
+                            }}
+                            title={live.current !== null ? `Current: ${live.current}` : 'Game not started'}
+                          >
+                            {live.grade}{live.current !== null ? ` · ${live.current}` : ''}
+                          </span>
+                        )}
                       </div>
                     )}
                     {/* Wild Card legs surface their historical evidence
@@ -1052,7 +1206,8 @@ function BestPicksRail({
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               {c.warnings.length > 0 && (
                 <div className="best-pick-warnings">
