@@ -302,6 +302,363 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ---------- Today's games + probable pitchers ----------
+
+export type MlbProbablePitcher = {
+  id: number;
+  fullName: string;
+  // Season stats embedded via hydrate. All optional — pitcher may
+  // not have stats yet (rookie, just promoted, etc.).
+  era: number | null;
+  wins: number | null;
+  losses: number | null;
+  inningsPitched: number | null;
+  strikeouts: number | null;
+  walks: number | null;
+  whip: number | null;
+  hitsAllowed: number | null;
+  homeRunsAllowed: number | null;
+  earnedRuns: number | null;
+  battersFaced: number | null;
+};
+
+export type MlbTodayGame = {
+  gamePk: number;
+  gameDate: string;                 // ISO datetime
+  officialDate: string;             // YYYY-MM-DD
+  status: {
+    abstractGameState: string;       // 'Preview' | 'Live' | 'Final'
+    detailedState: string;           // human label
+    inProgress: boolean;
+  };
+  home: {
+    id: number;
+    abbreviation: string;
+    name: string;
+    score: number | null;
+    record: string | null;            // "12-8"
+  };
+  away: {
+    id: number;
+    abbreviation: string;
+    name: string;
+    score: number | null;
+    record: string | null;
+  };
+  venue: string | null;
+  probablePitchers: {
+    home: MlbProbablePitcher | null;
+    away: MlbProbablePitcher | null;
+  };
+};
+
+// Raw shape from `/schedule?sportId=1&date=&hydrate=probablePitcher,team,linescore`.
+// hydrate=probablePitcher(stats(group=[pitching],type=[season])) gives
+// us season ERA / W-L / etc. inline. Single API call per slate day.
+type RawScheduleResponse = {
+  dates: Array<{
+    games: RawScheduleGame[];
+  }>;
+};
+
+type RawScheduleGame = {
+  gamePk: number;
+  gameDate: string;
+  officialDate: string;
+  status: {
+    abstractGameState?: string;
+    detailedState?: string;
+    inProgress?: boolean;
+  };
+  teams: {
+    home: RawScheduleTeam;
+    away: RawScheduleTeam;
+  };
+  venue?: { name?: string };
+};
+
+type RawScheduleTeam = {
+  team: {
+    id: number;
+    abbreviation?: string;
+    name?: string;
+  };
+  score?: number;
+  leagueRecord?: { wins?: number; losses?: number };
+  probablePitcher?: RawProbablePitcher;
+};
+
+type RawProbablePitcher = {
+  id: number;
+  fullName: string;
+  // When hydrated with stats, MLB returns a `stats` array with a
+  // single season-pitching split. Field names are camelCase numerics
+  // typed as either number or string (pg-style).
+  stats?: Array<{
+    type?: { displayName?: string };
+    group?: { displayName?: string };
+    splits?: Array<{
+      stat?: Record<string, unknown>;
+    }>;
+  }>;
+};
+
+// Coercers for the probable-pitcher hydrate (separate from the
+// gameLog asInt/asString above which return number|undefined).
+// These return null on failure so they fit the `number | null`
+// fields on MlbProbablePitcher cleanly.
+function asIntOrNull(v: unknown): number | null {
+  if (typeof v === 'number') return Math.round(v);
+  if (typeof v === 'string' && v !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n) : null;
+  }
+  return null;
+}
+
+function asNumberOrNull(v: unknown): number | null {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string' && v !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+// Pull the season pitching split from the probable-pitcher stats
+// payload. The hydrate returns multiple stat groups (career, season,
+// etc) — we want type=season + group=pitching.
+function extractProbablePitcher(p: RawProbablePitcher | undefined): MlbProbablePitcher | null {
+  if (!p) return null;
+  const seasonSplit = p.stats?.find((s) =>
+    (s.type?.displayName ?? '').toLowerCase().includes('season')
+    && (s.group?.displayName ?? '').toLowerCase().includes('pitching'),
+  )?.splits?.[0]?.stat;
+  return {
+    id: p.id,
+    fullName: p.fullName,
+    era: seasonSplit ? asNumberOrNull(seasonSplit.era) : null,
+    wins: seasonSplit ? asIntOrNull(seasonSplit.wins) : null,
+    losses: seasonSplit ? asIntOrNull(seasonSplit.losses) : null,
+    inningsPitched: seasonSplit ? asNumberOrNull(inningsPitchedToNumeric(String(seasonSplit.inningsPitched ?? '0'))) : null,
+    strikeouts: seasonSplit ? asIntOrNull(seasonSplit.strikeOuts) : null,
+    walks: seasonSplit ? asIntOrNull(seasonSplit.baseOnBalls) : null,
+    whip: seasonSplit ? asNumberOrNull(seasonSplit.whip) : null,
+    hitsAllowed: seasonSplit ? asIntOrNull(seasonSplit.hits) : null,
+    homeRunsAllowed: seasonSplit ? asIntOrNull(seasonSplit.homeRuns) : null,
+    earnedRuns: seasonSplit ? asIntOrNull(seasonSplit.earnedRuns) : null,
+    battersFaced: seasonSplit ? asIntOrNull(seasonSplit.battersFaced) : null,
+  };
+}
+
+function buildRecord(t: RawScheduleTeam): string | null {
+  const w = t.leagueRecord?.wins;
+  const l = t.leagueRecord?.losses;
+  if (w === undefined || l === undefined) return null;
+  return `${w}-${l}`;
+}
+
+// Get every game on a given date (defaults to today). Hydrates
+// probable pitchers AND their season stats in a single API call.
+// Used by the "Tonight's MLB games" rail and (in a future slice)
+// the slate auto-publish path.
+export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> {
+  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team,linescore';
+  const data = await fetchJson<RawScheduleResponse>(
+    `/schedule?sportId=${SPORT_ID}&date=${targetDate}&hydrate=${encodeURIComponent(hydrate)}`,
+  );
+  const dates = data.dates ?? [];
+  const games = dates.flatMap((d) => d.games ?? []);
+  return games.map((g): MlbTodayGame => ({
+    gamePk: g.gamePk,
+    gameDate: g.gameDate,
+    officialDate: g.officialDate,
+    status: {
+      abstractGameState: g.status?.abstractGameState ?? 'Unknown',
+      detailedState: g.status?.detailedState ?? 'Unknown',
+      inProgress: Boolean(g.status?.inProgress),
+    },
+    home: {
+      id: g.teams.home.team.id,
+      abbreviation: g.teams.home.team.abbreviation ?? '?',
+      name: g.teams.home.team.name ?? '',
+      score: g.teams.home.score ?? null,
+      record: buildRecord(g.teams.home),
+    },
+    away: {
+      id: g.teams.away.team.id,
+      abbreviation: g.teams.away.team.abbreviation ?? '?',
+      name: g.teams.away.team.name ?? '',
+      score: g.teams.away.score ?? null,
+      record: buildRecord(g.teams.away),
+    },
+    venue: g.venue?.name ?? null,
+    probablePitchers: {
+      home: extractProbablePitcher(g.teams.home.probablePitcher),
+      away: extractProbablePitcher(g.teams.away.probablePitcher),
+    },
+  }));
+}
+
+// ---------- Per-pitcher season stats (ad-hoc) ----------
+
+// Pull a single pitcher's season-pitching stats. Useful when a
+// probable-pitcher entry didn't have stats hydrated (rare) or when
+// the slate engine wants opposing-pitcher context for projection
+// adjustments. One call to /people/{id}/stats with season group.
+export async function getPitcherSeasonStats(
+  playerId: number,
+  season?: number,
+): Promise<MlbProbablePitcher | null> {
+  const seasonValue = season ?? new Date().getUTCFullYear();
+  const data = await fetchJson<{
+    stats?: Array<{
+      type?: { displayName?: string };
+      group?: { displayName?: string };
+      splits?: Array<{ stat?: Record<string, unknown> }>;
+    }>;
+    people?: Array<{ fullName?: string }>;
+  }>(
+    `/people/${playerId}/stats?stats=season&group=pitching&season=${seasonValue}`,
+  );
+  const seasonSplit = data.stats?.[0]?.splits?.[0]?.stat;
+  if (!seasonSplit) return null;
+  // We don't have the player's name from this endpoint — return id +
+  // stats; caller can resolve name from mlb_players if needed.
+  return {
+    id: playerId,
+    fullName: '',     // caller fills in
+    era: asNumberOrNull(seasonSplit.era),
+    wins: asIntOrNull(seasonSplit.wins),
+    losses: asIntOrNull(seasonSplit.losses),
+    inningsPitched: asNumberOrNull(inningsPitchedToNumeric(String(seasonSplit.inningsPitched ?? '0'))),
+    strikeouts: asIntOrNull(seasonSplit.strikeOuts),
+    walks: asIntOrNull(seasonSplit.baseOnBalls),
+    whip: asNumberOrNull(seasonSplit.whip),
+    hitsAllowed: asIntOrNull(seasonSplit.hits),
+    homeRunsAllowed: asIntOrNull(seasonSplit.homeRuns),
+    earnedRuns: asIntOrNull(seasonSplit.earnedRuns),
+    battersFaced: asIntOrNull(seasonSplit.battersFaced),
+  };
+}
+
+// ---------- ESPN moneyline odds (public scoreboard JSON) ----------
+
+// ESPN's MLB scoreboard exposes per-game moneyline odds when the
+// market is up (DraftKings is the default provider). Same public
+// endpoint we already use for NBA — no scraping, no API key.
+//
+// Mission framing: we ingest odds as an INSTITUTIONAL signal
+// (implied win probability for game-script context), not as a
+// betting recommendation. The frontend renders the implied prob
+// with the raw odds on hover.
+
+const ESPN_MLB_BASE = 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb';
+
+export type EspnMlbOdds = {
+  // Raw moneyline odds — American format. Negative = favorite (e.g.
+  // -136 means bet $136 to win $100). Positive = underdog (+113 means
+  // bet $100 to win $113).
+  homeMl: number | null;
+  awayMl: number | null;
+  // Implied win probability (0-100) derived from ML odds. Standard
+  // moneyline formula. Reflects sportsbook consensus, not our model.
+  homeImpliedWinProb: number | null;
+  awayImpliedWinProb: number | null;
+  provider: string | null;            // "DraftKings" usually
+};
+
+type RawEspnEvent = {
+  id: string;
+  competitions?: Array<{
+    competitors?: Array<{
+      homeAway?: 'home' | 'away';
+      team?: { abbreviation?: string };
+    }>;
+    odds?: Array<{
+      provider?: { name?: string };
+      homeTeamOdds?: { moneyLine?: number };
+      awayTeamOdds?: { moneyLine?: number };
+      details?: string;
+    }>;
+  }>;
+  // Cross-reference to MLB Stats API gamePk via the score-link.
+  // ESPN doesn't ship gamePk directly but the abbreviations + date
+  // are enough to match against the MLB Stats response.
+};
+
+// Convert American moneyline odds → implied win probability (0-100).
+// Standard formula: positive odds → 100 / (odds + 100); negative
+// odds → -odds / (-odds + 100). Returns null when odds aren't set.
+export function moneylineToImpliedProb(odds: number | null): number | null {
+  if (odds === null || !Number.isFinite(odds)) return null;
+  if (odds > 0) return Math.round((100 / (odds + 100)) * 1000) / 10;
+  if (odds < 0) return Math.round((-odds / (-odds + 100)) * 1000) / 10;
+  return null;
+}
+
+// Pull ESPN's MLB scoreboard for the given date. Returns a map keyed
+// by `${homeAbbr}-${awayAbbr}` so the caller can merge by team match
+// (we don't have gamePk in ESPN's response). Keyless when odds are
+// missing for a game (early-week, market not yet open, etc).
+export async function getEspnMlbOddsByMatchup(
+  date?: string,
+): Promise<Map<string, EspnMlbOdds>> {
+  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  // ESPN expects YYYYMMDD without dashes for the dates query.
+  const compactDate = targetDate.replace(/-/g, '');
+  const url = `${ESPN_MLB_BASE}/scoreboard?dates=${compactDate}`;
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) return new Map();        // graceful fallback
+    const data = (await res.json()) as { events?: RawEspnEvent[] };
+    const result = new Map<string, EspnMlbOdds>();
+    for (const event of data.events ?? []) {
+      const comp = event.competitions?.[0];
+      if (!comp) continue;
+      const home = comp.competitors?.find((c) => c.homeAway === 'home');
+      const away = comp.competitors?.find((c) => c.homeAway === 'away');
+      const homeAbbr = home?.team?.abbreviation;
+      const awayAbbr = away?.team?.abbreviation;
+      if (!homeAbbr || !awayAbbr) continue;
+      const odds = comp.odds?.[0];
+      const homeMl = typeof odds?.homeTeamOdds?.moneyLine === 'number'
+        ? odds.homeTeamOdds.moneyLine
+        : null;
+      const awayMl = typeof odds?.awayTeamOdds?.moneyLine === 'number'
+        ? odds.awayTeamOdds.moneyLine
+        : null;
+      result.set(`${homeAbbr}-${awayAbbr}`, {
+        homeMl,
+        awayMl,
+        homeImpliedWinProb: moneylineToImpliedProb(homeMl),
+        awayImpliedWinProb: moneylineToImpliedProb(awayMl),
+        provider: odds?.provider?.name ?? null,
+      });
+    }
+    return result;
+  } catch {
+    return new Map();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Re-export internals so the test file can probe the parser
+// without going through the network.
+export const _mlbInternals = {
+  extractProbablePitcher,
+  moneylineToImpliedProb,
+  asIntOrNull,
+  asNumberOrNull,
+};
+
 // Days in a calendar month (1-indexed: 1=Jan...12=Dec). Leap-year
 // aware. Critical for the schedule sync — passing "2026-04-31" to
 // the MLB API silently drops the request, so we walk month-by-month

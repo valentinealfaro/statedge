@@ -1555,6 +1555,70 @@ export type MlbCalibrationReport = {
 };
 
 // =============================================================
+// MLB Today — tonight's games + probable pitchers + ML odds.
+// Mission-aligned framing: odds surfaced as implied win probability,
+// not as betting recommendations.
+// =============================================================
+
+export type MlbProbablePitcher = {
+  id: number;
+  fullName: string;
+  era: number | null;
+  wins: number | null;
+  losses: number | null;
+  inningsPitched: number | null;
+  strikeouts: number | null;
+  walks: number | null;
+  whip: number | null;
+  hitsAllowed: number | null;
+  homeRunsAllowed: number | null;
+  earnedRuns: number | null;
+  battersFaced: number | null;
+};
+
+export type MlbTodayOdds = {
+  homeMl: number | null;
+  awayMl: number | null;
+  homeImpliedWinProb: number | null;
+  awayImpliedWinProb: number | null;
+  provider: string | null;
+};
+
+export type MlbTodayGame = {
+  gamePk: number;
+  gameDate: string;
+  officialDate: string;
+  status: {
+    abstractGameState: string;
+    detailedState: string;
+    inProgress: boolean;
+  };
+  home: { id: number; abbreviation: string; name: string; score: number | null; record: string | null };
+  away: { id: number; abbreviation: string; name: string; score: number | null; record: string | null };
+  venue: string | null;
+  probablePitchers: {
+    home: MlbProbablePitcher | null;
+    away: MlbProbablePitcher | null;
+  };
+  odds: MlbTodayOdds | null;
+};
+
+export type MlbTodayResponse = {
+  date: string;
+  games: MlbTodayGame[];
+  disclaimer: string;
+};
+
+export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
+  const url = date
+    ? `${API_BASE}/api/mlb/today?date=${date}`
+    : `${API_BASE}/api/mlb/today`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as MlbTodayResponse;
+}
+
+// =============================================================
 // MLB standings — institutional team rollup with run diff, bullpen
 // ERA, park-adjusted run rate, splits, last-10.
 // =============================================================

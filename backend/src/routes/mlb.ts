@@ -5,7 +5,13 @@
 
 import { Router } from 'express';
 import { getPool, isDbConfigured } from '../db.js';
-import { MLB_DISCLAIMER } from '../mlb/client.js';
+import {
+  getEspnMlbOddsByMatchup,
+  getTodaysMlbGames,
+  MLB_DISCLAIMER,
+  type MlbTodayGame,
+  type EspnMlbOdds,
+} from '../mlb/client.js';
 import {
   ensureMlbTables,
   getMlbCounts,
@@ -477,5 +483,60 @@ mlbRouter.get('/calibration', async (req, res) => {
   } catch (err) {
     console.error('mlb/calibration failed', err);
     res.status(500).json({ error: 'mlb calibration fetch failed' });
+  }
+});
+
+// GET /api/mlb/today?date=YYYY-MM-DD
+//
+// Tonight's MLB games with everything users see on ESPN's front page:
+//   - Home/away teams + records + scores + status
+//   - Probable starters + their season stats (W-L, ERA, IP, K/BB, WHIP)
+//   - Moneyline odds + implied win probability per side
+//   - Venue
+//
+// Two sources stitched together:
+//   1. statsapi.mlb.com — schedule + probable pitcher + season stats
+//      (rich pitcher data ESPN's page only shows summary of)
+//   2. ESPN public scoreboard — moneyline odds (DraftKings via ESPN's
+//      free public JSON; same source we already use for NBA games)
+//
+// Mission framing: ML odds rendered as IMPLIED WIN PROBABILITY, not
+// "betting odds." Reflects sportsbook consensus as a context signal
+// for game-script analysis, not as a betting recommendation.
+mlbRouter.get('/today', async (req, res) => {
+  const dateRaw = req.query.date as string | undefined;
+  const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)
+    ? dateRaw
+    : undefined;     // client falls back to today
+
+  try {
+    // Run both fetches in parallel — independent sources, no shared
+    // dependencies. ESPN failure is non-fatal (odds become null);
+    // MLB Stats API failure returns empty games[].
+    const [games, oddsByMatchup] = await Promise.all([
+      getTodaysMlbGames(date).catch((err) => {
+        console.warn('mlb/today MLB Stats API fetch failed:', (err as Error).message);
+        return [] as MlbTodayGame[];
+      }),
+      getEspnMlbOddsByMatchup(date).catch(() => new Map<string, EspnMlbOdds>()),
+    ]);
+
+    // Merge ESPN odds into each game's payload by matching team
+    // abbreviations (ESPN doesn't ship gamePk; abbreviation pair is
+    // unique per date). Odds field is null when unmatched.
+    const enriched = games.map((g) => {
+      const key = `${g.home.abbreviation}-${g.away.abbreviation}`;
+      const odds = oddsByMatchup.get(key) ?? null;
+      return { ...g, odds };
+    });
+
+    res.json({
+      date: date ?? new Date().toISOString().slice(0, 10),
+      games: enriched,
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/today failed', err);
+    res.status(500).json({ error: 'mlb today fetch failed' });
   }
 });

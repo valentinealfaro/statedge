@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import {
+  _mlbInternals,
   daysInMonth,
   inningsPitchedToNumeric,
   leagueCodeFromId,
   MLB_DISCLAIMER,
+  moneylineToImpliedProb,
 } from './client.js';
 
 describe('leagueCodeFromId', () => {
@@ -77,6 +79,110 @@ describe('daysInMonth', () => {
   });
   test('1900 century year is NOT a leap year (divisible by 100 but not 400)', () => {
     expect(daysInMonth(1900, 2)).toBe(28);
+  });
+});
+
+describe('moneylineToImpliedProb', () => {
+  test('Even line (-100 / +100) → 50%', () => {
+    expect(moneylineToImpliedProb(100)).toBe(50);
+    expect(moneylineToImpliedProb(-100)).toBe(50);
+  });
+
+  test('Heavy favorite (-200) → ~67%', () => {
+    expect(moneylineToImpliedProb(-200)).toBeCloseTo(66.7, 1);
+  });
+
+  test('Heavy underdog (+200) → ~33%', () => {
+    expect(moneylineToImpliedProb(200)).toBeCloseTo(33.3, 1);
+  });
+
+  test('ESPN example: HOU +113 ≈ 47%', () => {
+    // Matches the live ESPN data the user pointed at.
+    expect(moneylineToImpliedProb(113)).toBeCloseTo(46.9, 1);
+  });
+
+  test('ESPN example: CIN -136 ≈ 58%', () => {
+    expect(moneylineToImpliedProb(-136)).toBeCloseTo(57.6, 1);
+  });
+
+  test('null + zero return null (no fake probabilities)', () => {
+    expect(moneylineToImpliedProb(null)).toBeNull();
+    expect(moneylineToImpliedProb(0)).toBeNull();
+  });
+
+  test('Implied probabilities are inverse-symmetric: -X% + +X% > 100%', () => {
+    // The book's vig: implied prob for both sides sums to >100% in
+    // a real moneyline market. Sanity check that we're computing
+    // both sides honestly without juice removal.
+    const home = moneylineToImpliedProb(-136)!;
+    const away = moneylineToImpliedProb(113)!;
+    expect(home + away).toBeGreaterThan(100);
+    expect(home + away).toBeLessThan(108);     // sportsbook vig usually 4-7%
+  });
+});
+
+describe('extractProbablePitcher', () => {
+  test('Returns null when probable pitcher is undefined', () => {
+    expect(_mlbInternals.extractProbablePitcher(undefined)).toBeNull();
+  });
+
+  test('Pitcher with no stats returns id + name + null stats', () => {
+    const p = _mlbInternals.extractProbablePitcher({ id: 1, fullName: 'Jane Doe' });
+    expect(p?.id).toBe(1);
+    expect(p?.fullName).toBe('Jane Doe');
+    expect(p?.era).toBeNull();
+    expect(p?.wins).toBeNull();
+  });
+
+  test('Pitcher with hydrated season pitching stats returns numbers', () => {
+    const p = _mlbInternals.extractProbablePitcher({
+      id: 2,
+      fullName: 'Chris Sale',
+      stats: [
+        {
+          type: { displayName: 'season' },
+          group: { displayName: 'pitching' },
+          splits: [{
+            stat: {
+              era: '2.41',
+              wins: 6,
+              losses: 1,
+              inningsPitched: '52.0',
+              strikeOuts: 78,
+              baseOnBalls: 14,
+              whip: '0.92',
+              hits: 38,
+              homeRuns: 4,
+              earnedRuns: 14,
+              battersFaced: 200,
+            },
+          }],
+        },
+      ],
+    });
+    expect(p?.era).toBeCloseTo(2.41, 2);
+    expect(p?.wins).toBe(6);
+    expect(p?.losses).toBe(1);
+    expect(p?.strikeouts).toBe(78);
+    expect(p?.walks).toBe(14);
+    expect(p?.whip).toBeCloseTo(0.92, 2);
+    expect(p?.inningsPitched).toBe(52);
+  });
+
+  test('Skips wrong stat group (career, not season)', () => {
+    const p = _mlbInternals.extractProbablePitcher({
+      id: 3,
+      fullName: 'Career Only',
+      stats: [
+        {
+          type: { displayName: 'career' },
+          group: { displayName: 'pitching' },
+          splits: [{ stat: { era: '3.50', wins: 100 } }],
+        },
+      ],
+    });
+    expect(p?.era).toBeNull();
+    expect(p?.wins).toBeNull();
   });
 });
 

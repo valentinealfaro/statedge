@@ -19,6 +19,7 @@ import {
   type MlbSearchPlayer,
   type MlbStatMeta,
 } from './api';
+import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -158,6 +159,7 @@ export function MlbCompare() {
     <div className="app">
       <NavBar />
       <div className="mlb-compare-shell">
+        <MlbTodaysGames />
         <h1>MLB · Player Last 10</h1>
         <p className="muted small">
           Search a player, pick a stat, optionally enter a line. Returns
