@@ -507,12 +507,17 @@ mlbRouter.post('/slate/today', async (req, res) => {
     });
     return;
   }
-  // Same 500-line cap as the build endpoint.
-  if (parsedLines.length > 500) {
+  // Cap matches the build endpoint. 4000 covers PrizePicks's full MLB
+  // slate (~3000-3500 real MLB props on a 15-game night, counting
+  // every stat type × Demon/Goblin variant per player). POST is fast
+  // — just resolves player IDs and persists raw lines; projection
+  // happens lazily on GET, so this cap doesn't impact serverless
+  // timeout.
+  if (parsedLines.length > 4000) {
     res.status(413).json({
-      error: `Slate too large: ${parsedLines.length} lines, max 500.`,
+      error: `Slate too large: ${parsedLines.length} lines, max 4000.`,
       received: parsedLines.length,
-      maxLines: 500,
+      maxLines: 4000,
     });
     return;
   }
@@ -616,16 +621,14 @@ mlbRouter.post('/slate', async (req, res) => {
     });
     return;
   }
-  // Hard cap on slate size. Each leg does ~4-5 sequential DB queries
-  // (player lookup + projection + last10 + season/opponent averages)
-  // which adds up past Vercel's serverless timeout on big pastes.
-  // PrizePicks rarely posts more than ~500 MLB lines on a single
-  // night — anything well above that is usually duplicates or cross-
-  // sport pollution. Surface a clean error rather than time out.
-  const MLB_SLATE_MAX_LINES = 500;
+  // Hard cap on slate size. resolveMlbSlate now runs projections in
+  // parallel batches (~30 concurrent), so 3000-leg slates fit within
+  // Vercel Pro's serverless timeout. 4000 is the absolute ceiling —
+  // covers the largest realistic PrizePicks MLB board.
+  const MLB_SLATE_MAX_LINES = 4000;
   if (resolvedLines.length > MLB_SLATE_MAX_LINES) {
     res.status(413).json({
-      error: `Slate too large: ${resolvedLines.length} lines received, max ${MLB_SLATE_MAX_LINES}. Trim to MLB-only and dedupe — PrizePicks rarely posts more than ~500 MLB props in a night.`,
+      error: `Slate too large: ${resolvedLines.length} lines received, max ${MLB_SLATE_MAX_LINES}.`,
       received: resolvedLines.length,
       maxLines: MLB_SLATE_MAX_LINES,
     });

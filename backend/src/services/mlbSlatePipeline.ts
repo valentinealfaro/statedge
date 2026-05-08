@@ -123,92 +123,118 @@ export type MlbSlateResolveResult = {
 
 // ---------- Pipeline ----------
 
-// Resolve a list of raw lines into projected legs. Runs sequentially
-// (not in parallel) to keep MLB API rate-limit pressure low when
-// gamePk is provided — every gamePk triggers schedule + boxscore
-// fetches. For 20-30 lines per slate this is fine; we can shard
-// later if it becomes a bottleneck.
+// Resolve a list of raw lines into projected legs. Runs in PARALLEL
+// batches because real MLB slates can hit 3000+ legs (PrizePicks's
+// full board — every stat type × Demon/Goblin variant per player).
+// Sequential mode timed out the serverless function past ~250 legs.
+//
+// Batch size 30 = ~30 concurrent DB queries. Neon handles this
+// comfortably at the connection-pool level. With ~250ms per leg
+// sequentially, 3000 legs at concurrency=30 = ~25 seconds wall time
+// instead of 12 minutes. Still well under Vercel Pro's 60-300s
+// function timeout.
+//
+// Order is preserved: each batch processes in input order, and
+// unresolved lines are concatenated in the order they failed.
+const RESOLVE_BATCH_SIZE = 30;
+
 export async function resolveMlbSlate(
   raws: RawMlbLine[],
 ): Promise<MlbSlateResolveResult> {
   const lines: ResolvedMlbLine[] = [];
   const unresolved: UnresolvedMlbLine[] = [];
 
-  for (const raw of raws) {
-    try {
-      const player = await loadPlayer(raw.playerId);
-      if (!player) {
-        unresolved.push({ raw, reason: `Player ${raw.playerId} not found in mlb_players.` });
-        continue;
+  for (let i = 0; i < raws.length; i += RESOLVE_BATCH_SIZE) {
+    const chunk = raws.slice(i, i + RESOLVE_BATCH_SIZE);
+    const settled = await Promise.allSettled(
+      chunk.map((raw) => resolveOneLine(raw)),
+    );
+    for (let j = 0; j < settled.length; j += 1) {
+      const r = settled[j]!;
+      const raw = chunk[j]!;
+      if (r.status === 'fulfilled') {
+        if (r.value.kind === 'resolved') lines.push(r.value.line);
+        else unresolved.push({ raw, reason: r.value.reason });
+      } else {
+        unresolved.push({
+          raw,
+          reason: (r.reason as Error)?.message ?? 'Unknown error',
+        });
       }
-      // Determine model direction. If the line is Demon-restricted
-      // ('over' bookable side), we MUST pick OVER. Goblin → UNDER.
-      // Standard ('both') → let the projection lean decide; we run
-      // the engine on OVER first, then check probability to pick the
-      // direction with edge.
-      const bookable = raw.direction ?? 'both';
-      const modelDirection: 'OVER' | 'UNDER' =
-        bookable === 'over' ? 'OVER'
-        : bookable === 'under' ? 'UNDER'
-        : await pickBetterDirection(raw, player.isPitcher);
+    }
+  }
 
-      const projection = await projectMlbStat({
-        playerId: raw.playerId,
-        statKey: raw.statKey,
-        line: raw.line,
-        direction: modelDirection,
-        opponentTeamId: raw.opponentTeamId,
-        isHome: raw.isHome,
-        gamePk: raw.gamePk,
-        opposingPitcherId: raw.opposingPitcherId,
-      });
+  return { lines, unresolved };
+}
 
-      // Capture the L10 + opponent + season averages so the Wild Card
-      // builder can classify tiers without re-running projections. The
-      // projection engine already pulled these but doesn't expose them
-      // — re-fetching is cheap (same DB rows, two small queries).
-      const last10 = await computeMlbLast10({
-        playerId: raw.playerId,
-        statKey: raw.statKey,
-        line: raw.line,
-        direction: modelDirection,
-      }).catch(() => null);
-      const seasonAndOpp = await loadSeasonAndOpponentAverages(
-        raw.playerId,
-        raw.statKey,
-        raw.opponentTeamId,
-      );
-      const parkMultiplier = projection.contextAdjustments.park;
-      const signals = buildSignals({
-        last10,
-        // Pull season from the projection result — it already queried
-        // and computed it. Fallback to slate-pipeline's coarse path
-        // (currently null) for redundancy.
-        seasonAverage: projection.seasonAverage ?? seasonAndOpp.seasonAverage,
-        seasonGames: projection.seasonGames,
-        opponentAverage: seasonAndOpp.opponentAverage,
-        opponentGames: seasonAndOpp.opponentGames,
-        lineupSpot: null,                 // surfaced later via gameContext if needed
-        parkMultiplier,
-        venueName: null,
-        // Momentum is computed inside computeMlbProjection (Layer 2 of
-        // the intelligence engine spec) — pipeline just reads it.
-        momentumExpansionScore: projection.momentumExpansionScore,
-      });
+// Per-line resolution extracted from the original sequential loop so
+// we can map+await many at once. Returns a discriminated union so
+// the batch caller can route to lines or unresolved without throwing.
+async function resolveOneLine(
+  raw: RawMlbLine,
+): Promise<
+  | { kind: 'resolved'; line: ResolvedMlbLine }
+  | { kind: 'unresolved'; reason: string }
+> {
+  try {
+    const player = await loadPlayer(raw.playerId);
+    if (!player) {
+      return { kind: 'unresolved', reason: `Player ${raw.playerId} not found in mlb_players.` };
+    }
+    // Determine model direction. If the line is Demon-restricted
+    // ('over' bookable side), we MUST pick OVER. Goblin → UNDER.
+    // Standard ('both') → let the projection lean decide.
+    const bookable = raw.direction ?? 'both';
+    const modelDirection: 'OVER' | 'UNDER' =
+      bookable === 'over' ? 'OVER'
+      : bookable === 'under' ? 'UNDER'
+      : await pickBetterDirection(raw, player.isPitcher);
 
-      // Build gameKey for correlation detection. gamePk is the
-      // strongest signal (every leg from gamePk=746234 belongs to
-      // the same game). When gamePk is missing, fall back to a
-      // sorted team-opp pair so two Yankees-Red Sox legs collide
-      // even without gamePks.
-      const gameKey =
-        raw.gamePk !== undefined
-          ? `gpk:${raw.gamePk}`
-          : (player.teamId !== null && raw.opponentTeamId !== undefined
-              ? [player.teamId, raw.opponentTeamId].sort((a, b) => a - b).join('-')
-              : null);
+    const projection = await projectMlbStat({
+      playerId: raw.playerId,
+      statKey: raw.statKey,
+      line: raw.line,
+      direction: modelDirection,
+      opponentTeamId: raw.opponentTeamId,
+      isHome: raw.isHome,
+      gamePk: raw.gamePk,
+      opposingPitcherId: raw.opposingPitcherId,
+    });
 
-      lines.push({
+    const last10 = await computeMlbLast10({
+      playerId: raw.playerId,
+      statKey: raw.statKey,
+      line: raw.line,
+      direction: modelDirection,
+    }).catch(() => null);
+    const seasonAndOpp = await loadSeasonAndOpponentAverages(
+      raw.playerId,
+      raw.statKey,
+      raw.opponentTeamId,
+    );
+    const parkMultiplier = projection.contextAdjustments.park;
+    const signals = buildSignals({
+      last10,
+      seasonAverage: projection.seasonAverage ?? seasonAndOpp.seasonAverage,
+      seasonGames: projection.seasonGames,
+      opponentAverage: seasonAndOpp.opponentAverage,
+      opponentGames: seasonAndOpp.opponentGames,
+      lineupSpot: null,
+      parkMultiplier,
+      venueName: null,
+      momentumExpansionScore: projection.momentumExpansionScore,
+    });
+
+    const gameKey =
+      raw.gamePk !== undefined
+        ? `gpk:${raw.gamePk}`
+        : (player.teamId !== null && raw.opponentTeamId !== undefined
+            ? [player.teamId, raw.opponentTeamId].sort((a, b) => a - b).join('-')
+            : null);
+
+    return {
+      kind: 'resolved',
+      line: {
         playerId: raw.playerId,
         playerName: player.fullName,
         position: player.position,
@@ -223,17 +249,12 @@ export async function resolveMlbSlate(
         signals,
         gameKey,
         gamePk: raw.gamePk ?? null,
-        venueName: null,                  // populated in a future slice
-      });
-    } catch (err) {
-      unresolved.push({
-        raw,
-        reason: (err as Error).message ?? 'Unknown error',
-      });
-    }
+        venueName: null,
+      },
+    };
+  } catch (err) {
+    return { kind: 'unresolved', reason: (err as Error).message ?? 'Unknown error' };
   }
-
-  return { lines, unresolved };
 }
 
 // Pick the direction with the higher model probability. We run a
