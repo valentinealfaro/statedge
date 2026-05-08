@@ -1,0 +1,87 @@
+name: Sync MLB data to Neon
+
+# Runs the MLB sync scripts (teams → players → games + game logs)
+# against statsapi.mlb.com from GitHub's runners. Unlike stats.nba.com,
+# this API is public/free and not IP-blocked, so the schedule below
+# is enabled (vs the NBA workflow which is manual-only).
+#
+# Daily at 07:00 UTC (~03:00 ET) — after MLB games have finalized but
+# before users are awake. Manual dispatch is also available so we can
+# seed the DB on first install or backfill after schema changes.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+
+  workflow_dispatch:
+    inputs:
+      skip_players:
+        description: "Skip player sync (only games + game logs)"
+        type: boolean
+        default: false
+      games_limit:
+        description: "Cap player game-log sweep at N players (testing)"
+        type: string
+        default: ""
+
+# Don't race two MLB syncs against each other — queue manual runs
+# behind any in-flight scheduled run.
+concurrency:
+  group: mlb-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync MLB teams + players + games
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        # Root install covers the backend workspace.
+        run: npm ci
+
+      - name: Sanity-check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set on this repo."
+            echo "Add it at Settings → Secrets and variables → Actions → New repository secret."
+            exit 1
+          fi
+          echo "Connecting to host: $(echo "$DATABASE_URL" | sed -E 's|.*@([^/?]+).*|\1|')"
+
+      # Order matters — players reference teams, stats reference games.
+      # Each step is idempotent (ON CONFLICT DO UPDATE), so re-runs are
+      # safe.
+      - name: Sync MLB teams
+        working-directory: backend
+        run: npm run mlb:sync-teams
+
+      - name: Sync MLB players
+        if: ${{ inputs.skip_players != 'true' }}
+        working-directory: backend
+        run: npm run mlb:sync-players
+
+      - name: Sync MLB games + per-player game logs
+        working-directory: backend
+        run: |
+          if [ -n "${{ inputs.games_limit }}" ]; then
+            npm run mlb:sync-games -- --limit ${{ inputs.games_limit }}
+          else
+            npm run mlb:sync-games
+          fi
+
+      - name: Done
+        run: echo "MLB sync complete. /api/mlb/health should now report ready=true."

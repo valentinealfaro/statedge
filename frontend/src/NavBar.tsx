@@ -34,6 +34,7 @@ export function NavBar() {
           <>
             <Link to="/slate" className={active('/slate')}>Slate</Link>
             <Link to="/standings" className={active('/standings')}>Standings</Link>
+            <Link to="/mlb" className={active('/mlb')}>MLB</Link>
           </>
         ) : (
           <Link to="/pricing" className={active('/pricing')}>Upgrade</Link>

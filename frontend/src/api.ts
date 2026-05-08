@@ -1200,6 +1200,125 @@ export async function getDataFreshness(): Promise<DataFreshness> {
   return (await res.json()) as DataFreshness;
 }
 
+// =============================================================
+// MLB — Phase 2 surface area: search players + last-10 distribution.
+// Projection / slate endpoints land in later phases. The disclaimer
+// is always returned alongside MLB analytics so the UI can render it
+// without bundling its own copy.
+// =============================================================
+
+export type MlbPlayerType = 'hitter' | 'pitcher';
+
+export type MlbStatMeta = {
+  key: string;
+  label: string;
+  playerType: MlbPlayerType;
+};
+
+export async function getMlbStats(type: MlbPlayerType): Promise<MlbStatMeta[]> {
+  const res = await fetch(`${API_BASE}/api/mlb/stats?type=${type}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { stats: MlbStatMeta[] };
+  return data.stats;
+}
+
+export type MlbSearchPlayer = {
+  id: number;
+  fullName: string;
+  position: string | null;
+  bats: 'L' | 'R' | 'S' | null;
+  throws: 'L' | 'R' | null;
+  playerType: MlbPlayerType;
+  team: { id: number; fullName: string | null; abbreviation: string | null } | null;
+};
+
+export async function searchMlbPlayers(query: string): Promise<MlbSearchPlayer[]> {
+  if (query.trim().length < 2) return [];
+  const res = await fetch(
+    `${API_BASE}/api/mlb/search/players?query=${encodeURIComponent(query)}`,
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { players: MlbSearchPlayer[] };
+  return data.players;
+}
+
+export type MlbLast10Game = {
+  gameId: number;
+  gameDate: string;
+  opponentTeamId: number | null;
+  isHome: boolean | null;
+  value: number;
+};
+
+export type MlbLast10Response = {
+  playerId: number;
+  statKey: string;
+  playerType: MlbPlayerType;
+  values: number[];
+  games: MlbLast10Game[];
+  sampleSize: number;
+  average: number;
+  median: number;
+  high: number;
+  low: number;
+  stddev: number;
+  last5Average: number | null;
+  last10Average: number;
+  trend: number | null;
+  consistencyScore: number;
+  riskScore: number;
+  hitRate?: {
+    line: number;
+    direction: 'OVER' | 'UNDER';
+    hits: number;
+    games: number;
+    rate: number;
+  };
+  disclaimer: string;
+};
+
+export async function getMlbPlayerLast10(opts: {
+  playerId: number;
+  stat: string;
+  line?: number;
+  direction?: 'OVER' | 'UNDER';
+}): Promise<MlbLast10Response> {
+  const params = new URLSearchParams({ stat: opts.stat });
+  if (opts.line !== undefined && opts.direction) {
+    params.set('line', String(opts.line));
+    params.set('direction', opts.direction);
+  }
+  const res = await fetch(
+    `${API_BASE}/api/mlb/player/${opts.playerId}/last-10?${params.toString()}`,
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      detail?: string;
+    };
+    throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbLast10Response;
+}
+
+export type MlbHealth = {
+  counts: {
+    teams: number;
+    players: number;
+    games: number;
+    hittingStats: number;
+    pitchingStats: number;
+  };
+  ready: boolean;
+  disclaimer: string;
+};
+
+export async function getMlbHealth(): Promise<MlbHealth> {
+  const res = await fetch(`${API_BASE}/api/mlb/health`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as MlbHealth;
+}
+
 export async function getAiSummary(payload: unknown): Promise<{ summary: string }> {
   const res = await fetch(`${API_BASE}/api/ai/summary`, {
     method: 'POST',
