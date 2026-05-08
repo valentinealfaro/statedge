@@ -81,8 +81,13 @@ export type MlbPlayer = {
   lastName?: string;
   primaryNumber?: string;
   primaryPosition?: { code: string; abbreviation: string };
-  batSide?: { code: 'L' | 'R' | 'S' };
-  pitchHand?: { code: 'L' | 'R' };
+  // batSide / pitchHand codes from the MLB API. 'L' / 'R' for left /
+  // right; 'S' for switch-hitters (and the rare switch-pitcher).
+  // Typed as `string` because the upstream sometimes ships codes
+  // outside this set — the upserter coerces unknowns to NULL rather
+  // than crashing on the CHECK constraint.
+  batSide?: { code: string };
+  pitchHand?: { code: string };
   active?: boolean;
   currentTeam?: { id: number };
 };

@@ -41,8 +41,10 @@ export async function ensureMlbTables(): Promise<void> {
       last_name    TEXT,
       full_name    TEXT NOT NULL,
       position     TEXT,
-      bats         TEXT CHECK (bats IN ('L', 'R', 'S')),
-      throws       TEXT CHECK (throws IN ('L', 'R')),
+      -- See migration block below; CHECK constraints below are the
+      -- post-migration shape so fresh DBs install with the right ones.
+      bats         TEXT CHECK (bats IS NULL OR bats IN ('L', 'R', 'S')),
+      throws       TEXT CHECK (throws IS NULL OR throws IN ('L', 'R', 'S')),
       is_active    BOOLEAN NOT NULL DEFAULT TRUE,
       is_pitcher   BOOLEAN GENERATED ALWAYS AS (position = 'P') STORED
     );
@@ -137,6 +139,27 @@ export async function ensureMlbTables(): Promise<void> {
     CREATE INDEX IF NOT EXISTS mlb_proj_history_date_idx   ON mlb_projection_history (game_date DESC);
     CREATE INDEX IF NOT EXISTS mlb_proj_history_player_idx ON mlb_projection_history (player_id);
   `);
+
+  // ---- Idempotent constraint migrations ----
+  // Older deploys created mlb_players with throws restricted to 'L'/'R'
+  // only and CHECKs that didn't allow NULL. Switch-throwers (Carlos
+  // Cortes / Pat Venditte) and unrecognized API codes both crashed the
+  // sync. Drop + re-add with the looser shape. Idempotent — drops only
+  // if the constraint exists, then ADDs the current shape every time.
+  // After the first run on any deploy, the prod Neon DB is fixed.
+  await pool.query(`
+    ALTER TABLE mlb_players
+      DROP CONSTRAINT IF EXISTS mlb_players_throws_check;
+    ALTER TABLE mlb_players
+      ADD CONSTRAINT mlb_players_throws_check
+      CHECK (throws IS NULL OR throws IN ('L', 'R', 'S'));
+    ALTER TABLE mlb_players
+      DROP CONSTRAINT IF EXISTS mlb_players_bats_check;
+    ALTER TABLE mlb_players
+      ADD CONSTRAINT mlb_players_bats_check
+      CHECK (bats IS NULL OR bats IN ('L', 'R', 'S'));
+  `);
+
   mlbTablesEnsured = true;
 }
 
@@ -213,6 +236,15 @@ export async function listMlbTeamsFromDb(): Promise<MlbTeamRow[]> {
 
 // ---------- Players ----------
 
+// MLB API ships handedness codes that aren't always in our enum
+// (e.g. occasional 'B', 'A', empty strings, or upstream typos).
+// Coerce anything not in {L, R, S} to NULL so the CHECK constraint
+// never crashes a sync. Defensive boundary: never trust upstream.
+function normalizeHandedness(code: string | undefined): 'L' | 'R' | 'S' | null {
+  if (code === 'L' || code === 'R' || code === 'S') return code;
+  return null;
+}
+
 export async function upsertMlbPlayers(players: MlbPlayer[]): Promise<number> {
   if (players.length === 0) return 0;
   await ensureMlbTables();
@@ -249,8 +281,8 @@ export async function upsertMlbPlayers(players: MlbPlayer[]): Promise<number> {
         p.lastName ?? null,
         p.fullName,
         p.primaryPosition?.abbreviation ?? null,
-        p.batSide?.code ?? null,
-        p.pitchHand?.code ?? null,
+        normalizeHandedness(p.batSide?.code),
+        normalizeHandedness(p.pitchHand?.code),
         p.active !== false,
       ],
     );

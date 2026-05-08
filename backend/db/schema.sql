@@ -159,8 +159,11 @@ CREATE TABLE IF NOT EXISTS mlb_players (
   last_name    TEXT,
   full_name    TEXT NOT NULL,
   position     TEXT,
-  bats         TEXT CHECK (bats IN ('L', 'R', 'S')),
-  throws       TEXT CHECK (throws IN ('L', 'R')),
+  -- bats / throws allow 'S' (switch) on both sides — switch-throwers
+  -- are rare but real (Carlos Cortes / Pat Venditte). Allow NULL too
+  -- in case the MLB API returns an unrecognized code we coerce away.
+  bats         TEXT CHECK (bats IS NULL OR bats IN ('L', 'R', 'S')),
+  throws       TEXT CHECK (throws IS NULL OR throws IN ('L', 'R', 'S')),
   is_active    BOOLEAN NOT NULL DEFAULT TRUE,
   -- Generated column so route handlers can query "give me pitchers"
   -- without recomputing — drives the type-restriction rule (pitchers
