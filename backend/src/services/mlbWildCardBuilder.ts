@@ -192,20 +192,92 @@ const SUBTITLES: Record<MlbWildCardKind, string> = {
 
 // ---------- Helpers ----------
 
-// Tier-internal ranker. Per the 2026-05-08 Wild Card philosophy memo,
-// momentumExpansionScore is the primary tiebreaker — projection
-// separation is the secondary. Same-distance legs that have momentum
-// up (or down for UNDER) outrank flat legs.
-function pickTopByMomentumThenDistance(
+// Wild Card score per the 2026-05-08 MLB Slate Engine spec.
+//
+//   wildCardScore =
+//     projectionGap * 0.25
+//     + momentumExpansion * 0.25
+//     + matchupLeverage * 0.15
+//     + marketLagScore * 0.15
+//     + upsidePotential * 0.10
+//     - trapScore * 0.10
+//
+// Replaces the prior projection-distance-only sort. Each component
+// is normalized 0..100; trap deducts. Result: legs are ranked by
+// "true Wild Card edge quality," not just raw separation.
+//
+// Phase 30 will add real marketLagScore values; for now it returns
+// 0 (passes through the formula as a neutral) until that layer ships.
+function computeWildCardScore(line: ResolvedMlbLine): number {
+  const p = line.projection;
+  const s = line.signals;
+  const projectionGap = p.projectionDistanceScore;        // 0..100
+  const momentumExpansion = s.momentumExpansionScore;     // 0..100
+  // Matchup leverage: opponent-vs-season delta scaled. ≥0.5 hits
+  // average → 100, ≤-0.5 → 0, scaled linearly. Direction-aware:
+  // OVER picks like +delta; UNDER picks like -delta.
+  const dir = line.modelDirection;
+  const opp = s.opponentVsSeasonDelta ?? 0;
+  const oppDirAdj = dir === 'OVER' ? opp : -opp;
+  const matchupLeverage = Math.max(0, Math.min(100, 50 + oppDirAdj * 100));
+  // Market lag: 0 until Phase 30 wires the real signal.
+  const marketLagScore = 0;
+  // Upside potential: derived from Monte Carlo P90 vs line. Scaled
+  // 0-100. When MC isn't available (degenerate stddev), fall back
+  // to projection separation as a coarse proxy.
+  let upsidePotential = projectionGap;
+  if (p.monteCarlo) {
+    const ceiling = dir === 'OVER' ? p.monteCarlo.percentiles.p90 : p.monteCarlo.percentiles.p10;
+    const room = dir === 'OVER' ? Math.max(0, ceiling - line.line) : Math.max(0, line.line - ceiling);
+    const denom = Math.max(0.5, Math.abs(line.line));
+    upsidePotential = Math.max(0, Math.min(100, (room / denom) * 100));
+  }
+  const trapScore = p.trapScore;
+  const score =
+    projectionGap * 0.25
+    + momentumExpansion * 0.25
+    + matchupLeverage * 0.15
+    + marketLagScore * 0.15
+    + upsidePotential * 0.10
+    - trapScore * 0.10;
+  return score;
+}
+
+// Recent-support gate per spec: a Wild Card pick can't be pure fantasy.
+// Require AT LEAST ONE OF:
+//   - 3+ hits at the line in L10 (real recent production)
+//   - 2+ contextual accelerators (lineup / weather / matchup / park /
+//     game-script all firing in the player's favor)
+function passesRecentSupportGate(line: ResolvedMlbLine): boolean {
+  const s = line.signals;
+  const p = line.projection;
+  const recentHits = s.last10HitCount ?? 0;
+  if (recentHits >= 3) return true;
+  let accelerators = 0;
+  // Direction-aware adjustments (>1.02 favors OVER, <0.98 favors UNDER).
+  const dir = line.modelDirection;
+  const dirHelps = (mult: number) =>
+    dir === 'OVER' ? mult > 1.02 : mult < 0.98;
+  if (dirHelps(p.contextAdjustments.weather)) accelerators += 1;
+  if (dirHelps(p.contextAdjustments.park)) accelerators += 1;
+  if (dirHelps(p.contextAdjustments.gameScript)) accelerators += 1;
+  if (dirHelps(p.contextAdjustments.lineup)) accelerators += 1;
+  if (dirHelps(p.contextAdjustments.bvp)) accelerators += 1;
+  // Strong matchup vs opponent (≥0.5 above season avg in player's
+  // direction) counts as one accelerator.
+  const opp = s.opponentVsSeasonDelta ?? 0;
+  const oppDirAdj = dir === 'OVER' ? opp : -opp;
+  if (oppDirAdj >= 0.5 && s.opponentGames >= 2) accelerators += 1;
+  return accelerators >= 2;
+}
+
+// Tier-internal ranker. Sorts by the new wildCardScore formula.
+function pickTopByWildCardScore(
   pool: ResolvedMlbLine[],
   n: number,
 ): ResolvedMlbLine[] {
   return [...pool]
-    .sort((a, b) => {
-      const dm = b.signals.momentumExpansionScore - a.signals.momentumExpansionScore;
-      if (Math.abs(dm) >= 5) return dm;
-      return b.projection.projectionDistanceScore - a.projection.projectionDistanceScore;
-    })
+    .sort((a, b) => computeWildCardScore(b) - computeWildCardScore(a))
     .slice(0, n);
 }
 
@@ -307,9 +379,13 @@ export function buildMlbWildCard(
   ];
 
   for (const tier of tiers) {
-    const tierPool = uniqueByPlayer(eligible.filter(tier.predicate));
+    const tierPool = uniqueByPlayer(
+      eligible
+        .filter(tier.predicate)
+        .filter(passesRecentSupportGate),     // Phase 29 spec gate
+    );
     if (tierPool.length < MIN_LEGS) continue;
-    const picks = pickTopByMomentumThenDistance(tierPool, TARGET_LEGS);
+    const picks = pickTopByWildCardScore(tierPool, TARGET_LEGS);
     const raw = combinedHit(picks);
     const corr = computeCorrelationRisk(picks);
     const adjusted = Math.round(raw * corr.multiplier * 10) / 10;
