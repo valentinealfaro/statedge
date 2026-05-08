@@ -570,7 +570,7 @@ function ContextAdjustments({ data }: { data: MlbProjectionResponse }) {
   // scaffolds are off — keeps the UI clean for player-history-only
   // projections (no gamePk supplied).
   const hasAnyContext =
-    c.park !== 1 || c.weather !== 1 || c.lineup !== 1 || c.bvp !== 1;
+    c.park !== 1 || c.weather !== 1 || c.lineup !== 1 || c.bvp !== 1 || c.gameScript !== 1;
   if (!hasAnyContext) {
     return (
       <div className="mlb-context muted-context">
@@ -587,6 +587,7 @@ function ContextAdjustments({ data }: { data: MlbProjectionResponse }) {
         <ContextChip label="Weather"  mult={c.weather}  wired />
         <ContextChip label="Lineup"   mult={c.lineup}   wired />
         <ContextChip label="BvP"      mult={c.bvp}      wired />
+        <ContextChip label="Game Script" mult={c.gameScript} wired />
         <ContextChip label="Arsenal"  mult={c.pitchArsenal} wired={false} />
         <ContextChip label="Bullpen"  mult={c.bullpen}      wired={false} />
       </div>

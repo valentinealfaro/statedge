@@ -650,6 +650,27 @@ export async function getEspnMlbOddsByMatchup(
   }
 }
 
+// In-process cache for ESPN odds. The slate pipeline calls
+// `projectMlbStat` for each leg sequentially; without caching we'd
+// fetch the ESPN scoreboard N times for an N-leg slate. 5-minute
+// TTL is plenty since odds barely move and the slate flow finishes
+// in seconds. Keyed by date string ("2026-05-08").
+const oddsCache = new Map<string, { fetchedAt: number; data: Map<string, EspnMlbOdds> }>();
+const ODDS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function getEspnMlbOddsCached(
+  date?: string,
+): Promise<Map<string, EspnMlbOdds>> {
+  const key = date ?? new Date().toISOString().slice(0, 10);
+  const cached = oddsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < ODDS_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const fresh = await getEspnMlbOddsByMatchup(date);
+  oddsCache.set(key, { fetchedAt: Date.now(), data: fresh });
+  return fresh;
+}
+
 // Re-export internals so the test file can probe the parser
 // without going through the network.
 export const _mlbInternals = {

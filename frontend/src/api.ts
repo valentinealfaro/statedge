@@ -1349,6 +1349,7 @@ export type MlbProjectionResponse = {
     weather: number;
     lineup: number;
     bvp: number;
+    gameScript: number;            // ESPN moneyline-derived adjustment
     pitchArsenal: number;
     bullpen: number;
   };

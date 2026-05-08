@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   computeBvpMultiplier,
+  computeGameScriptMultiplier,
   computeLineupMultiplier,
   computeMlbProjection,
   computeWeatherMultiplier,
@@ -73,6 +74,7 @@ function inputs(over: Partial<ProjectionInputs> = {}): ProjectionInputs {
     lineupSpot: null,
     bvp: null,
     opposingPitcherId: null,
+    gameScript: null,
     ...over,
   };
 }
@@ -498,6 +500,75 @@ describe('computeMlbProjection — context layer integration', () => {
     expect(r.contextAdjustments.bullpen).toBe(1.0);
   });
 
+  test('Game script defaults to neutral when null', () => {
+    const r = computeMlbProjection(inputs({ gameScript: null }));
+    expect(r.contextAdjustments.gameScript).toBe(1.0);
+  });
+});
+
+describe('computeGameScriptMultiplier — stat-aware adjustments', () => {
+  test('Neutral band (35-65%) returns 1.00 for any stat', () => {
+    expect(computeGameScriptMultiplier(50, 'ks', 'pitcher')).toBe(1.0);
+    expect(computeGameScriptMultiplier(40, 'pitcher_outs', 'pitcher')).toBe(1.0);
+    expect(computeGameScriptMultiplier(60, 'hits', 'hitter')).toBe(1.0);
+  });
+
+  test('null gameScript returns 1.00', () => {
+    expect(computeGameScriptMultiplier(null, 'ks', 'pitcher')).toBe(1.0);
+  });
+
+  test('Heavy underdog pitcher: K props suppressed', () => {
+    // 25% implied → extreme underdog → -8% on K
+    const m = computeGameScriptMultiplier(25, 'ks', 'pitcher');
+    expect(m).toBeLessThan(1.0);
+    expect(m).toBeGreaterThan(0.90);
+  });
+
+  test('Heavy favorite pitcher: K props slightly down (early hook in blowout)', () => {
+    const m = computeGameScriptMultiplier(75, 'ks', 'pitcher');
+    expect(m).toBeLessThan(1.0);
+    expect(m).toBeGreaterThan(0.95);     // smaller magnitude than underdog
+  });
+
+  test('Underdog pitcher hooked: pitcher_outs suppressed more than K', () => {
+    const ksM = computeGameScriptMultiplier(25, 'ks', 'pitcher');
+    const outsM = computeGameScriptMultiplier(25, 'pitcher_outs', 'pitcher');
+    expect(outsM).toBeLessThan(ksM);     // outs hit harder
+  });
+
+  test('Underdog pitcher concedes more earned runs', () => {
+    const m = computeGameScriptMultiplier(25, 'earned_runs_allowed', 'pitcher');
+    expect(m).toBeGreaterThan(1.0);
+  });
+
+  test('Favorite hitter: counting stats slight boost (more PAs)', () => {
+    const m = computeGameScriptMultiplier(75, 'hits', 'hitter');
+    expect(m).toBeGreaterThan(1.0);
+    expect(m).toBeLessThan(1.05);
+  });
+
+  test('Underdog hitter: counting stats slight dampener', () => {
+    const m = computeGameScriptMultiplier(25, 'hits', 'hitter');
+    expect(m).toBeLessThan(1.0);
+  });
+
+  test('HR is script-invariant — single-PA event', () => {
+    expect(computeGameScriptMultiplier(80, 'home_runs', 'hitter')).toBe(1.0);
+    expect(computeGameScriptMultiplier(20, 'home_runs', 'hitter')).toBe(1.0);
+  });
+
+  test('Stolen bases are script-invariant', () => {
+    expect(computeGameScriptMultiplier(80, 'stolen_bases', 'hitter')).toBe(1.0);
+  });
+
+  test('Extremity scales — 80% favorite has bigger effect than 70%', () => {
+    const moderate = computeGameScriptMultiplier(70, 'pitcher_outs', 'pitcher');
+    const extreme = computeGameScriptMultiplier(80, 'pitcher_outs', 'pitcher');
+    expect(Math.abs(extreme - 1)).toBeGreaterThan(Math.abs(moderate - 1));
+  });
+});
+
+describe('computeMlbProjection — integration: baseline vs context', () => {
   test('baselineProjection separates from final projection when context applied', () => {
     const r = computeMlbProjection(inputs({
       statKey: 'home_runs',
@@ -507,6 +578,25 @@ describe('computeMlbProjection — context layer integration', () => {
     }));
     expect(r.baselineProjection).not.toBe(r.projection);
     expect(r.projection).toBeGreaterThan(r.baselineProjection);
+  });
+
+  test('Game script flows through to projection + reason code', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'pitcher_outs',
+      playerType: 'pitcher',
+      line: 18.5,
+      direction: 'OVER',
+      gameScript: 25,                          // heavy underdog
+      last10: makeLast10({
+        values: [18, 18, 18, 18, 18, 18, 18, 18, 18, 18],
+        last10Average: 18,
+        last5Average: 18,
+        stddev: 1.0,
+      }),
+    }));
+    expect(r.contextAdjustments.gameScript).toBeLessThan(1.0);
+    expect(r.reasonCodes.join(' ').toLowerCase()).toContain('game script');
+    expect(r.reasonCodes.join(' ').toLowerCase()).toContain('underdog');
   });
 });
 

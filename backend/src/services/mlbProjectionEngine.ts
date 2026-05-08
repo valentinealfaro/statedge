@@ -37,6 +37,7 @@ import {
   type GameContext,
   type GameWeather,
 } from '../mlb/gameContext.js';
+import { getEspnMlbOddsCached } from '../mlb/client.js';
 import {
   describeParkImpact,
   getParkMultiplier,
@@ -109,6 +110,13 @@ export type ProjectionInputs = {
   // The opposing pitcher (when known). Surfaced in reason codes but
   // not used directly in the formula yet.
   opposingPitcherId: number | null;
+
+  // Game script — implied win probability (0-100) for the player's
+  // team, sourced from ESPN's public moneyline odds. >60 = favorite
+  // (lower variance, blowout-likely if extreme), <40 = underdog
+  // (higher variance, hook risk for pitchers, rest/garbage-time risk
+  // for hitters). null when odds aren't posted (early in the day).
+  gameScript: number | null;
 };
 
 // Stat-type risk per the StatEdge MLB spec. Used as a floor on
@@ -193,6 +201,7 @@ export type ProjectionResult = {
     weather: number;
     lineup: number;
     bvp: number;
+    gameScript: number;         // ESPN moneyline → implied win prob → adjustment
     pitchArsenal: number;       // scaffold — defaults 1.0 until Statcast
     bullpen: number;            // scaffold — defaults 1.0 until reliever-state tracking
   };
@@ -281,7 +290,7 @@ function emptyResult(
     reasonCodes: ['No game-log data available — cannot project.'],
     weightsUsed: {},
     contextAdjustments: {
-      park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1,
+      park: 1, weather: 1, lineup: 1, bvp: 1, gameScript: 1, pitchArsenal: 1, bullpen: 1,
     },
     baselineProjection: 0,
     monteCarlo: null,
@@ -554,6 +563,79 @@ export function computeLineupMultiplier(
 // We compute a BvP rate (per-PA) and compare to the player's overall
 // per-PA rate from L10. If the player hits this pitcher better than
 // their baseline, multiplier > 1; if they struggle, multiplier < 1.
+// Game-script → projection multiplier. Uses ESPN's moneyline-implied
+// win probability (0-100) for the player's team:
+//
+//   gameScript ≥ 65 = heavy favorite (lower variance, blowout risk)
+//   gameScript ≤ 35 = heavy underdog (higher variance, hook risk)
+//   between = neutral, no adjustment
+//
+// Adjustments are direction-aware AND stat-aware:
+//
+// PITCHERS (favorite or underdog):
+//   - Heavy favorite: the manager protects them in a blowout WIN —
+//     fewer innings late, smaller K count → ~-3% K, -5% outs
+//   - Heavy underdog: more likely to give up runs early and get
+//     hooked → -8% K, -12% outs, +5% earned-runs-allowed
+//
+// HITTERS:
+//   - Heavy favorite team: more PAs likely if they jump out big
+//     → +3% on counting stats (hits/runs/RBI/total_bases)
+//   - Heavy underdog team: pinch-hit / rest / garbage-time risk
+//     → -3% on counting stats
+//   - HR is mostly script-invariant (single-PA event) → tiny effect
+//
+// Returns 1.00 for null gameScript or stats not script-sensitive.
+export function computeGameScriptMultiplier(
+  gameScript: number | null,
+  statKey: MlbStatKey,
+  playerType: 'hitter' | 'pitcher',
+): number {
+  if (gameScript === null) return 1.0;
+  if (gameScript >= 35 && gameScript <= 65) return 1.0;     // neutral band
+
+  const isFavorite = gameScript > 65;
+  // How extreme is the script? 65 → 0 (just at threshold), 80 → 1
+  // (fully extreme). Same for underdog: 35 → 0, 20 → 1.
+  const extremity = Math.min(1, Math.abs(gameScript - 50) / 30);
+
+  if (playerType === 'pitcher') {
+    if (statKey === 'ks') {
+      const baseSwing = isFavorite ? -0.03 : -0.08;
+      return 1 + baseSwing * extremity;
+    }
+    if (statKey === 'pitcher_outs' || statKey === 'innings_pitched') {
+      const baseSwing = isFavorite ? -0.05 : -0.12;
+      return 1 + baseSwing * extremity;
+    }
+    if (statKey === 'earned_runs_allowed') {
+      // Underdog pitchers concede more runs in blowouts; favorites
+      // give up roughly the same (they're winning either way).
+      const baseSwing = isFavorite ? 0 : 0.05;
+      return 1 + baseSwing * extremity;
+    }
+    if (statKey === 'hits_allowed' || statKey === 'walks_allowed' || statKey === 'home_runs_allowed') {
+      const baseSwing = isFavorite ? -0.02 : 0.04;
+      return 1 + baseSwing * extremity;
+    }
+    return 1.0;
+  }
+
+  // Hitter
+  // Counting stats — favored hitters get a bit more PA; underdog
+  // hitters dampened by garbage-time / rest risk.
+  const countingStats: MlbStatKey[] = [
+    'hits', 'singles', 'doubles', 'triples', 'total_bases',
+    'runs', 'rbis', 'walks', 'hits_runs_rbis', 'hitter_fantasy_score',
+  ];
+  if (countingStats.includes(statKey)) {
+    const baseSwing = isFavorite ? 0.03 : -0.03;
+    return 1 + baseSwing * extremity;
+  }
+  // HR / SB / K (hitter): mostly script-invariant. Tiny effect.
+  return 1.0;
+}
+
 export function computeBvpMultiplier(
   bvp: BvpStats | null,
   statKey: MlbStatKey,
@@ -647,11 +729,15 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       ? last10.last10Average / 4
       : null;
   const bvpMult = computeBvpMultiplier(inputs.bvp, inputs.statKey, baselineRatePerPa);
+  const gameScriptMult = computeGameScriptMultiplier(
+    inputs.gameScript, inputs.statKey, inputs.playerType,
+  );
   const pitchArsenalMult = 1.0;     // scaffold — needs Statcast
   const bullpenMult = 1.0;          // scaffold — needs reliever workload tracking
 
   const totalContextMult =
-    parkMult * weatherMult * lineupMult * bvpMult * pitchArsenalMult * bullpenMult;
+    parkMult * weatherMult * lineupMult * bvpMult * gameScriptMult
+    * pitchArsenalMult * bullpenMult;
   const projection = baselineProjection * totalContextMult;
 
   // ----- Probability via normal approximation -----
@@ -779,6 +865,19 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       );
     }
   }
+  if (inputs.gameScript !== null) {
+    const ratioPct = Math.round((gameScriptMult - 1) * 100);
+    if (Math.abs(ratioPct) >= 2) {
+      const sign = ratioPct > 0 ? '+' : '';
+      const role =
+        inputs.gameScript > 65 ? 'heavy favorite'
+        : inputs.gameScript < 35 ? 'heavy underdog'
+        : 'balanced';
+      reasonCodes.push(
+        `Game script (${inputs.gameScript.toFixed(0)}% implied, ${role}): ${sign}${ratioPct}%.`,
+      );
+    }
+  }
 
   // Monte Carlo distribution. Uses the L10 stddev as variance proxy —
   // same stddev floor logic as the deterministic prob calc. Returns
@@ -856,6 +955,7 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       weather: round2(weatherMult),
       lineup: round2(lineupMult),
       bvp: round2(bvpMult),
+      gameScript: round2(gameScriptMult),
       pitchArsenal: round2(pitchArsenalMult),
       bullpen: round2(bullpenMult),
     },
@@ -1095,6 +1195,34 @@ export async function projectMlbStat(
   }
   const parkFactor = lookupParkFactor(gameContext?.venueId ?? null);
 
+  // Game-script: pull ESPN moneyline odds for today's games and
+  // match by team-abbr key. Cached in-process for 5 min so an N-leg
+  // slate doesn't fetch ESPN N times. We need the player's team and
+  // the opponent's team to build the matchup key — when we don't
+  // have both, gameScript stays null (engine falls back to neutral).
+  let gameScript: number | null = null;
+  if (args.gamePk && gameContext) {
+    try {
+      const playerTeamAbbr = await resolvePlayerTeamAbbr(args.playerId);
+      const opponentTeamAbbr = await resolveOpponentAbbr(args.gamePk, playerTeamAbbr);
+      if (playerTeamAbbr && opponentTeamAbbr) {
+        const date = inferGameDateFromContext(gameContext);
+        const odds = await getEspnMlbOddsCached(date);
+        // ESPN keys odds by `${homeAbbr}-${awayAbbr}`. We don't know
+        // which side is home up here cheaply — try both keys.
+        const homeKey = `${playerTeamAbbr}-${opponentTeamAbbr}`;
+        const awayKey = `${opponentTeamAbbr}-${playerTeamAbbr}`;
+        if (odds.has(homeKey)) {
+          gameScript = odds.get(homeKey)!.homeImpliedWinProb;
+        } else if (odds.has(awayKey)) {
+          gameScript = odds.get(awayKey)!.awayImpliedWinProb;
+        }
+      }
+    } catch {
+      // Non-fatal — engine falls back to neutral.
+    }
+  }
+
   const inputs: ProjectionInputs = {
     statKey: args.statKey,
     playerType,
@@ -1113,9 +1241,55 @@ export async function projectMlbStat(
     lineupSpot,
     bvp,
     opposingPitcherId: args.opposingPitcherId ?? null,
+    gameScript,
   };
 
   return computeMlbProjection(inputs);
+}
+
+// ---------- Game-script helpers ----------
+
+async function resolvePlayerTeamAbbr(playerId: number): Promise<string | null> {
+  const { rows } = await getPool().query<{ abbr: string | null }>(
+    `SELECT t.abbreviation AS abbr
+       FROM mlb_players p
+       LEFT JOIN mlb_teams t ON t.id = p.team_id
+      WHERE p.id = $1`,
+    [playerId],
+  );
+  return rows[0]?.abbr ?? null;
+}
+
+async function resolveOpponentAbbr(
+  gamePk: number,
+  playerTeamAbbr: string | null,
+): Promise<string | null> {
+  if (!playerTeamAbbr) return null;
+  // Pull both teams from the game; whichever isn't the player's
+  // team is the opponent.
+  const { rows } = await getPool().query<{
+    home_abbr: string | null;
+    away_abbr: string | null;
+  }>(
+    `SELECT ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr
+       FROM mlb_games g
+       LEFT JOIN mlb_teams ht ON ht.id = g.home_team_id
+       LEFT JOIN mlb_teams at ON at.id = g.away_team_id
+      WHERE g.id = $1`,
+    [gamePk],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  if (r.home_abbr === playerTeamAbbr) return r.away_abbr;
+  if (r.away_abbr === playerTeamAbbr) return r.home_abbr;
+  return null;
+}
+
+function inferGameDateFromContext(_gc: GameContext): string | undefined {
+  // The current GameContext type doesn't expose game_date directly.
+  // Default to today; the orchestrator caller can pass a specific
+  // date as a future enhancement when projecting historical games.
+  return undefined;
 }
 
 // Re-export error classes so route handlers can switch on them.
