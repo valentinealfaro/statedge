@@ -26,6 +26,7 @@ import {
 import { parseMlbSlateText } from '../services/mlbSlateTextParser.js';
 import { gradeMlbProjections } from '../services/mlbGrader.js';
 import { computeMlbCalibration } from '../services/mlbCalibration.js';
+import { computeMlbStandings } from '../services/mlbStandings.js';
 import {
   listStatsForPlayerType,
   statMeta,
@@ -411,6 +412,32 @@ mlbRouter.post('/slate', async (req, res) => {
   } catch (err) {
     console.error('mlb/slate failed', err);
     res.status(500).json({ error: 'mlb slate construction failed' });
+  }
+});
+
+// GET /api/mlb/standings?season=&asOfDate=
+//
+// Per-team aggregations: W/L, run differential, starter/bullpen ERA,
+// park-adjusted run rate, home/away splits, last-10. Mission-aligned
+// "institutional, not basic ESPN" — derives everything from data
+// we already sync. Empty teams[] when DB is unseeded; UI handles.
+mlbRouter.get('/standings', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const season = req.query.season as string | undefined;
+  const asOfDate = req.query.asOfDate as string | undefined;
+  if (asOfDate && !/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) {
+    res.status(400).json({ error: 'asOfDate must be YYYY-MM-DD' });
+    return;
+  }
+  try {
+    const result = await computeMlbStandings({ season, asOfDate });
+    res.json({ ...result, disclaimer: MLB_DISCLAIMER });
+  } catch (err) {
+    console.error('mlb/standings failed', err);
+    res.status(500).json({ error: 'mlb standings fetch failed' });
   }
 });
 

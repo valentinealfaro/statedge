@@ -7,6 +7,7 @@ import { GameDetail } from './GameDetail';
 import { MlbCalibration } from './MlbCalibration';
 import { MlbCompare } from './MlbCompare';
 import { MlbSlate } from './MlbSlate';
+import { MlbStandings } from './MlbStandings';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
@@ -35,6 +36,7 @@ export function App() {
           <Route path="/mlb/compare" element={<MlbCompare />} />
           <Route path="/mlb/slate" element={<MlbSlate />} />
           <Route path="/mlb/calibration" element={<MlbCalibration />} />
+          <Route path="/mlb/standings" element={<MlbStandings />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}
           <Route path="/game/:gameId" element={<GameDetail />} />

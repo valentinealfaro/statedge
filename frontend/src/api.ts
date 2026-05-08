@@ -1554,6 +1554,47 @@ export type MlbCalibrationReport = {
   disclaimer: string;
 };
 
+// =============================================================
+// MLB standings — institutional team rollup with run diff, bullpen
+// ERA, park-adjusted run rate, splits, last-10.
+// =============================================================
+
+export type MlbStandingRow = {
+  teamId: number;
+  abbreviation: string;
+  fullName: string;
+  league: 'AL' | 'NL';
+  division: string | null;
+  wins: number;
+  losses: number;
+  winPct: number;
+  gamesPlayed: number;
+  runsScored: number;
+  runsAllowed: number;
+  runDifferential: number;
+  runsScoredPerGame: number;
+  runsAllowedPerGame: number;
+  starterEra: number | null;
+  bullpenEra: number | null;
+  parkAdjustedRunRate: number | null;
+  homeRecord: { wins: number; losses: number };
+  awayRecord: { wins: number; losses: number };
+  last10: { wins: number; losses: number };
+};
+
+export type MlbStandingsResponse = {
+  asOf: string;
+  totalGamesScanned: number;
+  teams: MlbStandingRow[];
+  disclaimer: string;
+};
+
+export async function getMlbStandings(): Promise<MlbStandingsResponse> {
+  const res = await fetch(`${API_BASE}/api/mlb/standings`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as MlbStandingsResponse;
+}
+
 export async function getMlbCalibration(windowDays = 30): Promise<MlbCalibrationReport> {
   const res = await fetch(`${API_BASE}/api/mlb/calibration?windowDays=${windowDays}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
