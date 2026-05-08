@@ -65,12 +65,15 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
     minLegEdge: 5,
     maxLegTrap: 50,
     allowedSizes: new Set([2, 3, 4, 5, 6]),
+    // Phase 31: bumped Best 5/6 minAvgEdge per spec — "Best 6 should
+    // NOT feel weak. Increase edge requirement, projection separation,
+    // market lag leverage."
     perSize: {
       2: { minAvgEdge: 5,  maxLegFragility: 80 },
       3: { minAvgEdge: 7,  maxLegFragility: 70 },
       4: { minAvgEdge: 9,  maxLegFragility: 60 },
-      5: { minAvgEdge: 12, maxLegFragility: 55 },
-      6: { minAvgEdge: 14, maxLegFragility: 50 },
+      5: { minAvgEdge: 14, maxLegFragility: 55 },     // +2 (was 12)
+      6: { minAvgEdge: 17, maxLegFragility: 50 },     // +3 (was 14)
     },
   },
   aggressive: {
@@ -82,24 +85,25 @@ const MODE_CONFIG: Record<MlbResolvedSlateMode, {
     perSize: {
       3: { minAvgEdge: 12, maxLegFragility: 80 },
       4: { minAvgEdge: 14, maxLegFragility: 70 },
-      5: { minAvgEdge: 16, maxLegFragility: 60 },
-      6: { minAvgEdge: 18, maxLegFragility: 55 },
+      5: { minAvgEdge: 18, maxLegFragility: 60 },     // +2 (was 16)
+      6: { minAvgEdge: 22, maxLegFragility: 55 },     // +4 (was 18)
     },
   },
   insane: {
     // Lottery-ticket mode (per feedback_insane_lottery_framing memory).
     // Power Play 5/6-leg only — that's where the payouts live. Edge
     // floor stays modest because lottery users explicitly accept losing.
-    // Fragility cap relaxed too — lottery users explicitly accept
-    // fragile picks for the ceiling.
+    // Fragility cap relaxed — lottery users opt in to fragile picks
+    // for the ceiling. Phase 31: edge bar raised on Best 6 because
+    // spec demands "controlled high-volatility exposure" not random.
     label: 'Insane',
     minLegProb: 45,
     minLegEdge: 8,
     maxLegTrap: 70,
     allowedSizes: new Set([5, 6]),
     perSize: {
-      5: { minAvgEdge: 12, maxLegFragility: 85 },
-      6: { minAvgEdge: 14, maxLegFragility: 80 },
+      5: { minAvgEdge: 14, maxLegFragility: 85 },     // +2 (was 12)
+      6: { minAvgEdge: 16, maxLegFragility: 80 },     // +2 (was 14)
     },
   },
 };
@@ -234,8 +238,16 @@ function legScore(leg: ResolvedMlbLine, mode: MlbResolvedSlateMode): number {
       return p.evScore * 0.50 + p.probability * 0.20 + p.edgePercent * 0.20 - p.trapScore * 0.10;
     case 'aggressive':
       return m * 0.35 + p.edgePercent * 0.30 + p.projectionDistanceScore * 0.20 + p.confidence * 0.05 - p.trapScore * 0.10;
-    case 'insane':
-      return m * 0.30 + p.edgePercent * 0.30 + p.projectionDistanceScore * 0.30 + p.evScore * 0.10 - p.trapScore * 0.05;
+    case 'insane': {
+      // Insane PREFERS rare-event stats (HR / SB / triples) per spec.
+      // The base score is the same edge/separation/momentum mix; the
+      // preferred-stat bonus tips the ranking toward upside asymmetry.
+      const base =
+        m * 0.30 + p.edgePercent * 0.30 + p.projectionDistanceScore * 0.30
+        + p.evScore * 0.10 - p.trapScore * 0.05;
+      const statBonus = INSANE_PREFERRED_STATS[leg.statKey] ?? 0;
+      return base + statBonus;
+    }
   }
 }
 
@@ -293,11 +305,23 @@ function maxLegsPerPlayer(cardSize: number): number {
 
 // Per-mode stat blocklist. Per spec L8/Slate-Engine: Safe mode must
 // avoid HR / SB / RBI props — they're inherently fragile and break
-// the survivability promise. Insane mode actively prefers them
-// (handled as preferredStats below).
+// the survivability promise.
 const SAFE_BLOCKED_STATS = new Set<string>([
   'home_runs', 'stolen_bases', 'rbis', 'triples', 'home_runs_allowed',
 ]);
+
+// Insane mode actively PREFERS rare / high-leverage / asymmetric
+// payoff stats. Spec: "Goal — maximum upside asymmetry. Examples:
+// HR props, stolen bases, low-line expansion, extreme weather
+// leverage, pitch-type mismatch." Per-stat bonus added to legScore
+// in insane mode.
+const INSANE_PREFERRED_STATS: Partial<Record<string, number>> = {
+  home_runs: 15,
+  stolen_bases: 15,
+  triples: 12,
+  doubles: 8,
+  home_runs_allowed: 10,
+};
 
 // Per-game offensive-over cap. Spec: "same-game offensive overs"
 // is a dangerous correlation — if the game scores zero, every
