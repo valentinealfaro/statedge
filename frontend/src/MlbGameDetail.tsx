@@ -128,18 +128,30 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
   const homeSplit = game.home.homeRecord;
   return (
     <div className="mlb-projection" style={{ marginBottom: 12 }}>
-      <div className="mlb-projection-head" style={{ alignItems: 'baseline' }}>
-        <h1 style={{ margin: 0, fontSize: 22, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <MlbTeamLogo abbr={game.away.abbreviation} name={game.away.name} size="lg" />
-          <span>
-            {game.away.name} ({game.away.record ?? '—'}{awaySplit ? `, ${awaySplit} away` : ''})
-          </span>
-          <span style={{ opacity: 0.6 }}>@</span>
-          <MlbTeamLogo abbr={game.home.abbreviation} name={game.home.name} size="lg" />
-          <span>
-            {game.home.name} ({game.home.record ?? '—'}{homeSplit ? `, ${homeSplit} home` : ''})
-          </span>
-        </h1>
+      <div className="mlb-projection-head" style={{ alignItems: 'flex-start' }}>
+        {/* Two-row stacked matchup header — away on top, home below.
+            Avoids the inline @-flow that caused the home team to wrap
+            awkwardly on narrower screens. ESPN-style. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MlbTeamLogo abbr={game.away.abbreviation} name={game.away.name} size="lg" />
+            <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.2 }}>
+              {game.away.name}
+              <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>
+                ({game.away.record ?? '—'}{awaySplit ? `, ${awaySplit} away` : ''})
+              </span>
+            </h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MlbTeamLogo abbr={game.home.abbreviation} name={game.home.name} size="lg" />
+            <h1 style={{ margin: 0, fontSize: 22, lineHeight: 1.2 }}>
+              {game.home.name}
+              <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>
+                ({game.home.record ?? '—'}{homeSplit ? `, ${homeSplit} home` : ''})
+              </span>
+            </h1>
+          </div>
+        </div>
         <span
           className="mlb-projection-verdict"
           style={live ? { color: '#ef5350', fontWeight: 700 } : final ? { opacity: 0.7 } : {}}
