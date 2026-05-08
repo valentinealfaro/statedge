@@ -18,6 +18,7 @@ import {
 import {
   getBoxscore,
   getEspnMlbOddsByMatchup,
+  getLiveGameFeed,
   getTeamInjuredList,
   getTodaysMlbGames,
   MLB_DISCLAIMER,
@@ -1247,6 +1248,97 @@ mlbRouter.get('/game/:gamePk/preview', async (req, res) => {
   } catch (err) {
     console.error('mlb/game/preview failed', err);
     res.status(500).json({ error: 'mlb game preview failed' });
+  }
+});
+
+// GET /api/mlb/game/:gamePk/live
+//
+// Phase C — slim wrapper around statsapi.mlb.com's live game feed.
+// The full feed is ~2MB; we project just what the play-by-play UI
+// renders: current state (inning/count/outs/runners/score) and the
+// recent plays array. Frontend polls this every 15s during live
+// games. For pregame / final games we still return cleanly so the
+// UI can render the same component without conditionally fetching.
+mlbRouter.get('/game/:gamePk/live', async (req, res) => {
+  const gamePk = Number(req.params.gamePk);
+  if (!Number.isFinite(gamePk) || gamePk <= 0) {
+    res.status(400).json({ error: 'gamePk must be a positive integer' });
+    return;
+  }
+
+  try {
+    const feed = await getLiveGameFeed(gamePk);
+    const status = feed.gameData.status;
+    const linescore = feed.liveData.linescore ?? {};
+    const plays = feed.liveData.plays ?? { allPlays: [] };
+    const allPlays = plays.allPlays ?? [];
+
+    // Most-recent 12 plays. Reverse so the latest renders at the top.
+    const recentPlays = allPlays.slice(-12).reverse().map((p) => ({
+      atBatIndex: p.about.atBatIndex ?? null,
+      inning: p.about.inning ?? null,
+      halfInning: p.about.halfInning ?? null,
+      description: p.result.description ?? '',
+      eventType: p.result.eventType ?? null,
+      isScoringPlay: p.about.isScoringPlay ?? false,
+      awayScore: p.result.awayScore ?? null,
+      homeScore: p.result.homeScore ?? null,
+      batter: p.matchup?.batter?.fullName ?? null,
+      pitcher: p.matchup?.pitcher?.fullName ?? null,
+    }));
+
+    const currentPlay = plays.currentPlay
+      ? {
+          inning: plays.currentPlay.about.inning ?? null,
+          halfInning: plays.currentPlay.about.halfInning ?? null,
+          batter: plays.currentPlay.matchup?.batter?.fullName ?? null,
+          pitcher: plays.currentPlay.matchup?.pitcher?.fullName ?? null,
+          balls: plays.currentPlay.count?.balls ?? null,
+          strikes: plays.currentPlay.count?.strikes ?? null,
+          outs: plays.currentPlay.count?.outs ?? null,
+          description: plays.currentPlay.result.description ?? null,
+        }
+      : null;
+
+    const abstractState = status.abstractGameState; // Preview / Live / Final
+    const state: 'pregame' | 'live' | 'final' =
+      abstractState === 'Live' ? 'live'
+      : abstractState === 'Final' ? 'final'
+      : 'pregame';
+
+    res.json({
+      gamePk,
+      state,
+      detailedState: status.detailedState,
+      inning: {
+        number: linescore.currentInning ?? null,
+        ordinal: linescore.currentInningOrdinal ?? null,
+        half: linescore.inningHalf ?? null,
+      },
+      count: {
+        balls: linescore.balls ?? null,
+        strikes: linescore.strikes ?? null,
+        outs: linescore.outs ?? null,
+      },
+      runners: {
+        first: linescore.offense?.first?.fullName ?? null,
+        second: linescore.offense?.second?.fullName ?? null,
+        third: linescore.offense?.third?.fullName ?? null,
+      },
+      atBat: {
+        batter: linescore.offense?.batter?.fullName ?? null,
+        pitcher: linescore.offense?.pitcher?.fullName ?? null,
+      },
+      score: {
+        away: linescore.teams?.away?.runs ?? null,
+        home: linescore.teams?.home?.runs ?? null,
+      },
+      currentPlay,
+      recentPlays,
+    });
+  } catch (err) {
+    console.error('mlb/game/live failed', err);
+    res.status(500).json({ error: 'mlb game live failed' });
   }
 });
 

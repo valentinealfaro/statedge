@@ -1881,6 +1881,54 @@ export async function getMlbGamePreview(gamePk: number): Promise<MlbGamePreview>
   return (await res.json()) as MlbGamePreview;
 }
 
+// =============================================================
+// MLB Live Feed (Phase C): play-by-play polling
+// =============================================================
+
+export type MlbLivePlay = {
+  atBatIndex: number | null;
+  inning: number | null;
+  halfInning: 'top' | 'bottom' | null;
+  description: string;
+  eventType: string | null;
+  isScoringPlay: boolean;
+  awayScore: number | null;
+  homeScore: number | null;
+  batter: string | null;
+  pitcher: string | null;
+};
+
+export type MlbLiveFeed = {
+  gamePk: number;
+  state: 'pregame' | 'live' | 'final';
+  detailedState: string;
+  inning: { number: number | null; ordinal: string | null; half: 'Top' | 'Bottom' | null };
+  count: { balls: number | null; strikes: number | null; outs: number | null };
+  runners: { first: string | null; second: string | null; third: string | null };
+  atBat: { batter: string | null; pitcher: string | null };
+  score: { away: number | null; home: number | null };
+  currentPlay: {
+    inning: number | null;
+    halfInning: 'top' | 'bottom' | null;
+    batter: string | null;
+    pitcher: string | null;
+    balls: number | null;
+    strikes: number | null;
+    outs: number | null;
+    description: string | null;
+  } | null;
+  recentPlays: MlbLivePlay[];
+};
+
+export async function getMlbGameLive(gamePk: number): Promise<MlbLiveFeed> {
+  const res = await fetch(`${API_BASE}/api/mlb/game/${gamePk}/live`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbLiveFeed;
+}
+
 export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
   const url = date
     ? `${API_BASE}/api/mlb/today?date=${date}`

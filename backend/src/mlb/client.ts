@@ -807,3 +807,102 @@ export async function getTeamInjuredList(teamId: number): Promise<MlbRosterEntry
     return [];
   }
 }
+
+// ---------- Live game feed (Phase C: play-by-play) ----------
+//
+// The /api/v1.1/game/:gamePk/feed/live endpoint is the canonical live
+// game feed. It's huge (~2 MB) — we slim it down to just the plays
+// list + current state in the route handler. We only call it when
+// the game is in-progress; pre-game and final fall through to the
+// lighter endpoints we already use.
+
+export type MlbLivePlayResult = {
+  type?: string;
+  event?: string;
+  eventType?: string;
+  description?: string;
+  rbi?: number;
+  awayScore?: number;
+  homeScore?: number;
+};
+
+export type MlbLivePlayAbout = {
+  atBatIndex?: number;
+  halfInning?: 'top' | 'bottom';
+  isTopInning?: boolean;
+  inning?: number;
+  startTime?: string;
+  endTime?: string;
+  isComplete?: boolean;
+  isScoringPlay?: boolean;
+};
+
+export type MlbLivePlay = {
+  result: MlbLivePlayResult;
+  about: MlbLivePlayAbout;
+  matchup?: {
+    batter?: { id: number; fullName: string };
+    pitcher?: { id: number; fullName: string };
+    batSide?: { code: string };
+    pitchHand?: { code: string };
+    splits?: { menOnBase?: string };
+  };
+  count?: { balls?: number; strikes?: number; outs?: number };
+};
+
+export type MlbLiveFeed = {
+  gameData: {
+    status: { codedGameState: string; detailedState: string; abstractGameState: string };
+    teams: { away: { abbreviation?: string }; home: { abbreviation?: string } };
+  };
+  liveData: {
+    plays: {
+      allPlays: MlbLivePlay[];
+      currentPlay?: MlbLivePlay;
+      scoringPlays?: number[];     // indices into allPlays
+    };
+    linescore?: {
+      currentInning?: number;
+      currentInningOrdinal?: string;
+      inningHalf?: 'Top' | 'Bottom';
+      isTopInning?: boolean;
+      balls?: number;
+      strikes?: number;
+      outs?: number;
+      offense?: {
+        first?: { fullName?: string };
+        second?: { fullName?: string };
+        third?: { fullName?: string };
+        batter?: { fullName?: string };
+        pitcher?: { fullName?: string };
+      };
+      teams?: { home?: { runs?: number }; away?: { runs?: number } };
+    };
+  };
+};
+
+// statsapi.mlb.com hosts the live feed under /api/v1.1 (different
+// version than the rest). We hit it with a one-off URL since our
+// fetchJson helper assumes /api/v1.
+export async function getLiveGameFeed(gamePk: number): Promise<MlbLiveFeed> {
+  const url = `https://statsapi.mlb.com/api/v1.1/game/${gamePk}/feed/live`;
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) {
+      throw new MlbApiError(`MLB live feed ${gamePk} ${res.status}`, res.status);
+    }
+    return (await res.json()) as MlbLiveFeed;
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      throw new MlbApiError(`MLB live feed ${gamePk} timed out after ${FETCH_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

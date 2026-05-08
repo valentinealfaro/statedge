@@ -13,12 +13,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   getMlbDailySlate,
+  getMlbGameLive,
   getMlbGamePreview,
   getMlbStandings,
   getMlbTeamLast5,
   getMlbToday,
   type MlbDailySlateResponse,
   type MlbGamePreview,
+  type MlbLiveFeed,
   type MlbStandingRow,
   type MlbTeamLast5,
   type MlbTodayGame,
@@ -84,6 +86,10 @@ function GameView({ game }: { game: MlbTodayGame }) {
   return (
     <>
       <GameHeader game={game} />
+      {/* Live play-by-play floats to the top while the game is in
+          progress — that's what users want to see first. Pregame and
+          final games don't render anything for this section. */}
+      <PlayByPlay game={game} />
       <GameOddsAndPredictor game={game} />
       <ProbablePitchers game={game} />
       <SameGameParlay game={game} />
@@ -596,6 +602,138 @@ function Leaders({ game }: { game: MlbTodayGame }) {
         <Side side={preview.leaders.away} abbr={game.away.abbreviation} />
         <Side side={preview.leaders.home} abbr={game.home.abbreviation} />
       </div>
+    </details>
+  );
+}
+
+function PlayByPlay({ game }: { game: MlbTodayGame }) {
+  const [feed, setFeed] = useState<MlbLiveFeed | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  // Poll every 15s while live, every 60s while pregame/final. We
+  // still poll pregame in case the game starts; once it's final we
+  // back off but keep the last snapshot rendered. Pause when the
+  // tab is hidden — saves bandwidth and avoids stale UI.
+  useEffect(() => {
+    let cancelled = false;
+    getMlbGameLive(game.gamePk)
+      .then((f) => { if (!cancelled) setFeed(f); })
+      .catch((err: Error) => { if (!cancelled) setError(err.message); });
+    return () => { cancelled = true; };
+  }, [game.gamePk, tick]);
+
+  useEffect(() => {
+    const live = feed?.state === 'live';
+    const pollMs = live ? 15_000 : 60_000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, pollMs);
+    return () => window.clearInterval(interval);
+  }, [feed?.state]);
+
+  if (error) return null;
+  if (!feed) return null;
+  // Don't render anything pre-game — the rest of the page (pitchers,
+  // lineups, leaders) is the pregame story. Once the game starts,
+  // this section pops to the top.
+  if (feed.state === 'pregame') return null;
+
+  const live = feed.state === 'live';
+
+  return (
+    <details className="mlb-context" open>
+      <summary className="mlb-context-heading">
+        Play-by-play
+        {live && (
+          <span style={{ marginLeft: 10, color: '#ef5350', fontWeight: 700, fontSize: 12, letterSpacing: '0.04em' }}>
+            ● LIVE
+          </span>
+        )}
+        {live && <span className="muted small"> · auto-refresh 15s</span>}
+        {feed.state === 'final' && <span className="muted small"> · final</span>}
+      </summary>
+
+      {live && (
+        <div className="mlb-projection-grid" style={{ marginTop: 8 }}>
+          <div className="mlb-stat" title="Current inning">
+            <span className="mlb-stat-label">Inning</span>
+            <span className="mlb-stat-value">
+              {feed.inning.half === 'Top' ? '▲' : feed.inning.half === 'Bottom' ? '▼' : ''}
+              {' '}{feed.inning.ordinal ?? feed.inning.number ?? '—'}
+            </span>
+          </div>
+          <div className="mlb-stat" title="Outs in current half-inning">
+            <span className="mlb-stat-label">Outs</span>
+            <span className="mlb-stat-value">{feed.count.outs ?? '—'}</span>
+          </div>
+          <div className="mlb-stat" title="Ball-strike count for the at-bat">
+            <span className="mlb-stat-label">Count</span>
+            <span className="mlb-stat-value">
+              {feed.count.balls ?? 0}-{feed.count.strikes ?? 0}
+            </span>
+          </div>
+          <div className="mlb-stat" title="Score">
+            <span className="mlb-stat-label">Score</span>
+            <span className="mlb-stat-value">
+              {game.away.abbreviation} {feed.score.away ?? 0} · {feed.score.home ?? 0} {game.home.abbreviation}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {live && (feed.atBat.batter || feed.atBat.pitcher || feed.runners.first || feed.runners.second || feed.runners.third) && (
+        <div style={{ marginTop: 8, padding: 8, background: 'rgba(122, 162, 255, 0.06)', borderRadius: 4 }}>
+          {feed.atBat.batter && (
+            <div style={{ fontSize: 13 }}>
+              <strong>At bat:</strong> {feed.atBat.batter}
+              {feed.atBat.pitcher && <span className="muted small"> · vs {feed.atBat.pitcher}</span>}
+            </div>
+          )}
+          <div className="muted small" style={{ marginTop: 4 }}>
+            Runners: {[
+              feed.runners.first  ? `1B ${feed.runners.first}` : null,
+              feed.runners.second ? `2B ${feed.runners.second}` : null,
+              feed.runners.third  ? `3B ${feed.runners.third}` : null,
+            ].filter(Boolean).join(' · ') || 'bases empty'}
+          </div>
+        </div>
+      )}
+
+      {feed.recentPlays.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="muted small" style={{ marginBottom: 4 }}>Recent plays</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {feed.recentPlays.map((p, i) => (
+              <div
+                key={p.atBatIndex ?? i}
+                style={{
+                  padding: 8,
+                  borderLeft: p.isScoringPlay ? '3px solid #66bb6a' : '3px solid rgba(122, 162, 255, 0.3)',
+                  background: p.isScoringPlay ? 'rgba(102, 187, 106, 0.08)' : 'transparent',
+                  borderRadius: 2,
+                }}
+              >
+                <div style={{ fontSize: 11, color: '#7aa2ff', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 2 }}>
+                  {p.halfInning === 'top' ? '▲' : '▼'} {p.inning ?? ''}
+                  {p.batter && ` · ${p.batter}`}
+                  {p.isScoringPlay && <span style={{ color: '#66bb6a', marginLeft: 6 }}>SCORE</span>}
+                </div>
+                <div style={{ fontSize: 13 }}>{p.description}</div>
+                {(p.awayScore !== null || p.homeScore !== null) && (
+                  <div className="muted small" style={{ marginTop: 2 }}>
+                    {game.away.abbreviation} {p.awayScore ?? 0} · {p.homeScore ?? 0} {game.home.abbreviation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {feed.recentPlays.length === 0 && (
+        <p className="muted small" style={{ marginTop: 8 }}>No plays recorded yet.</p>
+      )}
     </details>
   );
 }
