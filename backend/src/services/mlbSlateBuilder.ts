@@ -411,8 +411,17 @@ export function buildMlbSlate(
 
   const slots: MlbSlateResult['combos'] = [];
 
-  // Walk allowed sizes in ascending order so the result is stable.
-  const sizes = [...cfg.allowedSizes].sort((a, b) => a - b);
+  // L8 strict subset guarantee: Best 6 ⊇ Best 5 ⊇ Best 4 ⊇ Best 3 ⊇ Best 2.
+  // Build the LARGEST size first using the strictest fragility cap,
+  // then derive smaller sizes by trimming the weakest leg by score.
+  // This honors the spec: "Cards build top-down. Best 6 contains Best 5..."
+  // Smaller cards remain valid because fragility caps are LOOSER for them
+  // — every leg that passes a tight cap also passes a loose one.
+  // We keep `previousPicks` to enforce the subset relationship.
+  let previousPicks: ResolvedMlbLine[] | null = null;
+  // Walk allowed sizes in DESCENDING order. Largest is the parent set;
+  // each smaller size becomes a strict subset by dropping the weakest.
+  const sizes = [...cfg.allowedSizes].sort((a, b) => b - a);
   for (const size of sizes) {
     const label = (`Best ${size}`) as MlbCombo['label'];
     // Per L8 spec: "rotate fragile picks out of larger cards." Apply a
@@ -433,7 +442,19 @@ export function buildMlbSlate(
       });
       continue;
     }
-    const picks = pickTopN(sizePool, size, resolvedMode);
+    // Subset enforcement: when a parent (larger) set already exists,
+    // derive this size by slicing the top-N of it (sorted by score).
+    // This guarantees Best N ⊆ Best N+1. Otherwise pick fresh from
+    // the size-specific pool.
+    let picks: ResolvedMlbLine[];
+    if (previousPicks !== null && previousPicks.length >= size) {
+      const sortedParent = [...previousPicks].sort(
+        (a, b) => legScore(b, resolvedMode) - legScore(a, resolvedMode),
+      );
+      picks = sortedParent.slice(0, size);
+    } else {
+      picks = pickTopN(sizePool, size, resolvedMode);
+    }
     if (picks.length < size) {
       // Same-player uniqueness shrunk the pool below target.
       slots.push({
@@ -463,7 +484,12 @@ export function buildMlbSlate(
       combo: makeCombo(size, picks, resolvedMode),
       reason: 'OK',
     });
+    // Anchor for the next (smaller) size's subset derivation.
+    previousPicks = picks;
   }
+  // Re-sort slots in ascending size order for the API response — UI
+  // expects small-to-large in the rendered list.
+  slots.sort((a, b) => a.size - b.size);
 
   // Wild Card slot. Track which players we've already placed in
   // safe/balanced/aggressive/insane cards so the Wild Card surfaces

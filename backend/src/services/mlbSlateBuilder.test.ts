@@ -197,6 +197,36 @@ describe('buildMlbSlate — L8 per-size fragility caps', () => {
   });
 });
 
+describe('buildMlbSlate — L8 strict subset (Best N+1 ⊇ Best N)', () => {
+  test('Best 5 player IDs are a subset of Best 6 in Balanced mode', () => {
+    const r = buildMlbSlate(strongSlate(8), 'balanced');
+    const best6 = r.combos.find((c) => c.size === 6)?.combo;
+    const best5 = r.combos.find((c) => c.size === 5)?.combo;
+    if (best5 && best6) {
+      const ids6 = new Set(best6.legs.map((l) => l.playerId));
+      for (const leg of best5.legs) {
+        expect(ids6.has(leg.playerId)).toBe(true);
+      }
+    }
+  });
+
+  test('Best 2 ⊆ Best 3 ⊆ Best 4 ⊆ Best 5 ⊆ Best 6 chain holds', () => {
+    const r = buildMlbSlate(strongSlate(10), 'balanced');
+    let prev: Set<number> | null = null;
+    for (const size of [2, 3, 4, 5, 6]) {
+      const combo = r.combos.find((c) => c.size === size)?.combo;
+      if (!combo) continue;
+      const cur = new Set(combo.legs.map((l) => l.playerId));
+      if (prev !== null) {
+        for (const id of prev) {
+          expect(cur.has(id)).toBe(true);     // smaller card's IDs all in larger card
+        }
+      }
+      prev = cur;
+    }
+  });
+});
+
 describe('buildMlbSlate — same-player block', () => {
   test('Same player on multiple stats can\'t stack on one card', () => {
     const slate = [
