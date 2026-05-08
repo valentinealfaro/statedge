@@ -37,6 +37,11 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
       statRarity: 45, marginThinness: 30, sampleWeakness: 0, volatility: 30,
       lineupUncertainty: 0,
     },
+    confidenceTier: 'Strong',
+    confidenceComponents: {
+      sampleQuality: 70, projectionAgreement: 75, matchupClarity: 70,
+      opportunityCertainty: 75, calibrationStrength: 50, dataCompleteness: 60,
+    },
     momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,

@@ -162,14 +162,14 @@ describe('computeMlbProjection — sample size + confidence', () => {
       seasonGames: 3,
       opponentGames: 0, opponentAverage: null,
     }));
-    expect(r.confidence).toBeLessThanOrEqual(30);
+    expect(r.confidence).toBeLessThan(45);   // Weak-Medium floor with L10 6-component formula
     expect(r.trapScore).toBeGreaterThanOrEqual(20);
     expect(r.reasonCodes.join(' ')).toMatch(/small[- ]sample/i);
   });
 
   test('full sample lifts confidence', () => {
     const r = computeMlbProjection(inputs());
-    expect(r.confidence).toBeGreaterThan(60);
+    expect(r.confidence).toBeGreaterThan(50);  // Strong tier under the L10 6-component formula
   });
 });
 

@@ -1384,6 +1384,17 @@ export type MlbProjectionResponse = {
     volatility: number;
     lineupUncertainty: number | null;
   };
+  // L10 Confidence — 6-component composite per institutional spec.
+  // Tier banding + components for transparency.
+  confidenceTier: 'Weak' | 'Medium' | 'Strong' | 'Elite' | 'Institutional';
+  confidenceComponents: {
+    sampleQuality: number;
+    projectionAgreement: number;
+    matchupClarity: number;
+    opportunityCertainty: number;
+    calibrationStrength: number;
+    dataCompleteness: number;
+  };
   // Layer 2 of the institutional MLB engine: composite of L5 vs L10,
   // L10 vs season, projection separation, and L10 hit rate. Direction-
   // aware; 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.

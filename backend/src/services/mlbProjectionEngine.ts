@@ -65,6 +65,10 @@ import {
   computeFragility,
   type FragilityResult,
 } from './mlbFragilityEngine.js';
+import {
+  computeConfidence,
+  type ConfidenceResult,
+} from './mlbConfidenceEngine.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -263,6 +267,14 @@ export type ProjectionResult = {
   fragilityTier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
   fragilityComponents: FragilityResult['components'];
 
+  // L10 Confidence Intelligence — six-component composite
+  // (sampleQuality / projectionAgreement / matchupClarity /
+  // opportunityCertainty / calibrationStrength / dataCompleteness).
+  // Already exposed via the legacy `confidence` field; the tier
+  // banding + per-component breakdown surface here.
+  confidenceTier: 'Weak' | 'Medium' | 'Strong' | 'Elite' | 'Institutional';
+  confidenceComponents: ConfidenceResult['components'];
+
   // ---- Line raising (NBA-style elite-conviction signal) ----
   // When the model has elite conviction (high probability + high
   // confidence + low trap + projection well above line), we test
@@ -367,6 +379,11 @@ function emptyResult(
       sampleWeakness: 100,
       volatility: 50,
       lineupUncertainty: null,
+    },
+    confidenceTier: 'Weak',
+    confidenceComponents: {
+      sampleQuality: 0, projectionAgreement: 50, matchupClarity: 30,
+      opportunityCertainty: 30, calibrationStrength: 50, dataCompleteness: 0,
     },
     momentumExpansionScore: 50,
     monteCarlo: null,
@@ -905,13 +922,54 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       : inputs.lineupSpot !== null,
   });
 
-  // ----- Confidence -----
-  // Sample size: 0 → 0, 10 → 100 (capped). Modulated by signal
-  // agreement: if opponent avg, season avg, and L10 avg all agree
-  // within ~15%, bump confidence. If they wildly disagree, drop it.
-  const sampleConfidence = Math.min(100, last10.sampleSize * 10);
-  const agreementPenalty = computeAgreementPenalty(inputs);
-  const confidence = clamp(Math.round(sampleConfidence - agreementPenalty), 0, 100);
+  // ----- Confidence (L10) -----
+  // Six-component composite per the institutional MLB Intelligence
+  // Engine spec — replaces the legacy 2-component (sample + agreement)
+  // calc. Same engine state inputs, just reweighted to spec.
+  const l10Anchor = last10.last10Average === 0 ? 1 : Math.abs(last10.last10Average);
+  const stabilizationGames = inputs.orderedValues
+    ? getStabilizationGames(inputs.statKey)
+    : 25;
+  const confidenceResult = computeConfidence({
+    last10Size: last10.sampleSize,
+    seasonGames: inputs.seasonGames,
+    stabilizationGames,
+    agreementSpread: {
+      seasonVsLast10: inputs.seasonAverage !== null && inputs.seasonGames >= 10
+        ? Math.abs(inputs.seasonAverage - last10.last10Average) / l10Anchor
+        : null,
+      opponentVsLast10: inputs.opponentAverage !== null && inputs.opponentGames >= 2
+        ? Math.abs(inputs.opponentAverage - last10.last10Average) / l10Anchor
+        : null,
+      last5VsLast10: last10.last5Average !== null && last10.last10Average > 0
+        ? Math.abs(last10.last5Average - last10.last10Average) / l10Anchor
+        : null,
+    },
+    opponentGames: inputs.opponentGames,
+    // Handedness signal — we always know SOME side because the stat
+    // was resolved against a typed player. Treat as known when
+    // opposing pitcher (BvP) is provided OR the player has any
+    // matchup history. Conservative.
+    handednessKnown: inputs.opposingPitcherId !== null || inputs.opponentGames > 0,
+    playerType: inputs.playerType,
+    lineupConfirmed: inputs.playerType === 'hitter'
+      ? inputs.lineupSpot !== null
+      : null,
+    gameContextLoaded: inputs.parkFactor !== null
+      || inputs.weather !== null
+      || inputs.lineupSpot !== null,
+    // Calibration loop is data-gated — we'll wire it in once L9 has
+    // accumulated enough graded predictions. For now: neutral.
+    calibrationScore: null,
+    contextLayers: {
+      park:       inputs.parkFactor !== null,
+      weather:    inputs.weather !== null,
+      lineup:     inputs.lineupSpot !== null,
+      bvp:        inputs.bvp !== null,
+      gameScript: inputs.gameScript !== null,
+    },
+  });
+  const confidence = confidenceResult.confidence;
 
   // ----- Risk -----
   // Take the bigger of the L10-driven volatility risk and the stat-
@@ -1125,6 +1183,8 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     fragilityScore: fragility.fragility,
     fragilityTier: fragility.tier,
     fragilityComponents: fragility.components,
+    confidenceTier: confidenceResult.tier,
+    confidenceComponents: confidenceResult.components,
     momentumExpansionScore: computeMomentumExpansionScore({
       direction: inputs.direction,
       last10Average: inputs.last10.last10Average,

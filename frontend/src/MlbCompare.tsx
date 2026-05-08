@@ -476,9 +476,13 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
             {data.edgePercent >= 0 ? '+' : ''}{data.edgePercent.toFixed(1)}%
           </span>
         </div>
-        <div className="mlb-stat" title="Sample size + signal agreement. Higher = more reliable.">
+        <div
+          className={`mlb-stat ${confidenceClass(data.confidence)}`}
+          title="L10 — 6-component composite: sampleQuality + projectionAgreement + matchupClarity + opportunityCertainty + calibrationStrength + dataCompleteness. Bands: 0-39 Weak / 40-59 Medium / 60-74 Strong / 75-89 Elite / 90+ Institutional (extremely rare per spec)."
+        >
           <span className="mlb-stat-label">Confidence</span>
           <span className="mlb-stat-value">{data.confidence}/100</span>
+          <span className="mlb-stat-sub">{data.confidenceTier}</span>
         </div>
         <div className="mlb-stat" title="Variance + stat-type risk. Higher = more fragile.">
           <span className="mlb-stat-label">Risk</span>
@@ -530,6 +534,12 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
         score={data.fragilityScore}
         tier={data.fragilityTier}
         components={data.fragilityComponents}
+      />
+
+      <ConfidencePanel
+        score={data.confidence}
+        tier={data.confidenceTier}
+        components={data.confidenceComponents}
       />
 
       {data.monteCarlo && <MonteCarloBands data={data} />}
@@ -773,6 +783,63 @@ function fragilityComponentClass(value: number): string {
   if (value <= 25) return 'positive';     // low fragility = green
   if (value <= 60) return 'neutral';
   return 'negative';                      // high fragility = red
+}
+
+// L10 confidence breakdown — surfaces the 6-component spec composite
+// so users see WHY a projection is or isn't trustworthy.
+function ConfidencePanel({
+  score,
+  tier,
+  components,
+}: {
+  score: number;
+  tier: string;
+  components: {
+    sampleQuality: number;
+    projectionAgreement: number;
+    matchupClarity: number;
+    opportunityCertainty: number;
+    calibrationStrength: number;
+    dataCompleteness: number;
+  };
+}) {
+  const rows: Array<{ label: string; value: number; hint: string }> = [
+    { label: 'Sample quality',        value: components.sampleQuality,        hint: 'L10 fill + season-vs-stabilization. 100 = full sample, threshold crossed.' },
+    { label: 'Projection agreement',  value: components.projectionAgreement,  hint: 'Spread between L10 / L5 / season / opponent. Tight cluster = high score.' },
+    { label: 'Matchup clarity',       value: components.matchupClarity,       hint: 'Opponent sample size + handedness known.' },
+    { label: 'Opportunity certainty', value: components.opportunityCertainty, hint: 'Lineup confirmed + game context loaded (hitters); probable starter (pitchers).' },
+    { label: 'Calibration strength',  value: components.calibrationStrength,  hint: 'Historical bucket accuracy. Neutral 50 until L9 has accumulated enough graded predictions.' },
+    { label: 'Data completeness',     value: components.dataCompleteness,     hint: 'Count of context layers (park / weather / lineup / BvP / game-script) populated.' },
+  ];
+  return (
+    <div className="mlb-context" title="L10 Confidence Intelligence — confidence is NOT hit probability. It measures how trustworthy the projection itself is.">
+      <div className="mlb-context-heading">
+        Confidence breakdown · {score}/100 · <em>{tier}</em>
+      </div>
+      <div className="mlb-context-grid">
+        {rows.map((r) => (
+          <div key={r.label} className={`mlb-context-chip ${confidenceComponentClass(r.value)}`} title={r.hint}>
+            <span className="mlb-context-label">{r.label}</span>
+            <span className="mlb-context-value">{r.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function confidenceComponentClass(value: number): string {
+  if (value >= 75) return 'positive';
+  if (value >= 40) return 'neutral';
+  return 'negative';
+}
+
+function confidenceClass(score: number): string {
+  if (score >= 90) return 'momentum-strong';
+  if (score >= 75) return 'momentum-up';
+  if (score >= 60) return 'momentum-up';
+  if (score >= 40) return 'momentum-neutral';
+  return 'momentum-cooling';
 }
 
 function fragilityClass(score: number): string {
