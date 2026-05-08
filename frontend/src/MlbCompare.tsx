@@ -19,6 +19,7 @@ import {
   type MlbSearchPlayer,
   type MlbStatMeta,
 } from './api';
+import { MlbPlayersByGame } from './MlbPlayersByGame';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -334,6 +335,11 @@ export function MlbCompare() {
           <Skeleton width="100%" height={140} style={{ marginTop: 16 }} />
         )}
         {!projectionLoading && projection && <ProjectionPanel data={projection} />}
+
+        {/* Per-player browse view — game-grouped accordion + search.
+            Sits at the bottom of /mlb/compare so users can scan the
+            whole night's board after their search/comparison work. */}
+        <MlbPlayersByGame />
 
         {/* Compliance disclaimer — always rendered when MLB analytics
             are visible. Sourced from the API so the wording stays in
