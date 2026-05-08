@@ -71,10 +71,25 @@ export function MlbTodaysGames() {
 }
 
 function GameCard({ game }: { game: MlbTodayGame }) {
-  const status = game.status.detailedState;
   const isPregame = game.status.abstractGameState === 'Preview';
   const isLive = game.status.inProgress;
   const isFinal = game.status.abstractGameState === 'Final';
+  // Pre-game: show ACTUAL first-pitch time, not "Pre-Game" string.
+  // Live: show inning/clock from detailedState (e.g. "Top 5th").
+  // Final: show "Final".
+  const startTime = (() => {
+    try {
+      return new Date(game.gameDate).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch {
+      return null;
+    }
+  })();
+  const statusLabel = isPregame
+    ? (startTime ?? game.status.detailedState)
+    : game.status.detailedState;
 
   return (
     <Link
@@ -82,7 +97,7 @@ function GameCard({ game }: { game: MlbTodayGame }) {
       className={`mlb-today-game ${isLive ? 'live' : ''} ${isFinal ? 'final' : ''}`}
       style={{ textDecoration: 'none', color: 'inherit', display: 'block', cursor: 'pointer' }}
     >
-      <div className="mlb-today-game-status">{status}</div>
+      <div className="mlb-today-game-status">{statusLabel}</div>
 
       <div className="mlb-today-row">
         <span className="mlb-today-team" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

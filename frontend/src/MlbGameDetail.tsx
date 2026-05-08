@@ -159,6 +159,22 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
   const live = game.status.inProgress;
   const final = game.status.abstractGameState === 'Final';
   const time = new Date(game.gameDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  // Full date+time tooltip for the start-time card so users on
+  // different timezones see exactly when first pitch was/will be.
+  const fullDateTime = (() => {
+    try {
+      return new Date(game.gameDate).toLocaleString([], {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      });
+    } catch {
+      return '';
+    }
+  })();
   const awaySplit = game.away.awayRecord;
   const homeSplit = game.home.homeRecord;
   return (
@@ -210,9 +226,10 @@ function GameHeader({ game }: { game: MlbTodayGame }) {
             {game.home.record ?? ''}{homeSplit ? ` · ${homeSplit} home` : ''}
           </span>
         </div>
-        <div className="mlb-stat" title={`Status: ${game.status.detailedState}`}>
-          <span className="mlb-stat-label">Status</span>
-          <span className="mlb-stat-value" style={{ fontSize: 14 }}>{game.status.detailedState}</span>
+        <div className="mlb-stat" title={`First pitch: ${fullDateTime}`}>
+          <span className="mlb-stat-label">{live ? 'Started' : final ? 'Played' : 'First pitch'}</span>
+          <span className="mlb-stat-value" style={{ fontSize: 14 }}>{time}</span>
+          <span className="mlb-stat-sub">{game.status.detailedState}</span>
         </div>
         {game.venue && (
           <div className="mlb-stat" title="Venue">
