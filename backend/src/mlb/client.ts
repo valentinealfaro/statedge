@@ -92,14 +92,74 @@ export type MlbPlayer = {
   currentTeam?: { id: number };
 };
 
-// All active players across MLB for a given season. The API's
-// `/sports/1/players` endpoint returns the league-wide roster
-// snapshot — much faster than walking every team's 40-man.
+// All players across MLB for a given season. The fast path is the
+// league-wide `/sports/1/players` endpoint, but it OMITS players on
+// the IL — discovered when Nick Lodolo (CIN, on IL 2026-05-08) was
+// missing from a fresh sync even though PrizePicks was actively
+// posting lines for him. To cover IL + 40-man-only players we also
+// walk each team's 40-man roster and merge by playerId.
+//
+// Cost: 1 league call + 30 team calls (sequential to be polite to
+// statsapi). Adds ~3-5s to the sync at most.
 export async function getAllPlayers(season: number): Promise<MlbPlayer[]> {
-  const data = await fetchJson<{ people: MlbPlayer[] }>(
+  const leagueData = await fetchJson<{ people: MlbPlayer[] }>(
     `/sports/${SPORT_ID}/players?season=${season}`,
   );
-  return data.people ?? [];
+  const leaguePlayers = leagueData.people ?? [];
+
+  // Pull 40-man rosters per team. Each entry has a `person` ref —
+  // hydrate it into a full MlbPlayer-shaped record by re-fetching
+  // /people/{id} where needed. To keep the call count sane we only
+  // re-fetch IDs that aren't already in the league snapshot.
+  const teams = await fetchJson<{ teams: Array<{ id: number }> }>(
+    `/teams?sportId=${SPORT_ID}`,
+  );
+  const seen = new Set<number>(leaguePlayers.map((p) => p.id));
+  const extraIds: number[] = [];
+  const teamIdByPersonId = new Map<number, number>();
+  for (const t of teams.teams ?? []) {
+    try {
+      const roster = await fetchJson<{
+        roster: Array<{ person: { id: number; fullName: string } }>;
+      }>(`/teams/${t.id}/roster?rosterType=40Man`);
+      for (const r of roster.roster ?? []) {
+        if (!seen.has(r.person.id)) {
+          extraIds.push(r.person.id);
+          teamIdByPersonId.set(r.person.id, t.id);
+          seen.add(r.person.id);
+        }
+      }
+    } catch {
+      // Roster fetch failed for one team — keep going. The league
+      // snapshot already covered most players.
+    }
+  }
+
+  // Hydrate each missing ID via /people/{id}?hydrate=currentTeam to
+  // get the full shape (position, bats/throws, currentTeam) the
+  // upserter expects. Sequential to avoid hammering statsapi.
+  const extras: MlbPlayer[] = [];
+  for (const id of extraIds) {
+    try {
+      const data = await fetchJson<{ people: MlbPlayer[] }>(
+        `/people/${id}?hydrate=currentTeam`,
+      );
+      const person = data.people?.[0];
+      if (person) {
+        // /people response sometimes omits currentTeam if the player
+        // has no MLB games this season; backfill from our roster scan.
+        if (!person.currentTeam && teamIdByPersonId.has(id)) {
+          person.currentTeam = { id: teamIdByPersonId.get(id)! };
+        }
+        extras.push(person);
+      }
+    } catch {
+      // Skip individual hydration failures — they're rare and don't
+      // block the bulk sync.
+    }
+  }
+
+  return [...leaguePlayers, ...extras];
 }
 
 // ---------- Schedule ----------
