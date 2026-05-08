@@ -382,30 +382,28 @@ function TeamSplits({ game }: { game: MlbTodayGame }) {
   return (
     <details className="mlb-context" open>
       <summary className="mlb-context-heading">Team season splits</summary>
-      <div style={{ overflowX: 'auto', marginTop: 8 }}>
-        <table className="mlb-standings-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th className="num">{away.abbreviation}</th>
-              <th className="num">{home.abbreviation}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <Row label="Record"          away={`${away.wins}-${away.losses}`}     home={`${home.wins}-${home.losses}`} />
-            <Row label="Win %"           away={away.winPct.toFixed(3)}            home={home.winPct.toFixed(3)} />
-            <Row label="Run differential" away={away.runDifferential.toString()}  home={home.runDifferential.toString()} />
-            <Row label="Runs / G"        away={away.runsScoredPerGame.toFixed(2)} home={home.runsScoredPerGame.toFixed(2)} />
-            <Row label="Runs allowed / G" away={away.runsAllowedPerGame.toFixed(2)} home={home.runsAllowedPerGame.toFixed(2)} />
-            <Row label="Starter ERA"     away={away.starterEra !== null ? away.starterEra.toFixed(2) : '—'}
-                                          home={home.starterEra !== null ? home.starterEra.toFixed(2) : '—'} />
-            <Row label="Bullpen ERA"     away={away.bullpenEra !== null ? away.bullpenEra.toFixed(2) : '—'}
-                                          home={home.bullpenEra !== null ? home.bullpenEra.toFixed(2) : '—'} />
-            <Row label="Last 10"         away={`${away.last10.wins}-${away.last10.losses}`}
-                                          home={`${home.last10.wins}-${home.last10.losses}`} />
-          </tbody>
-        </table>
-      </div>
+      <table className="mlb-mini-table" style={{ marginTop: 8, maxWidth: 480 }}>
+        <thead>
+          <tr>
+            <th></th>
+            <th className="num">{away.abbreviation}</th>
+            <th className="num">{home.abbreviation}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <Row label="Record"           away={`${away.wins}-${away.losses}`}     home={`${home.wins}-${home.losses}`} />
+          <Row label="Win %"            away={away.winPct.toFixed(3)}            home={home.winPct.toFixed(3)} />
+          <Row label="Run diff"         away={away.runDifferential.toString()}   home={home.runDifferential.toString()} />
+          <Row label="Runs / G"         away={away.runsScoredPerGame.toFixed(2)} home={home.runsScoredPerGame.toFixed(2)} />
+          <Row label="RA / G"           away={away.runsAllowedPerGame.toFixed(2)} home={home.runsAllowedPerGame.toFixed(2)} />
+          <Row label="Starter ERA"      away={away.starterEra !== null ? away.starterEra.toFixed(2) : '—'}
+                                         home={home.starterEra !== null ? home.starterEra.toFixed(2) : '—'} />
+          <Row label="Bullpen ERA"      away={away.bullpenEra !== null ? away.bullpenEra.toFixed(2) : '—'}
+                                         home={home.bullpenEra !== null ? home.bullpenEra.toFixed(2) : '—'} />
+          <Row label="Last 10"          away={`${away.last10.wins}-${away.last10.losses}`}
+                                         home={`${home.last10.wins}-${home.last10.losses}`} />
+        </tbody>
+      </table>
     </details>
   );
 }
@@ -430,29 +428,31 @@ function LastFiveStrip({ game }: { game: MlbTodayGame }) {
   const Block = ({ data, abbr }: { data: MlbTeamLast5 | null; abbr: string }) => {
     if (!data) return null;
     return (
-      <div style={{ flex: 1, minWidth: 240 }}>
+      <div>
         <div className="muted small" style={{ marginBottom: 4 }}>{abbr} last 5</div>
-        <table className="mlb-standings-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Opp</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.games.map((g) => (
-              <tr key={g.gameId}>
-                <td>{g.date}</td>
-                <td>{g.isHome ? `vs ${g.opponent ?? '—'}` : `@${g.opponent ?? '—'}`}</td>
-                <td style={{ color: g.result === 'W' ? 'var(--hot, #66bb6a)' : '#ef5350' }}>
-                  <strong>{g.result}</strong> {g.score}
-                </td>
+        <div className="mlb-game-twocol-scroll">
+          <table className="mlb-mini-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Opp</th>
+                <th>Result</th>
               </tr>
-            ))}
-            {data.games.length === 0 && <tr><td colSpan={3} className="muted small">No completed games yet.</td></tr>}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.games.map((g) => (
+                <tr key={g.gameId}>
+                  <td>{g.date}</td>
+                  <td>{g.isHome ? `vs ${g.opponent ?? '—'}` : `@${g.opponent ?? '—'}`}</td>
+                  <td style={{ color: g.result === 'W' ? 'var(--hot, #66bb6a)' : '#ef5350' }}>
+                    <strong>{g.result}</strong> {g.score}
+                  </td>
+                </tr>
+              ))}
+              {data.games.length === 0 && <tr><td colSpan={3} className="muted small">No completed games yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
@@ -460,7 +460,7 @@ function LastFiveStrip({ game }: { game: MlbTodayGame }) {
   return (
     <details className="mlb-context" open>
       <summary className="mlb-context-heading">Last 5 games</summary>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+      <div className="mlb-game-twocol">
         <Block data={away} abbr={game.away.abbreviation} />
         <Block data={home} abbr={game.home.abbreviation} />
       </div>
@@ -478,41 +478,41 @@ function Lineups({ game }: { game: MlbTodayGame }) {
   const Side = ({ side, abbr }: { side: typeof away; abbr: string }) => {
     if (!side || side.length === 0) {
       return (
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div>
           <div className="muted small" style={{ marginBottom: 4 }}>{abbr} lineup</div>
           <p className="muted small">Lineup not posted yet (typically ~2h before first pitch).</p>
         </div>
       );
     }
     return (
-      <div style={{ flex: 1, minWidth: 280 }}>
+      <div>
         <div className="muted small" style={{ marginBottom: 4 }}>{abbr} lineup</div>
-        <table className="mlb-standings-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Player</th>
-              <th>Pos</th>
-              <th className="num">AVG</th>
-              <th className="num">HR</th>
-              <th className="num">RBI</th>
-              <th className="num">OPS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {side.map((b) => (
-              <tr key={b.playerId}>
-                <td>{b.battingOrder || '—'}</td>
-                <td><strong>{b.name}</strong></td>
-                <td>{b.position}</td>
-                <td className="num">{b.avg ?? '—'}</td>
-                <td className="num">{b.hr ?? '—'}</td>
-                <td className="num">{b.rbi ?? '—'}</td>
-                <td className="num">{b.ops ?? '—'}</td>
+        <div className="mlb-game-twocol-scroll">
+          <table className="mlb-mini-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>Pos</th>
+                <th className="num">AVG</th>
+                <th className="num">HR</th>
+                <th className="num">RBI</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {side.map((b) => (
+                <tr key={b.playerId}>
+                  <td>{b.battingOrder || '—'}</td>
+                  <td><strong>{b.name}</strong></td>
+                  <td>{b.position}</td>
+                  <td className="num">{b.avg ?? '—'}</td>
+                  <td className="num">{b.hr ?? '—'}</td>
+                  <td className="num">{b.rbi ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
@@ -522,7 +522,7 @@ function Lineups({ game }: { game: MlbTodayGame }) {
       <summary className="mlb-context-heading">
         Lineups <span className="muted small">— posted batting orders</span>
       </summary>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+      <div className="mlb-game-twocol">
         <Side side={away} abbr={game.away.abbreviation} />
         <Side side={home} abbr={game.home.abbreviation} />
       </div>
@@ -547,14 +547,14 @@ function Leaders({ game }: { game: MlbTodayGame }) {
       side.pitchingEra.length === 0;
     if (empty) {
       return (
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div>
           <div className="muted small" style={{ marginBottom: 4 }}>{abbr} leaders</div>
           <p className="muted small">Not enough sample yet (need 80 PA / 90 outs).</p>
         </div>
       );
     }
     return (
-      <div style={{ flex: 1, minWidth: 280 }}>
+      <div>
         <div className="muted small" style={{ marginBottom: 4 }}>{abbr} leaders</div>
         {side.hittingAvg.length > 0 && (
           <div style={{ marginBottom: 8 }}>
@@ -598,7 +598,7 @@ function Leaders({ game }: { game: MlbTodayGame }) {
       <summary className="mlb-context-heading">
         Team leaders <span className="muted small">— top performers this season</span>
       </summary>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+      <div className="mlb-game-twocol">
         <Side side={preview.leaders.away} abbr={game.away.abbreviation} />
         <Side side={preview.leaders.home} abbr={game.home.abbreviation} />
       </div>
@@ -746,29 +746,31 @@ function Injuries({ game }: { game: MlbTodayGame }) {
   if (away.length === 0 && home.length === 0) return null;
 
   const Side = ({ side, abbr }: { side: typeof away; abbr: string }) => (
-    <div style={{ flex: 1, minWidth: 280 }}>
+    <div>
       <div className="muted small" style={{ marginBottom: 4 }}>{abbr} injured list ({side.length})</div>
       {side.length === 0 ? (
         <p className="muted small">No players on IL.</p>
       ) : (
-        <table className="mlb-standings-table">
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th>Pos</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {side.map((p) => (
-              <tr key={p.playerId}>
-                <td>{p.name}</td>
-                <td>{p.position ?? '—'}</td>
-                <td className="muted small">{p.status}</td>
+        <div className="mlb-game-twocol-scroll">
+          <table className="mlb-mini-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Pos</th>
+                <th>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {side.map((p) => (
+                <tr key={p.playerId}>
+                  <td>{p.name}</td>
+                  <td>{p.position ?? '—'}</td>
+                  <td className="muted small">{p.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -778,7 +780,7 @@ function Injuries({ game }: { game: MlbTodayGame }) {
       <summary className="mlb-context-heading">
         Injury report <span className="muted small">— current IL ({away.length + home.length} players)</span>
       </summary>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+      <div className="mlb-game-twocol">
         <Side side={away} abbr={game.away.abbreviation} />
         <Side side={home} abbr={game.home.abbreviation} />
       </div>

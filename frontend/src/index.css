@@ -5840,6 +5840,54 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   .mlb-standings-table tbody td.adv-only { display: none; }
 }
 
+/* Compact table for game-detail side-by-side panels (lineups, last-5,
+   team splits, injuries). Same visual language as mlb-standings-table
+   but without the 920px min-width, which would overflow the narrow
+   half-page columns. Used on /mlb/game/:gamePk. */
+.mlb-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 0;
+}
+.mlb-mini-table thead th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.mlb-mini-table thead th.num,
+.mlb-mini-table tbody td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mlb-mini-table tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.mlb-mini-table tbody tr:last-child td { border-bottom: 0; }
+.mlb-mini-table tbody tr:hover { background: var(--surface-2); }
+
+/* Grid wrapper for "two-team side-by-side" layouts on the game
+   detail page. Auto-collapses to a single column on narrow screens. */
+.mlb-game-twocol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.mlb-game-twocol > * { min-width: 0; }
+.mlb-game-twocol .mlb-game-twocol-scroll {
+  overflow-x: auto;
+}
+
 /* Tonight's MLB games rail — sits at the top of /mlb/compare. Each
    card shows matchup + records + scores/status + Vegas implied win
    probability + probable pitchers with W-L + ERA. Mission framing:
