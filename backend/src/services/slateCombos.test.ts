@@ -37,6 +37,14 @@ function makeProjection(over: Partial<ProjectionResult> = {}): ProjectionResult 
     confidence: { score: 70, label: 'High Confidence' },
     risk: { score: 50, label: 'Moderate Risk' },
     edge: { score: 60, label: 'Moderate Edge', lean: 'Strong Over Lean' },
+    fragility: {
+      score: 35,
+      tier: 'Moderate Fragility',
+      components: {
+        statRarity: 35, marginThinness: 30, sampleWeakness: 0, volatility: 30,
+        minutesUncertainty: 0,
+      },
+    },
     historicalHitRates: {
       season: 60, last10: 60, last5: 60, vsOpponent: 60, homeAway: 60,
     },

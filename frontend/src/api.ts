@@ -569,6 +569,20 @@ export type SlateProjection = {
   confidence: { score: number; label: string };
   risk: { score: number; label: string };
   edge: { score: number; label: string; lean: string };
+  // L5 Fragility — separate from probability and risk. NBA-specific
+  // component is minutesUncertainty (a player's projected minutes ≤ 25
+  // is fragile because role can collapse on foul trouble / blowout).
+  fragility: {
+    score: number;
+    tier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
+    components: {
+      statRarity: number;
+      marginThinness: number;
+      sampleWeakness: number;
+      volatility: number;
+      minutesUncertainty: number | null;
+    };
+  };
   historicalHitRates: {
     season: number | null;
     last10: number | null;

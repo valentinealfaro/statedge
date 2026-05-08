@@ -13,6 +13,7 @@
 
 import type { PlayerGame } from '../nba/client.js';
 import { STAT_MAP, type Last10StatId } from './last10.js';
+import { computeNbaFragility } from './nbaFragilityEngine.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,6 +73,22 @@ export type ProjectionResult = {
   confidence: { score: number; label: string };
   risk: { score: number; label: string };
   edge: { score: number; label: string; lean: string };
+  // L5 Fragility — separate from probability and risk. Same dimension
+  // as MLB Phase 15 brought to NBA so users see "75% prob 3PM 2.5"
+  // doesn't read identical to "75% prob PRA 32.5" — failure modes
+  // are very different. NBA-specific component swap:
+  // minutesUncertainty replaces MLB's lineupUncertainty.
+  fragility: {
+    score: number;
+    tier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
+    components: {
+      statRarity: number;
+      marginThinness: number;
+      sampleWeakness: number;
+      volatility: number;
+      minutesUncertainty: number | null;
+    };
+  };
   historicalHitRates: {
     season: number | null;
     last10: number | null;
@@ -704,6 +721,24 @@ export function project(inp: ProjectionInputs): ProjectionResult {
   }
   if (sampleSizeScore < 50) notes.push('Sample size is light — interpret confidence cautiously.');
 
+  // L5 Fragility — composite of stat rarity, margin thinness, sample
+  // weakness, volatility, and minutes uncertainty. Same dimension MLB
+  // shipped in Phase 15. Computed here so the result carries it for
+  // the UI's "Fragility breakdown" panel.
+  const fragilityRaw = computeNbaFragility({
+    statKey: stat,
+    projection: contextAdjusted,
+    line,
+    stddev: blendedStdDev,
+    last10Size: last10W?.n ?? 0,
+    projectedMinutes: seasonMin > 0 ? projectedMinutes : null,
+  });
+  const fragility = {
+    score: fragilityRaw.fragility,
+    tier: fragilityRaw.tier,
+    components: fragilityRaw.components,
+  };
+
   return {
     selectedStat: stat,
     lineValue: line,
@@ -718,6 +753,7 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     confidence: { score: confidenceScore, label: confidenceLabel(confidenceScore) },
     risk: { score: riskScore, label: riskLabel(riskScore) },
     edge: { score: edgeScore, label: edgeLabel(edgeScore), lean },
+    fragility,
     historicalHitRates,
     factorBreakdown: {
       seasonAvg: seasonW ? round(seasonW.avg, 2) : null,
@@ -792,6 +828,14 @@ function makeNoProjection(stat: Last10StatId, line: number, reason: string): Pro
     confidence: { score: 0, label: 'Very Weak' },
     risk: { score: 100, label: 'Extreme Risk' },
     edge: { score: 0, label: 'Weak Edge', lean: 'No Clear Edge' },
+    fragility: {
+      score: 50,
+      tier: 'Moderate Fragility',
+      components: {
+        statRarity: 50, marginThinness: 50, sampleWeakness: 100, volatility: 50,
+        minutesUncertainty: 60,
+      },
+    },
     historicalHitRates: { season: null, last10: null, last5: null, vsOpponent: null, homeAway: null },
     factorBreakdown: {
       seasonAvg: null, last10Avg: null, last5Avg: null, vsOpponentAvg: null, homeAwayAvg: null,
