@@ -586,6 +586,22 @@ export type SlateProjection = {
   // L2 momentumExpansionScore — direction-aware. 50 = neutral,
   // ≥65 = real momentum, ≤35 = anti-momentum.
   momentumExpansionScore: number;
+  // L1 robust baseline transparency. The 7-window institutional
+  // composite computed from this player's full season log.
+  // Currently advisory: NBA's projection still uses its tuned blend.
+  robustBaseline: {
+    value: number;
+    components: {
+      seasonAverage: number | null;
+      last30Average: number | null;
+      last20Average: number | null;
+      last10Average: number | null;
+      last5Average: number | null;
+      median: number | null;
+      trimmedMean: number | null;
+    };
+    weightsUsed: Record<string, number>;
+  };
   historicalHitRates: {
     season: number | null;
     last10: number | null;

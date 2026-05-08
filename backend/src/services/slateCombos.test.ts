@@ -46,6 +46,14 @@ function makeProjection(over: Partial<ProjectionResult> = {}): ProjectionResult 
       },
     },
     momentumExpansionScore: 50,
+    robustBaseline: {
+      value: 26,
+      components: {
+        seasonAverage: 26, last30Average: 26, last20Average: 26,
+        last10Average: 26, last5Average: 26, median: 26, trimmedMean: 26,
+      },
+      weightsUsed: { season: 0.18, last30: 0.14, last20: 0.18, last10: 0.22, last5: 0.12, median: 0.10, trimmedMean: 0.06 },
+    },
     historicalHitRates: {
       season: 60, last10: 60, last5: 60, vsOpponent: 60, homeAway: 60,
     },

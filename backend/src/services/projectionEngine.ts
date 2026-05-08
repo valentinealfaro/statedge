@@ -18,6 +18,16 @@ import { computeNbaFragility } from './nbaFragilityEngine.js';
 // works for NBA with NBA-derived inputs. (File name is "mlb…" for
 // archaeology only; the math has no MLB assumptions.)
 import { computeMomentumExpansionScore } from './mlbMomentumExpansion.js';
+// L1 robust baseline — also sport-agnostic. Surfaces the
+// institutional 7-window composite (season / L30 / L20 / L10 / L5 /
+// median / trimmedMean) alongside NBA's existing per-window blend.
+// Currently transparency-only: the projection number itself still
+// uses NBA's tuned blend, but users see what an institutional
+// baseline anchor would say for the same player history.
+import {
+  computeRobustBaseline,
+  type RobustBaselineComponents,
+} from './mlbBaselineEngine.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,6 +108,17 @@ export type ProjectionResult = {
   // neutral, ≥65 = real momentum, ≤35 = anti-momentum. Same module
   // MLB uses (formula is sport-agnostic).
   momentumExpansionScore: number;
+
+  // L1 robust baseline — the institutional 7-window composite
+  // (season / L30 / L20 / L10 / L5 / median / trimmed mean) as a
+  // transparency surface. Currently advisory: NBA's projection
+  // still uses its tuned per-window blend; this lets users see
+  // what the institutional baseline anchor says alongside.
+  robustBaseline: {
+    value: number;
+    components: RobustBaselineComponents;
+    weightsUsed: Record<string, number>;
+  };
   historicalHitRates: {
     season: number | null;
     last10: number | null;
@@ -730,6 +751,17 @@ export function project(inp: ProjectionInputs): ProjectionResult {
   }
   if (sampleSizeScore < 50) notes.push('Sample size is light — interpret confidence cautiously.');
 
+  // L1 robust baseline (institutional 7-window composite). Compute
+  // from the full ordered-most-recent-first season values. Result is
+  // surfaced for transparency; doesn't replace NBA's existing blend
+  // (the tuned multipliers below still drive the projection).
+  const robustBaselineResult = computeRobustBaseline(seasonValues);
+  const robustBaseline = {
+    value: round(robustBaselineResult.robust, 2),
+    components: robustBaselineResult.components,
+    weightsUsed: robustBaselineResult.weightsUsed,
+  };
+
   // L5 Fragility — composite of stat rarity, margin thinness, sample
   // weakness, volatility, and minutes uncertainty. Same dimension MLB
   // shipped in Phase 15. Computed here so the result carries it for
@@ -788,6 +820,7 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     edge: { score: edgeScore, label: edgeLabel(edgeScore), lean },
     fragility,
     momentumExpansionScore,
+    robustBaseline,
     historicalHitRates,
     factorBreakdown: {
       seasonAvg: seasonW ? round(seasonW.avg, 2) : null,
@@ -871,6 +904,14 @@ function makeNoProjection(stat: Last10StatId, line: number, reason: string): Pro
       },
     },
     momentumExpansionScore: 50,
+    robustBaseline: {
+      value: 0,
+      components: {
+        seasonAverage: null, last30Average: null, last20Average: null,
+        last10Average: null, last5Average: null, median: null, trimmedMean: null,
+      },
+      weightsUsed: {},
+    },
     historicalHitRates: { season: null, last10: null, last5: null, vsOpponent: null, homeAway: null },
     factorBreakdown: {
       seasonAvg: null, last10Avg: null, last5Avg: null, vsOpponentAvg: null, homeAwayAvg: null,
