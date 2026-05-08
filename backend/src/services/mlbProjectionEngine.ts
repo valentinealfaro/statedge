@@ -69,6 +69,11 @@ import {
   computeConfidence,
   type ConfidenceResult,
 } from './mlbConfidenceEngine.js';
+import {
+  applyCalibrationAdjustment,
+  computeCalibrationStrength,
+  getCalibrationFeedbackCached,
+} from './mlbCalibrationFeedback.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -1479,7 +1484,91 @@ export async function projectMlbStat(
     gameScript,
   };
 
-  return computeMlbProjection(inputs);
+  const projection = computeMlbProjection(inputs);
+
+  // L9 → L6 calibration feedback. Read graded historical buckets and
+  // apply a per-bucket adjustment to the predicted probability when
+  // the bucket has enough sample. Skip silently when calibration data
+  // is unavailable (no DB, fresh install, etc.) — the engine already
+  // works without this layer.
+  try {
+    const report = await getCalibrationFeedbackCached();
+    const adj = applyCalibrationAdjustment(projection.probability, report);
+    if (adj.shift !== 0) {
+      const clampedProb = clamp(adj.adjustedProbability, 5, 95);
+      // Re-derive dependent fields from the adjusted probability so
+      // the rest of the result stays self-consistent.
+      const newEdgePercent = round1(clampedProb - 50);
+      const newEdgeScore = clamp(Math.round((newEdgePercent + 25) * 2), 0, 100);
+      // EV uses the same 6-component spec weights as the engine.
+      const newEvScore = round1(
+        newEdgePercent * 0.34
+        + projection.projectionDistanceScore * 0.22
+        + projection.confidence * 0.18
+        - projection.trapScore * 0.10
+        - projection.fragilityScore * 0.08,
+      );
+      projection.probability = round1(clampedProb);
+      projection.edgePercent = newEdgePercent;
+      projection.edgeScore = newEdgeScore;
+      projection.evScore = newEvScore;
+      if (adj.reason) projection.reasonCodes.push(adj.reason);
+    }
+
+    // Wire calibrationStrength into the L10 confidence's calibration
+    // component. Currently the engine passes null → neutral 50; once
+    // we have history we can do better. Refresh the confidence
+    // composite with the real strength.
+    const calibrationStrength = computeCalibrationStrength(report);
+    if (calibrationStrength !== 50) {
+      // Only re-run confidence if calibration provides a non-neutral
+      // signal — otherwise the math is identical and the recompute
+      // would be wasted work.
+      const refreshed = computeConfidence({
+        last10Size: last10.sampleSize,
+        seasonGames: baselines.seasonGames,
+        stabilizationGames: 25,                  // matches engine default
+        agreementSpread: {
+          seasonVsLast10: baselines.seasonAverage !== null && baselines.seasonGames >= 10
+            ? Math.abs(baselines.seasonAverage - last10.last10Average)
+                / Math.max(1, Math.abs(last10.last10Average))
+            : null,
+          opponentVsLast10: baselines.opponentAverage !== null && baselines.opponentGames >= 2
+            ? Math.abs(baselines.opponentAverage - last10.last10Average)
+                / Math.max(1, Math.abs(last10.last10Average))
+            : null,
+          last5VsLast10: last10.last5Average !== null && last10.last10Average > 0
+            ? Math.abs(last10.last5Average - last10.last10Average)
+                / Math.max(1, Math.abs(last10.last10Average))
+            : null,
+        },
+        opponentGames: baselines.opponentGames,
+        handednessKnown: args.opposingPitcherId !== undefined || baselines.opponentGames > 0,
+        playerType,
+        lineupConfirmed: playerType === 'hitter' ? lineupSpot !== null : null,
+        gameContextLoaded: parkFactor !== null
+          || gameContext?.weather !== null
+          || lineupSpot !== null,
+        calibrationScore: calibrationStrength,
+        contextLayers: {
+          park:       parkFactor !== null,
+          weather:    gameContext?.weather != null,
+          lineup:     lineupSpot !== null,
+          bvp:        bvp !== null,
+          gameScript: gameScript !== null,
+        },
+      });
+      projection.confidence = refreshed.confidence;
+      projection.confidenceTier = refreshed.tier;
+      projection.confidenceComponents = refreshed.components;
+    }
+  } catch {
+    // Calibration unavailable — engine still produces a projection
+    // without it. No-op is the right behavior; the spec's "static
+    // models die" warning applies, but a missing-data crash is worse.
+  }
+
+  return projection;
 }
 
 // ---------- Game-script helpers ----------
