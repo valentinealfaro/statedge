@@ -25,6 +25,12 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     reasonCodes: [],
     weightsUsed: { last10: 1.0 },
     contextAdjustments: { park: 1, weather: 1, lineup: 1, bvp: 1, gameScript: 1, pitchArsenal: 1, bullpen: 1 },
+    seasonAverage: 1.5,
+    seasonGames: 60,
+    last10Average: 1.5,
+    last5Average: 1.5,
+    last10HitRate: 60,
+    momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,
     originalProbability: null,
@@ -49,6 +55,9 @@ function signals(over: Partial<WildCardSignals> = {}): WildCardSignals {
     lineupSpot: 3,
     parkMultiplier: 1.0,
     venueName: null,
+    seasonAverage: 1.5,
+    seasonGames: 60,
+    momentumExpansionScore: 50,
     ...over,
   };
 }

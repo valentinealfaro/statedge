@@ -192,6 +192,26 @@ const SUBTITLES: Record<MlbWildCardKind, string> = {
 
 // ---------- Helpers ----------
 
+// Tier-internal ranker. Per the 2026-05-08 Wild Card philosophy memo,
+// momentumExpansionScore is the primary tiebreaker — projection
+// separation is the secondary. Same-distance legs that have momentum
+// up (or down for UNDER) outrank flat legs.
+function pickTopByMomentumThenDistance(
+  pool: ResolvedMlbLine[],
+  n: number,
+): ResolvedMlbLine[] {
+  return [...pool]
+    .sort((a, b) => {
+      const dm = b.signals.momentumExpansionScore - a.signals.momentumExpansionScore;
+      if (Math.abs(dm) >= 5) return dm;
+      return b.projection.projectionDistanceScore - a.projection.projectionDistanceScore;
+    })
+    .slice(0, n);
+}
+
+// Used by the no-edge fallback (closest candidates) — pure projection
+// separation, since by definition there's no momentum signal worth
+// trusting at that point.
 function pickTopByDistance(
   pool: ResolvedMlbLine[],
   n: number,
@@ -231,6 +251,7 @@ function toComboLegWithReason(
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,
+    momentumExpansionScore: l.signals.momentumExpansionScore,
     reasonCodes: l.projection.reasonCodes,
     isPitcher: l.isPitcher,
     gamePk: l.gamePk,
@@ -286,7 +307,7 @@ export function buildMlbWildCard(
   for (const tier of tiers) {
     const tierPool = uniqueByPlayer(eligible.filter(tier.predicate));
     if (tierPool.length < MIN_LEGS) continue;
-    const picks = pickTopByDistance(tierPool, TARGET_LEGS);
+    const picks = pickTopByMomentumThenDistance(tierPool, TARGET_LEGS);
     const raw = combinedHit(picks);
     const corr = computeCorrelationRisk(picks);
     const adjusted = Math.round(raw * corr.multiplier * 10) / 10;

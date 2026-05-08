@@ -65,6 +65,16 @@ export type WildCardSignals = {
   opponentAverage: number | null;
   opponentGames: number;
   opponentVsSeasonDelta: number | null;
+  // Long-term anchor surfaced from the projection engine. Drives the
+  // L10-vs-season component of momentumExpansionScore.
+  seasonAverage: number | null;
+  seasonGames: number;
+  // L2 composite: 0..100, direction-aware. Blends production lift
+  // (L5/L10), season lift (L10/season), projection separation, and
+  // L10 hit rate. Per the 2026-05-08 Wild Card philosophy memo, this
+  // is the primary tiebreaker for Aggressive + Wild Card ranking.
+  // 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.
+  momentumExpansionScore: number;
   // Game context that's already fetched.
   lineupSpot: number | null;
   parkMultiplier: number;              // 1.00 = neutral
@@ -171,12 +181,19 @@ export async function resolveMlbSlate(
       const parkMultiplier = projection.contextAdjustments.park;
       const signals = buildSignals({
         last10,
-        seasonAverage: seasonAndOpp.seasonAverage,
+        // Pull season from the projection result — it already queried
+        // and computed it. Fallback to slate-pipeline's coarse path
+        // (currently null) for redundancy.
+        seasonAverage: projection.seasonAverage ?? seasonAndOpp.seasonAverage,
+        seasonGames: projection.seasonGames,
         opponentAverage: seasonAndOpp.opponentAverage,
         opponentGames: seasonAndOpp.opponentGames,
         lineupSpot: null,                 // surfaced later via gameContext if needed
         parkMultiplier,
         venueName: null,
+        // Momentum is computed inside computeMlbProjection (Layer 2 of
+        // the intelligence engine spec) — pipeline just reads it.
+        momentumExpansionScore: projection.momentumExpansionScore,
       });
 
       // Build gameKey for correlation detection. gamePk is the
@@ -333,11 +350,13 @@ async function loadSeasonAndOpponentAverages(
 function buildSignals(args: {
   last10: import('./mlbLast10Engine.js').MlbLast10Result | null;
   seasonAverage: number | null;
+  seasonGames: number;
   opponentAverage: number | null;
   opponentGames: number;
   lineupSpot: number | null;
   parkMultiplier: number;
   venueName: string | null;
+  momentumExpansionScore: number;
 }): WildCardSignals {
   const l10 = args.last10;
   // L5 vs season delta is meaningful only when both are populated.
@@ -345,6 +364,7 @@ function buildSignals(args: {
   // back to the L10 mean as a coarse season proxy.
   const seasonRef = args.seasonAverage ?? l10?.last10Average ?? null;
   const l5 = l10?.last5Average ?? null;
+  const l10Avg = l10?.last10Average ?? 0;
   const l5VsSeasonDelta =
     l5 !== null && seasonRef !== null ? l5 - seasonRef : null;
   const opponentVsSeasonDelta =
@@ -357,11 +377,14 @@ function buildSignals(args: {
     last10HitRate: l10?.hitRate?.rate ?? null,
     consistencyScore: l10?.consistencyScore ?? 0,
     last5Average: l5,
-    last10Average: l10?.last10Average ?? 0,
+    last10Average: l10Avg,
     l5VsSeasonDelta,
     opponentAverage: args.opponentAverage,
     opponentGames: args.opponentGames,
     opponentVsSeasonDelta,
+    seasonAverage: args.seasonAverage,
+    seasonGames: args.seasonGames,
+    momentumExpansionScore: args.momentumExpansionScore,
     lineupSpot: args.lineupSpot,
     parkMultiplier: args.parkMultiplier,
     venueName: args.venueName,

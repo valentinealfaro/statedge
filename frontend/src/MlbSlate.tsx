@@ -277,7 +277,13 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
               </span>
               <span className="mlb-slate-leg-prob">{leg.probability.toFixed(0)}%</span>
             </div>
-            <div className="mlb-slate-leg-edge">{leg.wildCardReason}</div>
+            <div className="mlb-slate-leg-edge">
+              {leg.wildCardReason}
+              {' · '}
+              <span title="L2 momentumExpansionScore: ≥65 = real momentum, ≤35 = anti-momentum.">
+                momentum {leg.momentumExpansionScore.toFixed(0)}
+              </span>
+            </div>
           </li>
         ))}
       </ul>
@@ -335,6 +341,10 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
               edge {leg.edgePercent >= 0 ? '+' : ''}{leg.edgePercent.toFixed(1)}%
               {' · '}risk {leg.riskScore}
               {' · '}trap {leg.trapScore}
+              {' · '}
+              <span title="L2 momentumExpansionScore: production lift + season lift + projection separation + L10 hit rate. ≥65 = real momentum, ≤35 = anti-momentum.">
+                momentum {leg.momentumExpansionScore.toFixed(0)}
+              </span>
             </div>
           </li>
         ))}

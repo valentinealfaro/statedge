@@ -5294,6 +5294,19 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .mlb-stat.trap-moderate .mlb-stat-value { color: var(--warn, #ffa726); }
 .mlb-stat.trap-high     .mlb-stat-value { color: #ef5350; }
 .mlb-stat.trap-extreme  .mlb-stat-value { color: #ef5350; }
+.mlb-stat.momentum-strong   .mlb-stat-value { color: var(--hot, #66bb6a); }
+.mlb-stat.momentum-up       .mlb-stat-value { color: var(--accent, #4fc3f7); }
+.mlb-stat.momentum-neutral  .mlb-stat-value { color: var(--text-1); }
+.mlb-stat.momentum-cooling  .mlb-stat-value { color: var(--warn, #ffa726); }
+.mlb-stat.momentum-fading   .mlb-stat-value { color: #ef5350; }
+.mlb-stat .mlb-stat-sub {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 2px;
+}
 
 .mlb-projection-eligibility {
   display: flex;

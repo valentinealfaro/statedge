@@ -25,6 +25,12 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     reasonCodes: ['Sample size: 12 games.'],
     weightsUsed: { last10: 0.6, last5: 0.4 },
     contextAdjustments: { park: 1, weather: 1, lineup: 1, bvp: 1, gameScript: 1, pitchArsenal: 1, bullpen: 1 },
+    seasonAverage: 1.5,
+    seasonGames: 60,
+    last10Average: 1.5,
+    last5Average: 1.5,
+    last10HitRate: 60,
+    momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,
     originalProbability: null,
@@ -65,6 +71,9 @@ function leg(
       lineupSpot: 3,
       parkMultiplier: 1.0,
       venueName: null,
+      seasonAverage: 1.5,
+      seasonGames: 60,
+      momentumExpansionScore: 50,
     },
     gameKey: null,
     gamePk: null,
@@ -98,6 +107,33 @@ describe('buildMlbSlate — Safe mode', () => {
     expect(best2?.combo).not.toBeNull();
     const playerIds = best2?.combo?.legs.map((l) => l.playerId) ?? [];
     expect(playerIds).not.toContain(3);
+  });
+});
+
+describe('buildMlbSlate — Aggressive momentum tiebreak', () => {
+  test('Per philosophy memo, Aggressive prefers high-momentum legs over flat-momentum legs at similar edge', () => {
+    // Aggressive emits Best 3 (smallest size). All legs edge ≥12 to
+    // pass the eligibility floor; legs are otherwise identical so
+    // momentumExpansionScore is the only differentiator. Player 2 has
+    // strong momentum and SHOULD make the Best 3; player 6 has flat
+    // momentum and same edge — tiebreak should drop it.
+    const slate: ResolvedMlbLine[] = [
+      leg(1, {}, { edgePercent: 15, projectionDistanceScore: 60, probability: 65 }),
+      leg(2, {}, { edgePercent: 15, projectionDistanceScore: 60, probability: 65 }),
+      leg(3, {}, { edgePercent: 14, probability: 64 }),
+      leg(4, {}, { edgePercent: 14, probability: 63 }),
+      leg(5, {}, { edgePercent: 14, probability: 62 }),
+      leg(6, {}, { edgePercent: 14, probability: 61 }),
+    ];
+    // Bump player 2's momentum to "Strong Expansion".
+    slate[1] = {
+      ...slate[1]!,
+      signals: { ...slate[1]!.signals, momentumExpansionScore: 85 },
+    };
+    const r = buildMlbSlate(slate, 'aggressive');
+    const best3 = r.combos.find((c) => c.size === 3);
+    const ids = best3?.combo?.legs.map((l) => l.playerId) ?? [];
+    expect(ids).toContain(2);
   });
 });
 

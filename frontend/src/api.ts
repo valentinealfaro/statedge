@@ -1353,6 +1353,17 @@ export type MlbProjectionResponse = {
     pitchArsenal: number;
     bullpen: number;
   };
+  // Long-term anchor inputs the engine used. Surfaced for transparency
+  // and to power the momentumExpansionScore display.
+  seasonAverage: number | null;
+  seasonGames: number;
+  last10Average: number;
+  last5Average: number | null;
+  last10HitRate: number | null;
+  // Layer 2 of the institutional MLB engine: composite of L5 vs L10,
+  // L10 vs season, projection separation, and L10 hit rate. Direction-
+  // aware; 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.
+  momentumExpansionScore: number;
   // Monte Carlo simulation outputs — 10k draws around the projection
   // with stat-aware distribution. Surfaces floor/ceiling per pick.
   // null when L10 stddev is degenerate.
@@ -1438,6 +1449,7 @@ export type MlbSlateLeg = {
   edgePercent: number;
   riskScore: number;
   trapScore: number;
+  momentumExpansionScore: number;
   reasonCodes: string[];
   isPitcher: boolean;
   gamePk: number | null;

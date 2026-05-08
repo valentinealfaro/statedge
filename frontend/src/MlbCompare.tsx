@@ -488,6 +488,18 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
           <span className="mlb-stat-label">Trap score</span>
           <span className="mlb-stat-value">{data.trapScore}/100</span>
         </div>
+        <div
+          className={`mlb-stat ${momentumClass(data.momentumExpansionScore)}`}
+          title="L2 composite — production lift (L5/L10), season lift (L10/season), projection separation, L10 hit rate. Direction-aware. 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum."
+        >
+          <span className="mlb-stat-label">Momentum</span>
+          <span className="mlb-stat-value">
+            {data.momentumExpansionScore.toFixed(0)}/100
+          </span>
+          <span className="mlb-stat-sub">
+            {momentumLabel(data.momentumExpansionScore)}
+          </span>
+        </div>
       </div>
 
       <div className="mlb-projection-eligibility">
@@ -645,4 +657,20 @@ function ContextChip({ label, mult, wired }: { label: string; mult: number; wire
       </span>
     </div>
   );
+}
+
+function momentumClass(score: number): string {
+  if (score >= 75) return 'momentum-strong';
+  if (score >= 60) return 'momentum-up';
+  if (score >= 40) return 'momentum-neutral';
+  if (score >= 25) return 'momentum-cooling';
+  return 'momentum-fading';
+}
+
+function momentumLabel(score: number): string {
+  if (score >= 75) return 'Strong';
+  if (score >= 60) return 'Expanding';
+  if (score >= 40) return 'Neutral';
+  if (score >= 25) return 'Cooling';
+  return 'Fading';
 }

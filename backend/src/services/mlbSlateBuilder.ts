@@ -114,6 +114,10 @@ export type MlbComboLeg = {
   edgePercent: number;
   riskScore: number;
   trapScore: number;
+  // L2 composite (50 = neutral, ≥65 = real momentum). Surfaced so slate
+  // UI can highlight the high-momentum picks the Aggressive + Wild Card
+  // tiebreakers leaned on.
+  momentumExpansionScore: number;
   reasonCodes: string[];
   isPitcher: boolean;
   gamePk: number | null;
@@ -202,21 +206,27 @@ function eligibleLegs(
 
 // Score each leg for ranking. Mode-aware: Safe leans toward
 // probability + low risk; Aggressive leans toward edge + projection
-// separation; Insane leans toward edge + projection distance with
-// minimal risk penalty.
+// separation + momentum; Insane leans toward edge + momentum + projection
+// separation with minimal risk penalty.
+//
+// Aggressive + Insane lead with momentumExpansionScore per the
+// 2026-05-08 Wild Card philosophy memo: "Wild Card = controlled
+// market-inefficiency portfolio." Players whose recent production +
+// season-vs-L10 trend + projection separation cluster up are the
+// signal we want — not just edge%. Edge is preserved as the second
+// pillar so we never pick a momentum-up name with no actual edge.
 function legScore(leg: ResolvedMlbLine, mode: MlbResolvedSlateMode): number {
   const p = leg.projection;
+  const m = leg.signals.momentumExpansionScore;
   switch (mode) {
     case 'safe':
       return p.probability * 0.50 + p.confidence * 0.30 - p.riskScore * 0.10 - p.trapScore * 0.10;
     case 'balanced':
       return p.evScore * 0.50 + p.probability * 0.20 + p.edgePercent * 0.20 - p.trapScore * 0.10;
     case 'aggressive':
-      return p.edgePercent * 0.50 + p.projectionDistanceScore * 0.30 + p.confidence * 0.10 - p.trapScore * 0.10;
+      return m * 0.35 + p.edgePercent * 0.30 + p.projectionDistanceScore * 0.20 + p.confidence * 0.05 - p.trapScore * 0.10;
     case 'insane':
-      // Per Insane memory: heavy on edge + projection separation;
-      // tolerate risk because users opted in to losing.
-      return p.edgePercent * 0.40 + p.projectionDistanceScore * 0.40 + p.evScore * 0.20 - p.trapScore * 0.05;
+      return m * 0.30 + p.edgePercent * 0.30 + p.projectionDistanceScore * 0.30 + p.evScore * 0.10 - p.trapScore * 0.05;
   }
 }
 
@@ -367,6 +377,7 @@ function toComboLeg(l: ResolvedMlbLine): MlbComboLeg {
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,
+    momentumExpansionScore: l.signals.momentumExpansionScore,
     reasonCodes: l.projection.reasonCodes,
     isPitcher: l.isPitcher,
     gamePk: l.gamePk,

@@ -54,6 +54,7 @@ import {
   runMlbMonteCarlo,
   type MonteCarloResult,
 } from './mlbMonteCarloEngine.js';
+import { computeMomentumExpansionScore } from './mlbMomentumExpansion.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -210,6 +211,27 @@ export type ProjectionResult = {
   // adjusted). projection field above is the post-adjustment value.
   baselineProjection: number;
 
+  // Long-term anchor used as inputs. Surfaced on the result so the
+  // slate pipeline can compute the L2 momentumExpansionScore (L10 vs
+  // season ratio) without re-querying. null when seasonGames < 1.
+  seasonAverage: number | null;
+  seasonGames: number;
+  // L5 / L10 averages (mirrored from inputs.last10) — surfaced for
+  // the same momentum composite. last10Average is always present;
+  // last5Average is null when fewer than 5 games of data exist.
+  last10Average: number;
+  last5Average: number | null;
+  // L10 hit rate at the queried line in chosen direction (0..100).
+  // null when no line was queried (projection-only mode). Surfaced
+  // for transparency + powers the volume component of momentumExpansionScore.
+  last10HitRate: number | null;
+  // L2 momentumExpansionScore — composite of production lift (L5/L10),
+  // season lift (L10/season), projection separation, and L10 hit
+  // rate. Direction-aware: 50 = neutral, ≥65 = real momentum, ≤35 =
+  // anti-momentum. Per the 2026-05-08 Wild Card philosophy memo,
+  // this is the primary tiebreaker for Aggressive + Wild Card.
+  momentumExpansionScore: number;
+
   // ---- Line raising (NBA-style elite-conviction signal) ----
   // When the model has elite conviction (high probability + high
   // confidence + low trap + projection well above line), we test
@@ -293,6 +315,12 @@ function emptyResult(
       park: 1, weather: 1, lineup: 1, bvp: 1, gameScript: 1, pitchArsenal: 1, bullpen: 1,
     },
     baselineProjection: 0,
+    seasonAverage: null,
+    seasonGames: 0,
+    last10Average: 0,
+    last5Average: null,
+    last10HitRate: null,
+    momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,
     originalProbability: null,
@@ -960,6 +988,20 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       bullpen: round2(bullpenMult),
     },
     baselineProjection: round2(baselineProjection),
+    seasonAverage: inputs.seasonAverage !== null ? round2(inputs.seasonAverage) : null,
+    seasonGames: inputs.seasonGames,
+    last10Average: round2(inputs.last10.last10Average),
+    last5Average: inputs.last10.last5Average !== null ? round2(inputs.last10.last5Average) : null,
+    last10HitRate: inputs.last10.hitRate?.rate ?? null,
+    momentumExpansionScore: computeMomentumExpansionScore({
+      direction: inputs.direction,
+      last10Average: inputs.last10.last10Average,
+      last5Average: inputs.last10.last5Average,
+      seasonAverage: inputs.seasonAverage,
+      seasonGames: inputs.seasonGames,
+      projectionDistanceScore: finalProjectionDistanceScore,
+      last10HitRate: inputs.last10.hitRate?.rate ?? null,
+    }),
     monteCarlo,
     originalLine: raise.originalLine,
     originalProbability:
