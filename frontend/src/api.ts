@@ -2115,6 +2115,7 @@ export type MlbPlayerSlateLine = {
   edgePercent: number;
   trapScore: number;
   fragilityScore: number;
+  momentumScore: number;       // L2 momentum composite, 0-100
 };
 
 export type MlbPlayerSlateEntry = {

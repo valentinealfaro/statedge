@@ -8,6 +8,7 @@ import { PlayerVsPlayerView } from './PlayerVsPlayerView';
 import { TeamVsTeamView } from './TeamVsTeamView';
 import { Last10View } from './Last10View';
 import { FreshnessBanner } from './FreshnessBanner';
+import { NbaPlayersByGame } from './NbaPlayersByGame';
 import { PlanGate } from './PlanGate';
 import { RecentsRail } from './RecentsRail';
 import { SavedList } from './SavedList';
@@ -307,6 +308,12 @@ export function Compare() {
           Start over
         </button>
       )}
+
+      {/* Per-player browse view — game-grouped accordion + search +
+          filter chips + Top Institutional Edges hero. Mirrors MLB
+          Compare's per-player section so the platform reads as one
+          unified institutional engine across sports. */}
+      <NbaPlayersByGame />
     </div>
   );
 }

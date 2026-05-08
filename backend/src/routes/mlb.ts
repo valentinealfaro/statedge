@@ -762,6 +762,7 @@ mlbRouter.get('/slate/players', async (_req, res) => {
       edgePercent: number;
       trapScore: number;
       fragilityScore: number;
+      momentumScore: number;       // 0..100 — L2 momentum composite
     };
     const games = new Map<number, {
       gamePk: number;
@@ -803,6 +804,7 @@ mlbRouter.get('/slate/players', async (_req, res) => {
         edgePercent: l.projection.edgePercent,
         trapScore: l.projection.trapScore,
         fragilityScore: l.projection.fragilityScore,
+        momentumScore: l.signals.momentumExpansionScore,
       });
     }
 
