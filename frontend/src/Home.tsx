@@ -13,12 +13,17 @@ export function Home() {
       <header className="hero">
         <img src="/statedge-logo.png" alt="StatEdge" className="hero-logo" />
         <p className="hero-tag">
-          The sports stats comparison engine. <br />
-          Player vs Team. Player vs Player. Team vs Team.
+          Quantitative sports intelligence. <br />
+          NBA + MLB · projections, fragility, calibration.
         </p>
-        <Link className="cta primary" to="/nba/compare">
-          Start comparing →
-        </Link>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link className="cta primary" to="/nba/compare">
+            NBA Compare →
+          </Link>
+          <Link className="cta primary" to="/mlb/slate" style={{ background: '#1f7a3a' }}>
+            MLB Slate →
+          </Link>
+        </div>
         <p className="disclaimer">
           We provide statistics and analysis only. No betting advice.
         </p>
@@ -36,27 +41,29 @@ export function Home() {
       <TrendingTeams />
 
       <section className="features">
-        <h2>Built for fans who want the real story</h2>
+        <h2>The institutional engine</h2>
         <div className="grid">
           <div className="feature">
-            <h3>Trend & consistency</h3>
+            <h3>Robust baseline (L1)</h3>
             <p>
-              See if a player is trending up, trending down, or stable — and how consistent their
-              numbers are vs. their season average.
+              Every projection blends 7 windows — season, L30, L20, L10, L5, median, trimmed
+              mean — then regresses toward stat-specific stabilization thresholds. No single
+              hot streak distorts the anchor.
             </p>
           </div>
           <div className="feature">
-            <h3>Last 5 to last season</h3>
+            <h3>Fragility ≠ probability (L5)</h3>
             <p>
-              Toggle between last 5, last 10, last 20, and the full season. Spot streaks and
-              slumps fast.
+              A 75% probability HR prop and a 75% probability hits-1.5 prop look identical on
+              the dial — but the failure modes are wildly different. We surface fragility as
+              its own dimension so you see what could go wrong.
             </p>
           </div>
           <div className="feature">
-            <h3>AI insights (Pro)</h3>
+            <h3>Self-correcting calibration (L9 → L6)</h3>
             <p>
-              An AI sports analyst breaks down each matchup into trends, breakdowns, and risks —
-              never betting picks.
+              Every graded slate teaches the model where it lies. Predicted-vs-observed buckets
+              feed back into tomorrow's probabilities. Static models die; adaptive ones survive.
             </p>
           </div>
         </div>
@@ -103,7 +110,13 @@ export function Home() {
 
       <footer className="footer">
         <p>
-          <Link to="/nba/standings" className="footer-link">League standings</Link>
+          <Link to="/nba/standings" className="footer-link">NBA standings</Link>
+          {' · '}
+          <Link to="/mlb/standings" className="footer-link">MLB standings</Link>
+          {' · '}
+          <Link to="/mlb/slate" className="footer-link">MLB slate</Link>
+          {' · '}
+          <Link to="/mlb/calibration" className="footer-link">MLB calibration</Link>
         </p>
         <p>Stats and analysis only. No odds, no gambling advice.</p>
       </footer>
