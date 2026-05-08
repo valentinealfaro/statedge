@@ -1859,6 +1859,21 @@ export type MlbLineupBatter = {
   hr: number | null;
   rbi: number | null;
   ops: string | null;
+  // Career batter-vs-opposing-pitcher matchup stats. Same data ESPN
+  // surfaces in its lineup view and the same input the projection
+  // engine has been using (capped at ±6%) since L3.
+  vsPitcher: {
+    pitcherId: number;
+    pitcherName: string;
+    plateAppearances: number;
+    atBats: number;
+    hits: number;
+    homeRuns: number;
+    strikeOuts: number;
+    walks: number;
+    avg: string;
+    reliability: 'noise' | 'weak' | 'moderate' | 'meaningful';
+  } | null;
 };
 
 export type MlbInjuryEntry = {

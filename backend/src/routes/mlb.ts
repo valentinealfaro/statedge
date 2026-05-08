@@ -25,6 +25,7 @@ import {
   type MlbTodayGame,
   type EspnMlbOdds,
 } from '../mlb/client.js';
+import { getBvpStats } from '../mlb/gameContext.js';
 import {
   ensureMlbTables,
   getMlbCounts,
@@ -1404,6 +1405,19 @@ mlbRouter.get('/game/:gamePk/preview', async (req, res) => {
           hr: p.seasonStats?.batting?.homeRuns ?? null,
           rbi: p.seasonStats?.batting?.rbi ?? null,
           ops: p.seasonStats?.batting?.ops ?? null,
+          // BvP attached below once we have the probable pitcher ids.
+          vsPitcher: null as null | {
+            pitcherId: number;
+            pitcherName: string;
+            plateAppearances: number;
+            atBats: number;
+            hits: number;
+            homeRuns: number;
+            strikeOuts: number;
+            walks: number;
+            avg: string;
+            reliability: 'noise' | 'weak' | 'moderate' | 'meaningful';
+          },
         }));
       return lineup;
     };
@@ -1412,6 +1426,82 @@ mlbRouter.get('/game/:gamePk/preview', async (req, res) => {
       away: boxscore ? buildLineup(boxscore.teams.away) : [],
       home: boxscore ? buildLineup(boxscore.teams.home) : [],
     };
+
+    // Batter-vs-pitcher career stats. Each batter's row gets H-AB / HR /
+    // K / AVG vs the OPPOSING starter — the same matchup data ESPN
+    // surfaces in its lineup view, and the same input the projection
+    // engine has been using (capped at ±6%) since L3. Surfaced here so
+    // users can SEE the matchup history that's already factored into
+    // tonight's projections.
+    const todaysGames = await getTodaysMlbGames().catch(() => [] as MlbTodayGame[]);
+    const matchup = todaysGames.find((g) => g.gamePk === gamePk);
+    const awayStarter = matchup?.probablePitchers.away ?? null;
+    const homeStarter = matchup?.probablePitchers.home ?? null;
+
+    // Fetch BvP for every batter in parallel. Each call is a single
+    // /people/:id/stats?vsPlayer hit — ~150ms p50; 18 batters parallel
+    // adds <500ms to the preview response. Best-effort: a failed BvP
+    // lookup leaves vsPitcher null and the row falls back to season
+    // stats only (matching ESPN's "—" treatment).
+    const bvpPromises: Array<Promise<void>> = [];
+    if (awayStarter && awayStarter.id && lineups.home.length > 0) {
+      // CIN batters vs HOU starter (Burrows in our example)
+      // Wait — away starter pitches against HOME hitters. Get it right:
+      // away.probablePitchers.away = away team's pitcher → faces home batters
+      // away.probablePitchers.home = home team's pitcher → faces away batters
+    }
+    // Each lineup batter faces the OTHER side's starter.
+    if (homeStarter?.id) {
+      // Home pitcher faces away batters
+      for (const b of lineups.away) {
+        bvpPromises.push(
+          getBvpStats(b.playerId, homeStarter.id).then((bvp) => {
+            if (!bvp) return;
+            const ab = bvp.atBats;
+            const avg = ab > 0 ? (bvp.hits / ab).toFixed(3).replace(/^0/, '') : '.000';
+            b.vsPitcher = {
+              pitcherId: homeStarter.id,
+              pitcherName: homeStarter.fullName,
+              plateAppearances: bvp.plateAppearances,
+              atBats: bvp.atBats,
+              hits: bvp.hits,
+              homeRuns: bvp.homeRuns,
+              strikeOuts: bvp.strikeouts,
+              walks: bvp.walks,
+              avg,
+              reliability: bvp.reliability,
+            };
+          }).catch(() => undefined),
+        );
+      }
+    }
+    if (awayStarter?.id) {
+      // Away pitcher faces home batters
+      for (const b of lineups.home) {
+        bvpPromises.push(
+          getBvpStats(b.playerId, awayStarter.id).then((bvp) => {
+            if (!bvp) return;
+            const ab = bvp.atBats;
+            const avg = ab > 0 ? (bvp.hits / ab).toFixed(3).replace(/^0/, '') : '.000';
+            b.vsPitcher = {
+              pitcherId: awayStarter.id,
+              pitcherName: awayStarter.fullName,
+              plateAppearances: bvp.plateAppearances,
+              atBats: bvp.atBats,
+              hits: bvp.hits,
+              homeRuns: bvp.homeRuns,
+              strikeOuts: bvp.strikeouts,
+              walks: bvp.walks,
+              avg,
+              reliability: bvp.reliability,
+            };
+          }).catch(() => undefined),
+        );
+      }
+    }
+    if (bvpPromises.length > 0) {
+      await Promise.allSettled(bvpPromises);
+    }
 
     const formatIl = (entries: typeof awayIl) =>
       entries.map((e) => ({

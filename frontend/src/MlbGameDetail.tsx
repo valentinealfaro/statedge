@@ -652,9 +652,11 @@ function Lineups({ game }: { game: MlbTodayGame }) {
                 <th>#</th>
                 <th>Player</th>
                 <th>Pos</th>
-                <th className="num">AVG</th>
-                <th className="num">HR</th>
-                <th className="num">RBI</th>
+                <th className="num" title="Season batting average">AVG</th>
+                <th className="num" title="Season home runs">HR</th>
+                <th className="num" title="Career H-AB vs tonight's opposing starter">vs Pit</th>
+                <th className="num" title="Career batting average vs tonight's opposing starter — same matchup data ESPN shows + a key input to our projection engine">vs AVG</th>
+                <th className="num" title="Career strikeouts vs tonight's opposing starter">vs K</th>
               </tr>
             </thead>
             <tbody>
@@ -670,7 +672,30 @@ function Lineups({ game }: { game: MlbTodayGame }) {
                   <td>{b.position}</td>
                   <td className="num">{b.avg ?? '—'}</td>
                   <td className="num">{b.hr ?? '—'}</td>
-                  <td className="num">{b.rbi ?? '—'}</td>
+                  <td className="num" title={b.vsPitcher ? `${b.vsPitcher.plateAppearances} PA · ${b.vsPitcher.reliability}` : 'No career history vs this pitcher'}>
+                    {b.vsPitcher
+                      ? `${b.vsPitcher.hits}-${b.vsPitcher.atBats}`
+                      : <span style={{ opacity: 0.4 }}>—</span>}
+                  </td>
+                  <td
+                    className="num"
+                    style={{
+                      color: b.vsPitcher && b.vsPitcher.atBats >= 10
+                        ? (b.vsPitcher.hits / b.vsPitcher.atBats >= 0.300 ? '#66bb6a'
+                          : b.vsPitcher.hits / b.vsPitcher.atBats <= 0.200 ? '#ef5350' : undefined)
+                        : undefined,
+                      fontWeight: b.vsPitcher && b.vsPitcher.atBats >= 10 ? 700 : undefined,
+                    }}
+                  >
+                    {b.vsPitcher
+                      ? b.vsPitcher.avg
+                      : <span style={{ opacity: 0.4 }}>—</span>}
+                  </td>
+                  <td className="num">
+                    {b.vsPitcher
+                      ? b.vsPitcher.strikeOuts
+                      : <span style={{ opacity: 0.4 }}>—</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -683,7 +708,7 @@ function Lineups({ game }: { game: MlbTodayGame }) {
   return (
     <details className="mlb-context" open={!empty}>
       <summary className="mlb-context-heading">
-        Lineups <span className="muted small">— posted batting orders</span>
+        Lineups <span className="muted small">— posted batting orders + career stats vs tonight's opposing starter</span>
       </summary>
       <div className="mlb-game-twocol">
         <Side side={away} abbr={game.away.abbreviation} />
