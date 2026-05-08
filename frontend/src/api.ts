@@ -1315,6 +1315,7 @@ export type MlbHealth = {
 
 export type MlbProjectionResponse = {
   projection: number;
+  baselineProjection: number;
   probability: number;
   confidence: number;
   riskScore: number;
@@ -1327,6 +1328,18 @@ export type MlbProjectionResponse = {
   qualifiesForCards: { safe: boolean; balanced: boolean };
   reasonCodes: string[];
   weightsUsed: Record<string, number>;
+  // Game-context multipliers (1.00 = neutral). Park / weather / lineup
+  // when gamePk provided; BvP when opposingPitcherId also provided.
+  // pitchArsenal + bullpen are scaffolds that always read 1.00 until
+  // those data sources land.
+  contextAdjustments: {
+    park: number;
+    weather: number;
+    lineup: number;
+    bvp: number;
+    pitchArsenal: number;
+    bullpen: number;
+  };
   disclaimer: string;
 };
 
@@ -1337,6 +1350,8 @@ export async function getMlbProjection(opts: {
   direction: 'OVER' | 'UNDER';
   opponentTeamId?: number;
   isHome?: boolean;
+  gamePk?: number;
+  opposingPitcherId?: number;
 }): Promise<MlbProjectionResponse> {
   const params = new URLSearchParams({
     playerId: String(opts.playerId),
@@ -1349,6 +1364,12 @@ export async function getMlbProjection(opts: {
   }
   if (opts.isHome !== undefined) {
     params.set('isHome', String(opts.isHome));
+  }
+  if (opts.gamePk !== undefined) {
+    params.set('gamePk', String(opts.gamePk));
+  }
+  if (opts.opposingPitcherId !== undefined) {
+    params.set('opposingPitcherId', String(opts.opposingPitcherId));
   }
   const res = await fetch(`${API_BASE}/api/mlb/projection?${params.toString()}`);
   if (!res.ok) {

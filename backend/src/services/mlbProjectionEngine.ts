@@ -29,6 +29,21 @@ import {
   valueFromPitchingRow,
 } from '../mlb/stats.js';
 import {
+  findPlayerLineupSpot,
+  getBvpStats,
+  getGameContext,
+  lineupPaMultiplier,
+  type BvpStats,
+  type GameContext,
+  type GameWeather,
+} from '../mlb/gameContext.js';
+import {
+  describeParkImpact,
+  getParkMultiplier,
+  lookupParkFactor,
+  type ParkFactor,
+} from '../mlb/parkFactors.js';
+import {
   computeMlbLast10,
   MlbPlayerNotFoundError,
   MlbStatTypeMismatchError,
@@ -64,6 +79,32 @@ export type ProjectionInputs = {
   homeAverage: number | null;
   awayAverage: number | null;
   isHome: boolean | null;     // upcoming game; null = unknown
+
+  // ---------- Game-context layer ----------
+  // All optional. When present, the engine applies them as adjustments
+  // on top of the player-history baseline. When absent, the engine
+  // falls back to the prior behavior (no adjustment).
+
+  // Park factor for the upcoming venue. Multiplier applied directly
+  // to the projection for hitters; pitcher stats inherit the inverse
+  // (hitter-friendly park → pitcher gives up more).
+  parkFactor: ParkFactor | null;
+
+  // Weather at game time. tempF + windSpeedMph + windDirection drive
+  // the weather adjustment. roofClosed suppresses all weather effects.
+  weather: GameWeather | null;
+
+  // Player's spot in tonight's batting order (1-9). Drives the
+  // PA-multiplier on counting stats — leadoff hitters get more cracks.
+  lineupSpot: number | null;
+
+  // Batter-vs-pitcher career stats. Used as a small reliability-tiered
+  // adjustment. Only meaningful for hitter projections.
+  bvp: BvpStats | null;
+
+  // The opposing pitcher (when known). Surfaced in reason codes but
+  // not used directly in the formula yet.
+  opposingPitcherId: number | null;
 };
 
 // Stat-type risk per the StatEdge MLB spec. Used as a floor on
@@ -134,6 +175,22 @@ export type ProjectionResult = {
   reasonCodes: string[];
   // Inputs we actually used vs renormalization weights (debug).
   weightsUsed: Record<string, number>;
+
+  // Context-layer transparency. Each adjustment is reported as a
+  // multiplier so users can see "park boosted +12%, weather -3%, etc."
+  // 1.00 = neutral / not applied.
+  contextAdjustments: {
+    park: number;
+    weather: number;
+    lineup: number;
+    bvp: number;
+    pitchArsenal: number;       // scaffold — defaults 1.0 until Statcast
+    bullpen: number;            // scaffold — defaults 1.0 until reliever-state tracking
+  };
+
+  // The pre-context baseline (so debugging can compare baseline vs
+  // adjusted). projection field above is the post-adjustment value.
+  baselineProjection: number;
 };
 
 // -----------------------------------------------------------------
@@ -192,7 +249,145 @@ function emptyResult(
     qualifiesForCards: { safe: false, balanced: false },
     reasonCodes: ['No game-log data available — cannot project.'],
     weightsUsed: {},
+    contextAdjustments: {
+      park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1,
+    },
+    baselineProjection: 0,
   };
+}
+
+// -----------------------------------------------------------------
+// Context adjustment math (pure)
+// -----------------------------------------------------------------
+
+// Weather → projection multiplier, by stat. Applied only outdoors.
+// References:
+//   • Hot weather (>85F) modestly boosts offense (~+3%). Cold
+//     suppresses (~-3%). Effect strongest on HR/total_bases.
+//   • Wind speed × direction (Out vs In) is the dominant HR signal:
+//     ≥10mph out → ~+8% HR; ≥10mph in → ~-8% HR.
+//   • Walks / strikeouts / pitcher_outs are essentially weather-
+//     invariant. Stays neutral.
+//
+// Returns 1.00 (neutral) when weather is missing, roof is closed,
+// or stat isn't weather-sensitive.
+export function computeWeatherMultiplier(
+  weather: GameWeather | null,
+  statKey: MlbStatKey,
+  playerType: 'hitter' | 'pitcher',
+): number {
+  if (!weather) return 1.0;
+  if (weather.roofClosed) return 1.0;
+
+  // Map pitcher stats to their hitter-equivalent for the lookup.
+  const equivStat: MlbStatKey =
+    playerType === 'pitcher'
+      ? (statKey === 'home_runs_allowed' ? 'home_runs'
+        : statKey === 'hits_allowed'    ? 'hits'
+        : statKey === 'earned_runs_allowed' ? 'runs'
+        : statKey)
+      : statKey;
+
+  // Stats that ignore weather: K, walks, IP, outs, pitches, SB, BB.
+  const weatherInsensitive: MlbStatKey[] = [
+    'strikeouts', 'walks', 'stolen_bases', 'ks',
+    'walks_allowed', 'pitcher_outs', 'innings_pitched', 'pitches_thrown',
+  ];
+  if (weatherInsensitive.includes(equivStat)) return 1.0;
+
+  let mult = 1.0;
+
+  // Temperature
+  if (weather.tempF !== null) {
+    if (weather.tempF >= 85) mult *= 1.03;
+    else if (weather.tempF >= 75) mult *= 1.015;
+    else if (weather.tempF <= 50) mult *= 0.97;
+    else if (weather.tempF <= 60) mult *= 0.985;
+  }
+
+  // Wind — strongest signal on HR / total_bases.
+  if (
+    weather.windSpeedMph !== null &&
+    weather.windSpeedMph >= 7 &&
+    weather.windDirection
+  ) {
+    const dir = weather.windDirection.toLowerCase();
+    const isOut = /out\b/.test(dir);
+    const isIn = /in\b/.test(dir);
+    const isPowerStat = equivStat === 'home_runs' || equivStat === 'total_bases';
+    if (isPowerStat) {
+      const strength = Math.min(weather.windSpeedMph, 20) / 20;   // cap at 20 mph
+      if (isOut) mult *= 1 + 0.10 * strength;
+      else if (isIn) mult *= 1 - 0.10 * strength;
+    }
+  }
+
+  // For pitchers, we want the inverse direction: hitter-friendly
+  // weather → more runs allowed by pitcher. Pitcher's projection
+  // (a stat the pitcher GIVES UP) should track UP with hitter boost.
+  // So same multiplier applies — no inversion needed.
+  return mult;
+}
+
+// Lineup spot → counting-stat multiplier. Uses the public PA-by-order
+// curve. Only applied to counting stats; rate stats (innings_pitched,
+// pitcher_outs) and pitcher stats generally aren't lineup-driven.
+export function computeLineupMultiplier(
+  lineupSpot: number | null,
+  statKey: MlbStatKey,
+  playerType: 'hitter' | 'pitcher',
+): number {
+  if (lineupSpot === null) return 1.0;
+  if (playerType === 'pitcher') return 1.0;
+  // Rate-style hitter stats don't scale with PA — but most hitter
+  // stats here are counting stats. Walks, K, SB scale partially.
+  return lineupPaMultiplier(lineupSpot);
+}
+
+// BvP → small directional adjustment, weighted by reliability tier.
+// At "noise" reliability (under 10 PA), no adjustment. At
+// "meaningful" (50+ PA), the BvP rate fully replaces a small slice
+// of the baseline.
+//
+// We compute a BvP rate (per-PA) and compare to the player's overall
+// per-PA rate from L10. If the player hits this pitcher better than
+// their baseline, multiplier > 1; if they struggle, multiplier < 1.
+export function computeBvpMultiplier(
+  bvp: BvpStats | null,
+  statKey: MlbStatKey,
+  baselineRatePerPa: number | null,
+): number {
+  if (!bvp) return 1.0;
+  if (bvp.reliability === 'noise') return 1.0;
+  if (baselineRatePerPa === null || baselineRatePerPa <= 0) return 1.0;
+
+  // Pull the matchup rate per PA for the relevant stat.
+  const bvpEvent =
+    statKey === 'hits' ? bvp.hits
+    : statKey === 'home_runs' ? bvp.homeRuns
+    : statKey === 'doubles' ? bvp.doubles
+    : statKey === 'triples' ? bvp.triples
+    : statKey === 'walks' ? bvp.walks
+    : statKey === 'strikeouts' ? bvp.strikeouts
+    : statKey === 'total_bases'
+      ? bvp.hits + bvp.doubles + bvp.triples * 2 + bvp.homeRuns * 3
+      : null;
+  if (bvpEvent === null) return 1.0;
+  const bvpRate = bvpEvent / bvp.plateAppearances;
+
+  // Reliability shrinkage: how much of the bvp rate vs the baseline
+  // rate to actually trust. weak=10%, moderate=25%, meaningful=40%.
+  const trust =
+    bvp.reliability === 'meaningful' ? 0.40
+    : bvp.reliability === 'moderate' ? 0.25
+    : 0.10;
+
+  // Blend rates → ratio against baseline.
+  const blended = baselineRatePerPa * (1 - trust) + bvpRate * trust;
+  const ratio = blended / baselineRatePerPa;
+  // Clamp to a reasonable [0.7, 1.4] range — even meaningful BvP
+  // shouldn't double or halve a projection on its own.
+  return clamp(ratio, 0.7, 1.4);
 }
 
 export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult {
@@ -225,7 +420,7 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   }
 
   const totalWeight = signals.reduce((s, x) => s + x.weight, 0);
-  const projection =
+  const baselineProjection =
     totalWeight === 0
       ? last10.last10Average
       : signals.reduce((s, x) => s + x.value * x.weight, 0) / totalWeight;
@@ -234,6 +429,28 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   for (const s of signals) {
     weightsUsed[s.key] = Math.round((s.weight / totalWeight) * 100) / 100;
   }
+
+  // ----- Context layer multipliers -----
+  // Each is independent and multiplicative. 1.00 = no effect. Park
+  // and weather kick in only when we have a venue/weather payload;
+  // lineup needs the player's spot tonight; BvP needs the matchup.
+  // pitchArsenal + bullpen are intentional scaffold-1.0 until the
+  // data lands (Statcast / reliever workload tracking).
+  const parkMult = getParkMultiplier(inputs.parkFactor, inputs.statKey, inputs.playerType);
+  const weatherMult = computeWeatherMultiplier(inputs.weather, inputs.statKey, inputs.playerType);
+  const lineupMult = computeLineupMultiplier(inputs.lineupSpot, inputs.statKey, inputs.playerType);
+  // BvP rate: baseline per-PA derived from L10 average ÷ ~4 PA/game.
+  const baselineRatePerPa =
+    inputs.playerType === 'hitter' && last10.last10Average > 0
+      ? last10.last10Average / 4
+      : null;
+  const bvpMult = computeBvpMultiplier(inputs.bvp, inputs.statKey, baselineRatePerPa);
+  const pitchArsenalMult = 1.0;     // scaffold — needs Statcast
+  const bullpenMult = 1.0;          // scaffold — needs reliever workload tracking
+
+  const totalContextMult =
+    parkMult * weatherMult * lineupMult * bvpMult * pitchArsenalMult * bullpenMult;
+  const projection = baselineProjection * totalContextMult;
 
   // ----- Probability via normal approximation -----
   // Use the L10 stddev as our variance estimate. If stddev is
@@ -311,6 +528,56 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     edgePercent,
   });
 
+  // Context-layer reason codes — appended to whatever buildReasonCodes
+  // already added for the player-history side. We do this after main
+  // reasons so context shows up at the bottom alphabetically grouped.
+  if (inputs.parkFactor) {
+    const ratioPct = Math.round((parkMult - 1) * 100);
+    if (Math.abs(ratioPct) >= 3) {
+      const phrase = describeParkImpact(inputs.parkFactor.name, parkMult);
+      if (phrase) reasonCodes.push(`Park: ${phrase}.`);
+    }
+  }
+  if (inputs.weather && !inputs.weather.roofClosed) {
+    const w = inputs.weather;
+    const parts: string[] = [];
+    if (w.tempF !== null) parts.push(`${w.tempF}°F`);
+    if (w.windSpeedMph !== null && w.windDirection) {
+      parts.push(`${w.windSpeedMph} mph ${w.windDirection.toLowerCase()}`);
+    }
+    const ratioPct = Math.round((weatherMult - 1) * 100);
+    if (Math.abs(ratioPct) >= 2 && parts.length > 0) {
+      const sign = ratioPct > 0 ? '+' : '';
+      reasonCodes.push(
+        `Weather (${parts.join(', ')}): ${sign}${ratioPct}% impact.`,
+      );
+    }
+  } else if (inputs.weather?.roofClosed) {
+    reasonCodes.push('Roof closed — weather neutralized.');
+  }
+  if (inputs.lineupSpot !== null) {
+    const ratioPct = Math.round((lineupMult - 1) * 100);
+    const sign = ratioPct > 0 ? '+' : '';
+    if (Math.abs(ratioPct) >= 2) {
+      reasonCodes.push(
+        `Batting #${inputs.lineupSpot} → ${sign}${ratioPct}% PA volume vs avg.`,
+      );
+    }
+  }
+  if (inputs.bvp) {
+    const ratioPct = Math.round((bvpMult - 1) * 100);
+    if (inputs.bvp.reliability !== 'noise' && Math.abs(ratioPct) >= 3) {
+      const sign = ratioPct > 0 ? '+' : '';
+      reasonCodes.push(
+        `BvP (${inputs.bvp.plateAppearances} PA, ${inputs.bvp.reliability}): ${sign}${ratioPct}%.`,
+      );
+    } else if (inputs.bvp.reliability === 'noise') {
+      reasonCodes.push(
+        `BvP sample (${inputs.bvp.plateAppearances} PA) too small — ignored.`,
+      );
+    }
+  }
+
   return {
     projection: round2(projection),
     probability: round1(probability),
@@ -325,6 +592,15 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     qualifiesForCards: { safe: qualifiesSafe, balanced: qualifiesBalanced },
     reasonCodes,
     weightsUsed,
+    contextAdjustments: {
+      park: round2(parkMult),
+      weather: round2(weatherMult),
+      lineup: round2(lineupMult),
+      bvp: round2(bvpMult),
+      pitchArsenal: round2(pitchArsenalMult),
+      bullpen: round2(bullpenMult),
+    },
+    baselineProjection: round2(baselineProjection),
   };
 }
 
@@ -496,6 +772,16 @@ export type ProjectStatArgs = {
   opponentTeamId?: number;
   // Whether the player will be home for the upcoming game.
   isHome?: boolean;
+  // Specific upcoming game. When provided, the orchestrator fetches
+  // the game context (venue, weather, lineup, BvP if pitcher known)
+  // and feeds it to the engine. Without gamePk the engine still
+  // produces a projection — just without the context layer.
+  gamePk?: number;
+  // Opposing pitcher's player id (used for BvP lookup). Caller must
+  // provide this — we don't auto-derive from gamePk yet (boxscore
+  // gives us the lineup but tonight's starting pitcher needs
+  // probable-pitchers parsing, which is a follow-up).
+  opposingPitcherId?: number;
 };
 
 export async function projectMlbStat(
@@ -521,6 +807,29 @@ export async function projectMlbStat(
       ? await loadHittingBaselines(args.playerId, args.statKey as MlbHitterStatKey, args.opponentTeamId)
       : await loadPitchingBaselines(args.playerId, args.statKey as MlbPitcherStatKey, args.opponentTeamId);
 
+  // Game context (optional). When gamePk is provided, fetch venue +
+  // weather + lineup in parallel. Failures degrade silently — the
+  // projection still works without context, just at lower fidelity.
+  let gameContext: GameContext | null = null;
+  let bvp: BvpStats | null = null;
+  let lineupSpot: number | null = null;
+  let resolvedIsHome: boolean | null = args.isHome ?? null;
+  if (args.gamePk) {
+    gameContext = await getGameContext(args.gamePk).catch(() => null);
+    if (gameContext) {
+      const slot = findPlayerLineupSpot(gameContext.lineups, args.playerId);
+      if (slot) {
+        lineupSpot = slot.battingOrder;
+        if (resolvedIsHome === null) resolvedIsHome = slot.isHome;
+      }
+    }
+  }
+  // BvP only meaningful for hitter projections vs a known pitcher.
+  if (playerType === 'hitter' && args.opposingPitcherId) {
+    bvp = await getBvpStats(args.playerId, args.opposingPitcherId).catch(() => null);
+  }
+  const parkFactor = lookupParkFactor(gameContext?.venueId ?? null);
+
   const inputs: ProjectionInputs = {
     statKey: args.statKey,
     playerType,
@@ -533,7 +842,12 @@ export async function projectMlbStat(
     opponentGames: baselines.opponentGames,
     homeAverage: baselines.homeAverage,
     awayAverage: baselines.awayAverage,
-    isHome: args.isHome ?? null,
+    isHome: resolvedIsHome,
+    parkFactor,
+    weather: gameContext?.weather ?? null,
+    lineupSpot,
+    bvp,
+    opposingPitcherId: args.opposingPitcherId ?? null,
   };
 
   return computeMlbProjection(inputs);

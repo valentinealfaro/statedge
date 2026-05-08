@@ -464,6 +464,8 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
         </span>
       </div>
 
+      <ContextAdjustments data={data} />
+
       {data.reasonCodes.length > 0 && (
         <ul className="mlb-projection-reasons">
           {data.reasonCodes.map((r, i) => (
@@ -471,6 +473,72 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Context adjustment panel — surfaces park / weather / lineup / BvP
+// multipliers so the user can see what's driving the projection
+// beyond raw player history. Pitch arsenal + bullpen render with
+// "data unavailable" labels because their data sources aren't
+// connected yet (Statcast / reliever workload). Mission-aligned:
+// honest about what's wired vs not, no fake completeness.
+function ContextAdjustments({ data }: { data: MlbProjectionResponse }) {
+  const c = data.contextAdjustments;
+  // Skip the panel entirely when nothing is non-neutral and the
+  // scaffolds are off — keeps the UI clean for player-history-only
+  // projections (no gamePk supplied).
+  const hasAnyContext =
+    c.park !== 1 || c.weather !== 1 || c.lineup !== 1 || c.bvp !== 1;
+  if (!hasAnyContext) {
+    return (
+      <div className="mlb-context muted-context">
+        <strong>Context:</strong> player history only. Add an upcoming
+        gamePk to apply park / weather / lineup / BvP adjustments.
+      </div>
+    );
+  }
+  return (
+    <div className="mlb-context">
+      <div className="mlb-context-heading">Context adjustments</div>
+      <div className="mlb-context-grid">
+        <ContextChip label="Park"     mult={c.park}     wired />
+        <ContextChip label="Weather"  mult={c.weather}  wired />
+        <ContextChip label="Lineup"   mult={c.lineup}   wired />
+        <ContextChip label="BvP"      mult={c.bvp}      wired />
+        <ContextChip label="Arsenal"  mult={c.pitchArsenal} wired={false} />
+        <ContextChip label="Bullpen"  mult={c.bullpen}      wired={false} />
+      </div>
+      {data.baselineProjection !== data.projection && (
+        <div className="mlb-context-baseline">
+          Baseline {data.baselineProjection.toFixed(2)}{' '}
+          → adjusted {data.projection.toFixed(2)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContextChip({ label, mult, wired }: { label: string; mult: number; wired: boolean }) {
+  if (!wired) {
+    return (
+      <div className="mlb-context-chip neutral" title="Data source not yet connected — defaults to neutral.">
+        <span className="mlb-context-label">{label}</span>
+        <span className="mlb-context-value">N/A</span>
+      </div>
+    );
+  }
+  const pct = Math.round((mult - 1) * 100);
+  const cls =
+    Math.abs(pct) < 2 ? 'neutral'
+    : pct > 0 ? 'positive'
+    : 'negative';
+  return (
+    <div className={`mlb-context-chip ${cls}`}>
+      <span className="mlb-context-label">{label}</span>
+      <span className="mlb-context-value">
+        {pct > 0 ? '+' : ''}{pct}%
+      </span>
     </div>
   );
 }

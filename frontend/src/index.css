@@ -5247,3 +5247,73 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .mlb-projection-reasons li { margin-bottom: 3px; }
 
+/* Context-adjustment panel — park / weather / lineup / BvP / arsenal
+   / bullpen as multiplier chips. Wired sources show actual %; un-
+   wired sources render as N/A so users see what data we're missing. */
+.mlb-context {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.mlb-context.muted-context {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+}
+.mlb-context-heading {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.mlb-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 6px;
+}
+.mlb-context-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+}
+.mlb-context-chip.positive {
+  border-color: rgba(76, 175, 80, 0.40);
+  background: rgba(76, 175, 80, 0.10);
+}
+.mlb-context-chip.negative {
+  border-color: rgba(229, 57, 53, 0.40);
+  background: rgba(229, 57, 53, 0.10);
+}
+.mlb-context-chip.neutral {
+  opacity: 0.65;
+}
+.mlb-context-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mlb-context-value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mlb-context-chip.positive .mlb-context-value { color: #66bb6a; }
+.mlb-context-chip.negative .mlb-context-value { color: #ef5350; }
+.mlb-context-baseline {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+

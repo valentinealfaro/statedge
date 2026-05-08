@@ -6,11 +6,19 @@
 
 import { describe, expect, test } from 'vitest';
 import {
+  computeBvpMultiplier,
+  computeLineupMultiplier,
   computeMlbProjection,
+  computeWeatherMultiplier,
   STAT_TYPE_RISK,
   type ProjectionInputs,
 } from './mlbProjectionEngine.js';
 import type { MlbLast10Result } from './mlbLast10Engine.js';
+import type { BvpStats, GameWeather } from '../mlb/gameContext.js';
+import {
+  getParkMultiplier,
+  lookupParkFactor,
+} from '../mlb/parkFactors.js';
 
 function makeLast10(over: Partial<MlbLast10Result> = {}): MlbLast10Result {
   // Default: 10-game sample averaging 1.5 with σ=0.7.
@@ -59,6 +67,11 @@ function inputs(over: Partial<ProjectionInputs> = {}): ProjectionInputs {
     homeAverage: 1.6,
     awayAverage: 1.4,
     isHome: true,
+    parkFactor: null,
+    weather: null,
+    lineupSpot: null,
+    bvp: null,
+    opposingPitcherId: null,
     ...over,
   };
 }
@@ -260,6 +273,239 @@ describe('STAT_TYPE_RISK table', () => {
   test('low-variance stats sit below 50', () => {
     expect(STAT_TYPE_RISK.pitcher_outs).toBeLessThanOrEqual(40);
     expect(STAT_TYPE_RISK.innings_pitched).toBeLessThanOrEqual(40);
+  });
+});
+
+// =================================================================
+// Context-layer tests — park, weather, lineup, BvP. These exercise
+// the new game-context adjustments shipped in Phase 3.5.
+// =================================================================
+
+describe('park factor lookup', () => {
+  test('Coors Field boosts hitter HR by ~20%', () => {
+    const coors = lookupParkFactor(22);
+    expect(coors).not.toBeNull();
+    const mult = getParkMultiplier(coors, 'home_runs', 'hitter');
+    expect(mult).toBeGreaterThanOrEqual(1.15);
+    expect(mult).toBeLessThanOrEqual(1.25);
+  });
+  test('Oracle Park (SF) suppresses HR for hitters', () => {
+    const sf = lookupParkFactor(2395);
+    const mult = getParkMultiplier(sf, 'home_runs', 'hitter');
+    expect(mult).toBeLessThan(0.95);
+  });
+  test('Pitcher stats inherit inverse: Coors boosts pitcher hits_allowed', () => {
+    // Hitter-friendly park → pitcher gives up more.
+    const coors = lookupParkFactor(22);
+    const hitterHr = getParkMultiplier(coors, 'home_runs', 'hitter');
+    const pitcherHrAllowed = getParkMultiplier(coors, 'home_runs_allowed', 'pitcher');
+    expect(pitcherHrAllowed).toBeCloseTo(hitterHr, 2);
+  });
+  test('Stats not park-sensitive (walks, K) return 1.0', () => {
+    const coors = lookupParkFactor(22);
+    expect(getParkMultiplier(coors, 'walks', 'hitter')).toBe(1.0);
+    expect(getParkMultiplier(coors, 'strikeouts', 'hitter')).toBe(1.0);
+    expect(getParkMultiplier(coors, 'ks', 'pitcher')).toBe(1.0);
+  });
+  test('Unknown venue returns null (caller defaults to neutral)', () => {
+    expect(lookupParkFactor(99999)).toBeNull();
+    expect(lookupParkFactor(null)).toBeNull();
+    expect(getParkMultiplier(null, 'home_runs', 'hitter')).toBe(1.0);
+  });
+});
+
+describe('weather multiplier', () => {
+  function weather(over: Partial<GameWeather> = {}): GameWeather {
+    return {
+      tempF: 72,
+      windSpeedMph: 5,
+      windDirection: 'L To R',
+      condition: 'Clear',
+      roofClosed: false,
+      ...over,
+    };
+  }
+  test('Roof closed neutralizes weather', () => {
+    expect(computeWeatherMultiplier(
+      weather({ tempF: 95, windSpeedMph: 20, windDirection: 'Out To CF', roofClosed: true }),
+      'home_runs', 'hitter',
+    )).toBe(1.0);
+  });
+  test('Hot weather boosts hitter offense', () => {
+    const m = computeWeatherMultiplier(weather({ tempF: 90 }), 'home_runs', 'hitter');
+    expect(m).toBeGreaterThan(1.0);
+    expect(m).toBeLessThan(1.10);
+  });
+  test('Cold weather suppresses', () => {
+    const m = computeWeatherMultiplier(weather({ tempF: 45 }), 'home_runs', 'hitter');
+    expect(m).toBeLessThan(1.0);
+    expect(m).toBeGreaterThan(0.95);
+  });
+  test('Strong wind out boosts HR meaningfully', () => {
+    const m = computeWeatherMultiplier(
+      weather({ tempF: 72, windSpeedMph: 15, windDirection: 'Out To CF' }),
+      'home_runs', 'hitter',
+    );
+    expect(m).toBeGreaterThan(1.05);
+  });
+  test('Strong wind in suppresses HR meaningfully', () => {
+    const m = computeWeatherMultiplier(
+      weather({ tempF: 72, windSpeedMph: 15, windDirection: 'In From LF' }),
+      'home_runs', 'hitter',
+    );
+    expect(m).toBeLessThan(0.95);
+  });
+  test('Weather-insensitive stats (walks, K, IP) ignore weather', () => {
+    const w = weather({ tempF: 95, windSpeedMph: 20, windDirection: 'Out To CF' });
+    expect(computeWeatherMultiplier(w, 'walks', 'hitter')).toBe(1.0);
+    expect(computeWeatherMultiplier(w, 'strikeouts', 'hitter')).toBe(1.0);
+    expect(computeWeatherMultiplier(w, 'innings_pitched', 'pitcher')).toBe(1.0);
+    expect(computeWeatherMultiplier(w, 'pitcher_outs', 'pitcher')).toBe(1.0);
+  });
+  test('Light wind doesn\'t move the multiplier', () => {
+    const m = computeWeatherMultiplier(
+      weather({ tempF: 72, windSpeedMph: 4, windDirection: 'Out To CF' }),
+      'home_runs', 'hitter',
+    );
+    expect(m).toBe(1.0);
+  });
+});
+
+describe('lineup multiplier', () => {
+  test('Leadoff boosts counting stats above league average', () => {
+    expect(computeLineupMultiplier(1, 'hits', 'hitter')).toBeGreaterThan(1.10);
+  });
+  test('9th boosts below average', () => {
+    expect(computeLineupMultiplier(9, 'hits', 'hitter')).toBeLessThan(0.95);
+  });
+  test('Pitcher stats ignore lineup', () => {
+    expect(computeLineupMultiplier(1, 'ks', 'pitcher')).toBe(1.0);
+    expect(computeLineupMultiplier(9, 'pitcher_outs', 'pitcher')).toBe(1.0);
+  });
+  test('Unknown spot is neutral', () => {
+    expect(computeLineupMultiplier(null, 'hits', 'hitter')).toBe(1.0);
+  });
+});
+
+describe('BvP multiplier', () => {
+  function bvp(over: Partial<BvpStats> = {}): BvpStats {
+    return {
+      plateAppearances: 30,
+      atBats: 28,
+      hits: 10,
+      doubles: 2,
+      triples: 0,
+      homeRuns: 1,
+      walks: 2,
+      strikeouts: 5,
+      reliability: 'moderate',
+      ...over,
+    };
+  }
+  test('Noise sample (PA<10) → no adjustment', () => {
+    const m = computeBvpMultiplier(
+      bvp({ plateAppearances: 5, hits: 5, reliability: 'noise' }),
+      'hits', 0.25,
+    );
+    expect(m).toBe(1.0);
+  });
+  test('Hot vs pitcher (above baseline rate) → multiplier > 1', () => {
+    // 30 PA, 15 hits = 0.50/PA. Baseline 0.25/PA. Should ratio up.
+    const m = computeBvpMultiplier(
+      bvp({ plateAppearances: 30, hits: 15, reliability: 'moderate' }),
+      'hits', 0.25,
+    );
+    expect(m).toBeGreaterThan(1.0);
+    expect(m).toBeLessThanOrEqual(1.4);     // capped
+  });
+  test('Cold vs pitcher (below baseline) → multiplier < 1', () => {
+    const m = computeBvpMultiplier(
+      bvp({ plateAppearances: 30, hits: 3, reliability: 'moderate' }),
+      'hits', 0.25,
+    );
+    expect(m).toBeLessThan(1.0);
+    expect(m).toBeGreaterThanOrEqual(0.7);  // capped
+  });
+  test('Stats with no BvP equivalent (innings_pitched) are neutral', () => {
+    const m = computeBvpMultiplier(bvp(), 'innings_pitched', 0.25);
+    expect(m).toBe(1.0);
+  });
+  test('Capped at [0.7, 1.4] even with extreme BvP', () => {
+    // 30 PA, 30 hits is comically extreme — 1.0/PA vs 0.25 baseline.
+    const m = computeBvpMultiplier(
+      bvp({ plateAppearances: 30, hits: 30, reliability: 'meaningful' }),
+      'hits', 0.25,
+    );
+    expect(m).toBeLessThanOrEqual(1.4);
+  });
+});
+
+describe('computeMlbProjection — context layer integration', () => {
+  test('Coors Field boosts HR projection vs neutral park', () => {
+    const without = computeMlbProjection(inputs({
+      statKey: 'home_runs',
+      line: 0.5,
+      last10: makeLast10({
+        values: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+        last10Average: 0.5,
+        last5Average: 0.5,
+        stddev: 0.5,
+      }),
+      seasonAverage: 0.5,
+    }));
+    const withCoors = computeMlbProjection(inputs({
+      statKey: 'home_runs',
+      line: 0.5,
+      last10: makeLast10({
+        values: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+        last10Average: 0.5,
+        last5Average: 0.5,
+        stddev: 0.5,
+      }),
+      seasonAverage: 0.5,
+      parkFactor: lookupParkFactor(22),  // Coors
+    }));
+    expect(withCoors.projection).toBeGreaterThan(without.projection);
+    expect(withCoors.contextAdjustments.park).toBeGreaterThan(1.0);
+    expect(withCoors.reasonCodes.some((r) => /coors/i.test(r))).toBe(true);
+  });
+
+  test('Leadoff lineup spot boosts hits projection', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'hits',
+      lineupSpot: 1,
+    }));
+    expect(r.contextAdjustments.lineup).toBeGreaterThan(1.10);
+    expect(r.reasonCodes.some((r) => /batting #1/i.test(r))).toBe(true);
+  });
+
+  test('Roof closed surfaces "weather neutralized" reason code', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'home_runs',
+      weather: {
+        tempF: 72, windSpeedMph: 8, windDirection: 'Out To CF',
+        condition: 'Roof Closed', roofClosed: true,
+      },
+    }));
+    expect(r.contextAdjustments.weather).toBe(1.0);
+    expect(r.reasonCodes.some((r) => /roof closed/i.test(r))).toBe(true);
+  });
+
+  test('Pitch arsenal + bullpen scaffolds default to 1.0 (no fake values)', () => {
+    const r = computeMlbProjection(inputs());
+    expect(r.contextAdjustments.pitchArsenal).toBe(1.0);
+    expect(r.contextAdjustments.bullpen).toBe(1.0);
+  });
+
+  test('baselineProjection separates from final projection when context applied', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'home_runs',
+      line: 0.5,
+      lineupSpot: 1,
+      parkFactor: lookupParkFactor(22),
+    }));
+    expect(r.baselineProjection).not.toBe(r.projection);
+    expect(r.projection).toBeGreaterThan(r.baselineProjection);
   });
 });
 

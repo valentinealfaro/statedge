@@ -248,6 +248,22 @@ mlbRouter.get('/projection', async (req, res) => {
   const isHomeRaw = req.query.isHome as string | undefined;
   const isHome =
     isHomeRaw === 'true' ? true : isHomeRaw === 'false' ? false : undefined;
+  // Optional game-context inputs. When gamePk is provided the engine
+  // pulls venue + weather + lineup from the MLB API; opposingPitcherId
+  // unlocks the BvP layer for hitter projections.
+  const gamePkRaw = req.query.gamePk as string | undefined;
+  const gamePk = gamePkRaw !== undefined ? Number(gamePkRaw) : undefined;
+  if (gamePk !== undefined && !Number.isFinite(gamePk)) {
+    res.status(400).json({ error: 'gamePk must be numeric when provided' });
+    return;
+  }
+  const opposingPitcherIdRaw = req.query.opposingPitcherId as string | undefined;
+  const opposingPitcherId =
+    opposingPitcherIdRaw !== undefined ? Number(opposingPitcherIdRaw) : undefined;
+  if (opposingPitcherId !== undefined && !Number.isFinite(opposingPitcherId)) {
+    res.status(400).json({ error: 'opposingPitcherId must be numeric when provided' });
+    return;
+  }
 
   try {
     const result = await projectMlbStat({
@@ -257,6 +273,8 @@ mlbRouter.get('/projection', async (req, res) => {
       direction,
       opponentTeamId,
       isHome,
+      gamePk,
+      opposingPitcherId,
     });
     res.json({ ...result, disclaimer: MLB_DISCLAIMER });
   } catch (err) {
