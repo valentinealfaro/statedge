@@ -49,6 +49,10 @@ import {
   MlbStatTypeMismatchError,
   type MlbLast10Result,
 } from './mlbLast10Engine.js';
+import {
+  runMlbMonteCarlo,
+  type MonteCarloResult,
+} from './mlbMonteCarloEngine.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -191,6 +195,14 @@ export type ProjectionResult = {
   // The pre-context baseline (so debugging can compare baseline vs
   // adjusted). projection field above is the post-adjustment value.
   baselineProjection: number;
+
+  // Monte Carlo outcome distribution. 10k draws sampling around the
+  // projected value with the L10 stddev. Surfaces floor/ceiling per
+  // pick so users see the FULL outcome shape, not just the point
+  // estimate. Per the mission's "Quantitative Intelligence" section.
+  // null when last10.stddev is degenerate (zero or missing) — we
+  // don't fabricate spread.
+  monteCarlo: MonteCarloResult | null;
 };
 
 // -----------------------------------------------------------------
@@ -253,6 +265,7 @@ function emptyResult(
       park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1,
     },
     baselineProjection: 0,
+    monteCarlo: null,
   };
 }
 
@@ -578,6 +591,17 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     }
   }
 
+  // Monte Carlo distribution. Uses the L10 stddev as variance proxy —
+  // same stddev floor logic as the deterministic prob calc. Returns
+  // null when stddev is degenerate (engine handles internally).
+  const monteCarlo = runMlbMonteCarlo({
+    statKey: inputs.statKey,
+    projection,
+    stddev: last10.stddev,
+    line: inputs.line,
+    direction: inputs.direction,
+  });
+
   return {
     projection: round2(projection),
     probability: round1(probability),
@@ -601,6 +625,7 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       bullpen: round2(bullpenMult),
     },
     baselineProjection: round2(baselineProjection),
+    monteCarlo,
   };
 }
 

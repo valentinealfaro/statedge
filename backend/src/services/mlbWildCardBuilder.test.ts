@@ -24,6 +24,7 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     reasonCodes: [],
     weightsUsed: { last10: 1.0 },
     contextAdjustments: { park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1 },
+    monteCarlo: null,
     ...over,
   };
 }

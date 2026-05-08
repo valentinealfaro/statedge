@@ -466,6 +466,8 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
 
       <ContextAdjustments data={data} />
 
+      {data.monteCarlo && <MonteCarloBands data={data} />}
+
       {data.reasonCodes.length > 0 && (
         <ul className="mlb-projection-reasons">
           {data.reasonCodes.map((r, i) => (
@@ -473,6 +475,71 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Monte Carlo distribution panel. Shows P10/P25/P50/P75/P90 along
+// with the line, ceiling/floor tier labels, and the simulated
+// probability for sanity-check against the deterministic engine.
+// Mission-aligned: floor/ceiling shape per pick, not just point
+// estimate. "Aaron Judge HR projection 1.7 with P10=0 / P90=4."
+function MonteCarloBands({ data }: { data: MlbProjectionResponse }) {
+  const mc = data.monteCarlo;
+  if (!mc) return null;
+  const p = mc.percentiles;
+  // Determine the visual range the bands span — pad a bit beyond P90
+  // and below 0 so the line marker has breathing room.
+  const range = Math.max(p.p90, 1) * 1.1;
+  const cls = (tier: 'high' | 'medium' | 'low') => `mc-tier-${tier}`;
+  return (
+    <div className="mlb-monte-carlo">
+      <div className="mlb-monte-carlo-head">
+        <h3>Monte Carlo distribution</h3>
+        <span className="mlb-mc-draws">{mc.draws.toLocaleString()} draws</span>
+      </div>
+      <div className="mlb-mc-row">
+        <Pct label="P10" value={p.p10} />
+        <Pct label="P25" value={p.p25} />
+        <Pct label="P50" value={p.p50} />
+        <Pct label="P75" value={p.p75} />
+        <Pct label="P90" value={p.p90} />
+      </div>
+      {/* Visual band — line marker is positioned by ratio. */}
+      <div className="mlb-mc-bar-wrapper" title={`Simulated ${mc.simulatedProbability.toFixed(1)}% probability of clearing the line`}>
+        <div
+          className="mlb-mc-bar-band"
+          style={{
+            left: `${Math.min(100, (p.p10 / range) * 100)}%`,
+            width: `${Math.max(2, ((p.p90 - p.p10) / range) * 100)}%`,
+          }}
+        />
+        <div
+          className="mlb-mc-bar-median"
+          style={{ left: `${Math.min(100, (p.p50 / range) * 100)}%` }}
+          aria-label="P50"
+        />
+      </div>
+      <div className="mlb-mc-tiers">
+        <span className={`mlb-mc-tier ${cls(mc.ceilingTier)}`}>
+          Ceiling: <strong>{mc.ceilingTier}</strong>
+        </span>
+        <span className={`mlb-mc-tier ${cls(mc.floorTier)}`}>
+          Floor: <strong>{mc.floorTier}</strong>
+        </span>
+        <span className="mlb-mc-sim-prob" title="Simulated hit probability — sanity-check against deterministic engine.">
+          Sim: {mc.simulatedProbability.toFixed(1)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Pct({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="mlb-mc-pct">
+      <span className="mlb-mc-pct-label">{label}</span>
+      <span className="mlb-mc-pct-value">{value.toFixed(2)}</span>
     </div>
   );
 }

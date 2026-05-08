@@ -24,6 +24,7 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     reasonCodes: ['Sample size: 12 games.'],
     weightsUsed: { last10: 0.6, last5: 0.4 },
     contextAdjustments: { park: 1, weather: 1, lineup: 1, bvp: 1, pitchArsenal: 1, bullpen: 1 },
+    monteCarlo: null,
     ...over,
   };
 }

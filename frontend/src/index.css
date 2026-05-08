@@ -5526,6 +5526,110 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 800;
 }
 
+/* Monte Carlo distribution panel — percentile bands + visual band
+   bar + ceiling/floor tier labels. Bloomberg-Terminal aesthetic:
+   numbers and bands, not flair. Mission-aligned: gives users
+   floor/ceiling shape, not just a point estimate. */
+.mlb-monte-carlo {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.mlb-monte-carlo-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.mlb-monte-carlo-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mlb-mc-draws {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+.mlb-mc-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mlb-mc-pct {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  background: var(--surface-1);
+  border-radius: var(--radius-sm);
+}
+.mlb-mc-pct-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mlb-mc-pct-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mlb-mc-bar-wrapper {
+  position: relative;
+  height: 8px;
+  background: var(--surface-1);
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow: visible;
+}
+.mlb-mc-bar-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(91, 141, 239, 0.35), rgba(91, 141, 239, 0.65));
+  border-radius: 4px;
+}
+.mlb-mc-bar-median {
+  position: absolute;
+  top: -3px;
+  height: 14px;
+  width: 2px;
+  background: var(--text-1);
+  border-radius: 1px;
+}
+.mlb-mc-tiers {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.mlb-mc-tier {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-2);
+}
+.mlb-mc-tier.mc-tier-high strong   { color: #66bb6a; }
+.mlb-mc-tier.mc-tier-medium strong { color: #ffa726; }
+.mlb-mc-tier.mc-tier-low strong    { color: var(--text-3); }
+.mlb-mc-sim-prob {
+  font-weight: 700;
+  color: var(--text-2);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 /* MLB calibration bucket table — predicted vs observed accuracy
    per probability bucket / stat type / risk tier / card type. */
 .mlb-bucket-table {

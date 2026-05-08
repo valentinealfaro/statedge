@@ -1313,6 +1313,15 @@ export type MlbHealth = {
   disclaimer: string;
 };
 
+export type MlbMonteCarloResult = {
+  draws: number;
+  percentiles: { p10: number; p25: number; p50: number; p75: number; p90: number };
+  mean: number;
+  simulatedProbability: number;
+  ceilingTier: 'high' | 'medium' | 'low';
+  floorTier: 'high' | 'medium' | 'low';
+};
+
 export type MlbProjectionResponse = {
   projection: number;
   baselineProjection: number;
@@ -1340,6 +1349,10 @@ export type MlbProjectionResponse = {
     pitchArsenal: number;
     bullpen: number;
   };
+  // Monte Carlo simulation outputs — 10k draws around the projection
+  // with stat-aware distribution. Surfaces floor/ceiling per pick.
+  // null when L10 stddev is degenerate.
+  monteCarlo: MlbMonteCarloResult | null;
   disclaimer: string;
 };
 
