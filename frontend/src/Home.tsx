@@ -16,7 +16,7 @@ export function Home() {
           The sports stats comparison engine. <br />
           Player vs Team. Player vs Player. Team vs Team.
         </p>
-        <Link className="cta primary" to="/compare">
+        <Link className="cta primary" to="/nba/compare">
           Start comparing →
         </Link>
         <p className="disclaimer">
@@ -74,7 +74,7 @@ export function Home() {
               <li>Basic stats</li>
               <li>No AI</li>
             </ul>
-            <Link className="cta" to="/compare">Try it free</Link>
+            <Link className="cta" to="/nba/compare">Try it free</Link>
           </div>
           <div className="plan featured">
             <h3>Pro</h3>
@@ -103,7 +103,7 @@ export function Home() {
 
       <footer className="footer">
         <p>
-          <Link to="/standings" className="footer-link">League standings</Link>
+          <Link to="/nba/standings" className="footer-link">League standings</Link>
         </p>
         <p>Stats and analysis only. No odds, no gambling advice.</p>
       </footer>

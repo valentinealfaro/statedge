@@ -57,7 +57,7 @@ export function Pricing() {
           </ul>
           {!isPro && (
             <div className="pricing-cta-block">
-              <Link to="/compare" className="cta">Use Compare</Link>
+              <Link to="/nba/compare" className="cta">Use Compare</Link>
               <span className="muted small">You're already on Free</span>
             </div>
           )}
@@ -85,7 +85,7 @@ export function Pricing() {
           {isPro ? (
             <div className="pricing-cta-block">
               <span className="pricing-current-badge">✓ Your current plan</span>
-              <Link to="/slate" className="cta primary">Open Slate →</Link>
+              <Link to="/nba/slate" className="cta primary">Open Slate →</Link>
             </div>
           ) : (
             <div className="pricing-cta-block">

@@ -40,7 +40,7 @@ export function SlateTeaser() {
     <section className="trending">
       <h2>
         Tonight's best edges
-        <Link to="/slate" className="footer-link" style={{ marginLeft: 12, fontSize: 14 }}>
+        <Link to="/nba/slate" className="footer-link" style={{ marginLeft: 12, fontSize: 14 }}>
           Full slate →
         </Link>
       </h2>

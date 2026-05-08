@@ -19,7 +19,7 @@ export function SlatePaywall() {
         </p>
         <div className="slate-paywall-ctas">
           <Link to="/pricing" className="cta primary">See pricing →</Link>
-          <Link to="/compare" className="cta">Try Compare (free)</Link>
+          <Link to="/nba/compare" className="cta">Try Compare (free)</Link>
         </div>
       </div>
 

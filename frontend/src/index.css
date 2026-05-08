@@ -656,6 +656,83 @@ h3 { font-size: 17px; margin: 28px 0 12px; color: var(--text-2); font-weight: 70
   background: var(--brand-gradient);
   box-shadow: var(--shadow-brand-glow);
 }
+/* Sport-tinted active state. NBA = electric blue, MLB = emerald per
+   the UX spec's color system. Visible only when the link is active
+   AND on the matching sport. */
+.navlink.active.sport-nba {
+  background: linear-gradient(135deg, #2196f3, #5b8def);
+}
+.navlink.active.sport-mlb {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.30);
+}
+
+/* Sport switcher — pill that toggles between NBA / MLB at the same
+   conceptual depth. Surfaces only on sport pages. */
+.sport-switcher {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--surface-0);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  gap: 2px;
+}
+.sport-pill {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-decoration: none;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+.sport-pill:hover { color: var(--text-1); }
+.sport-pill.active.sport-nba {
+  color: #fff;
+  background: linear-gradient(135deg, #2196f3, #5b8def);
+}
+.sport-pill.active.sport-mlb {
+  color: #fff;
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+/* Subnav strip — sits below the main nav, visible only when on a
+   sport page. Tints with the sport's accent so visual identity is
+   consistent across compare / slate / standings / calibration. */
+.subnav {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  margin: -8px auto 20px;
+  padding: 8px 12px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+.subnav-nba { border-top: 2px solid rgba(91, 141, 239, 0.50); }
+.subnav-mlb { border-top: 2px solid rgba(16, 185, 129, 0.50); }
+.subnav-link {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+.subnav-link:hover { color: var(--text-1); background: var(--surface-1); }
+.subnav-link.active {
+  color: var(--text-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+}
+.subnav-nba .subnav-link.active { border-color: rgba(91, 141, 239, 0.45); }
+.subnav-mlb .subnav-link.active { border-color: rgba(16, 185, 129, 0.45); }
 
 /* --- NavBar player search --- */
 .nav-search {
