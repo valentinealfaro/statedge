@@ -14,7 +14,10 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:sync-players": "tsx scripts/sync-players.ts",
     "db:sync-games": "tsx scripts/sync-games.ts",
-    "db:diagnose": "tsx scripts/diagnose.ts"
+    "db:diagnose": "tsx scripts/diagnose.ts",
+    "mlb:sync-teams": "tsx scripts/mlb-sync-teams.ts",
+    "mlb:sync-players": "tsx scripts/mlb-sync-players.ts",
+    "mlb:sync-games": "tsx scripts/mlb-sync-games.ts"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
