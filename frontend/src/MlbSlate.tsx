@@ -618,6 +618,10 @@ function PublicTodaySlate({
         Today's slate · <strong>{today.slate.date}</strong> ·{' '}
         {today.slate.count} line{today.slate.count === 1 ? '' : 's'} ·{' '}
         last updated {new Date(today.slate.updatedAt).toLocaleTimeString()}
+        {' · '}
+        <a href="/mlb/slate/history" style={{ color: 'var(--accent, #4fc3f7)' }}>
+          history →
+        </a>
       </p>
       <SlateResultView data={today.resolved} />
     </>

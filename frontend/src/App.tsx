@@ -8,6 +8,7 @@ import { MlbCalibration } from './MlbCalibration';
 import { MlbCompare } from './MlbCompare';
 import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
+import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
 import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
@@ -38,6 +39,7 @@ export function App() {
               redirects to it for back-compat. */}
           <Route path="/mlb/compare" element={<MlbCompare />} />
           <Route path="/mlb/slate" element={<MlbSlate />} />
+          <Route path="/mlb/slate/history" element={<MlbSlateHistory />} />
           <Route path="/mlb/calibration" element={<MlbCalibration />} />
           <Route path="/mlb/standings" element={<MlbStandings />} />
           <Route path="/mlb/player/:playerId" element={<MlbPlayerLog />} />

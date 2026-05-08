@@ -116,6 +116,8 @@ export function Home() {
           {' · '}
           <Link to="/mlb/slate" className="footer-link">MLB slate</Link>
           {' · '}
+          <Link to="/mlb/slate/history" className="footer-link">MLB history</Link>
+          {' · '}
           <Link to="/mlb/calibration" className="footer-link">MLB calibration</Link>
         </p>
         <p>Stats and analysis only. No odds, no gambling advice.</p>
