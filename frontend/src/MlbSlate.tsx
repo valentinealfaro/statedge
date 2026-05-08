@@ -752,7 +752,9 @@ function useLiveToday(): MlbLiveTodayResponse | null {
       : false;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, anyLive ? 30_000 : 60_000);
+    // 45s while live / 90s otherwise. Stays well within Vercel Pro's
+    // 1M-invocation/month included quota even with sustained traffic.
+    }, anyLive ? 45_000 : 90_000);
     return () => window.clearInterval(interval);
   }, [feed]);
 
@@ -855,18 +857,47 @@ function SlateLiveSummary({
   }
 
   const cards: Array<{ name: string; status: CardStatus }> = [];
+  // Track every individual leg across the slate too. The card-level
+  // aggregate hides how much real action there is — a Best 6 with 5
+  // hits and 1 still live shows up as a single "LIVE" tile but the
+  // user wants to see "5 of 6 already cleared." Leg totals fix that.
+  const allLegs: Array<{
+    playerId: number;
+    statKey: string;
+    line: number;
+    direction: 'OVER' | 'UNDER';
+  }> = [];
   for (const slot of data.combos) {
     if (!slot.combo) continue;
     cards.push({ name: slot.combo.label, status: statusForLegs(slot.combo.legs) });
+    for (const l of slot.combo.legs) allLegs.push(l);
   }
   if (data.wildCard.kind !== 'no_edge' && data.wildCard.legs.length > 0) {
     cards.push({ name: 'Wild Card', status: statusForLegs(data.wildCard.legs) });
+    for (const l of data.wildCard.legs) allLegs.push(l);
   }
 
   const cleared = cards.filter((c) => c.status === 'cleared').length;
   const dead = cards.filter((c) => c.status === 'dead').length;
   const live = cards.filter((c) => c.status === 'live').length;
   const pending = cards.filter((c) => c.status === 'pending').length;
+
+  // Leg-level totals (de-duped — same player+stat+line+direction can
+  // appear on multiple cards but we only want to count it once for
+  // "actually projected" totals).
+  const seenLeg = new Set<string>();
+  let legHit = 0, legMiss = 0, legProgress = 0, legPending = 0;
+  for (const l of allLegs) {
+    const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
+    if (seenLeg.has(key)) continue;
+    seenLeg.add(key);
+    const g = resolveLegLive(liveToday, l);
+    if (g.grade === 'HIT')      legHit += 1;
+    else if (g.grade === 'MISS') legMiss += 1;
+    else if (g.grade === 'PROGRESS') legProgress += 1;
+    else                              legPending += 1;
+  }
+  const totalLegs = legHit + legMiss + legProgress + legPending;
 
   if (cleared + dead + live === 0) return null;     // nothing to summarize
 
@@ -904,12 +935,31 @@ function SlateLiveSummary({
       <strong style={{ fontSize: 14, letterSpacing: '0.02em' }}>
         Slate live status
       </strong>
-      <span style={{ color: '#66bb6a', fontWeight: 700 }}>● {cleared} CLEARED</span>
-      <span style={{ color: '#ef5350', fontWeight: 700 }}>● {dead} DEAD</span>
-      <span style={{ color: '#7aa2ff', fontWeight: 700 }}>● {live} LIVE</span>
+      <span title="Cards where every leg has hit (parlay paid)" style={{ color: '#66bb6a', fontWeight: 700 }}>● {cleared} CLEARED</span>
+      <span title="Cards where at least one leg has missed (parlay dead)" style={{ color: '#ef5350', fontWeight: 700 }}>● {dead} DEAD</span>
+      <span title="Cards with at least one game in progress" style={{ color: '#7aa2ff', fontWeight: 700 }}>● {live} LIVE</span>
       {pending > 0 && (
         <span className="muted small">{pending} pending tipoff</span>
       )}
+      <span
+        title="Per-leg totals across every card. De-duped so a leg on multiple cards counts once."
+        style={{
+          paddingLeft: 12,
+          marginLeft: 4,
+          borderLeft: '1px solid rgba(255,255,255,0.12)',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'baseline',
+        }}
+      >
+        <span className="muted small">Legs ({totalLegs})</span>
+        <span style={{ color: '#66bb6a', fontWeight: 700 }}>{legHit} hit</span>
+        <span style={{ color: '#ef5350', fontWeight: 700 }}>{legMiss} miss</span>
+        <span style={{ color: '#7aa2ff', fontWeight: 700 }}>{legProgress} live</span>
+        {legPending > 0 && (
+          <span className="muted small">{legPending} pending</span>
+        )}
+      </span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'baseline' }}>
         <span className="muted small">Simulated $1 P/L</span>
         <strong

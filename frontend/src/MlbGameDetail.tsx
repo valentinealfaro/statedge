@@ -372,7 +372,7 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
     if (live?.state !== 'live') return;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, 15_000);
+    }, 30_000);
     return () => window.clearInterval(interval);
   }, [live?.state]);
 
@@ -500,7 +500,7 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
             <p className="muted small" style={{ marginTop: 8 }}>
               {isFinal
                 ? `Final result: ${tally.hit} hit, ${tally.miss} miss${tally.push ? `, ${tally.push} push` : ''}.`
-                : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 15s.`}
+                : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 30s.`}
             </p>
           )}
         </>
@@ -809,7 +809,7 @@ function PlayByPlay({ game }: { game: MlbTodayGame }) {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
-  // Poll every 15s while live, every 60s while pregame/final. We
+  // Poll every 30s while live, every 90s while pregame/final. We
   // still poll pregame in case the game starts; once it's final we
   // back off but keep the last snapshot rendered. Pause when the
   // tab is hidden — saves bandwidth and avoids stale UI.
@@ -823,7 +823,7 @@ function PlayByPlay({ game }: { game: MlbTodayGame }) {
 
   useEffect(() => {
     const live = feed?.state === 'live';
-    const pollMs = live ? 15_000 : 60_000;
+    const pollMs = live ? 30_000 : 90_000;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
     }, pollMs);
@@ -848,7 +848,7 @@ function PlayByPlay({ game }: { game: MlbTodayGame }) {
             ● LIVE
           </span>
         )}
-        {live && <span className="muted small"> · auto-refresh 15s</span>}
+        {live && <span className="muted small"> · auto-refresh 30s</span>}
         {feed.state === 'final' && <span className="muted small"> · final</span>}
       </summary>
 

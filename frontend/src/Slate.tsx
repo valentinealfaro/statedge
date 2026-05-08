@@ -801,7 +801,9 @@ function useNbaLiveToday(): NbaLiveTodayResponse | null {
       : false;
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') setTick((t) => t + 1);
-    }, anyLive ? 30_000 : 60_000);
+    // 45s while live / 90s otherwise. Stays well within Vercel Pro's
+    // 1M-invocation/month included quota even with sustained traffic.
+    }, anyLive ? 45_000 : 90_000);
     return () => window.clearInterval(interval);
   }, [feed]);
 
