@@ -251,56 +251,45 @@ function legScore(leg: ResolvedMlbLine, mode: MlbResolvedSlateMode): number {
   }
 }
 
-// MLB stat families. Within a card, allow at most one leg per player
-// per family — so Aaron Judge can have Hits + Walks (different families)
-// but NOT Hits + Total Bases + Runs (all production family — too
-// correlated, every leg dies on the same bad night).
-//
-// Per the 2026-05-08 MLB Slate Engine spec: same player IS allowed
-// across multiple cards (was blocked NBA-style; that rule was wrong
-// for MLB), and within a card same player is allowed up to N picks
-// IF stat families differ.
-const STAT_FAMILY: Record<string, string> = {
-  // Production (offensive opportunity, all same volatility regime)
-  hits: 'production',
-  total_bases: 'production',
-  runs: 'production',
-  hits_runs_rbis: 'production',
-  hitter_fantasy_score: 'production',
-  // Power (rare, high-leverage, strongly correlated)
-  home_runs: 'power',
-  doubles: 'power',
-  triples: 'power',
-  // Counting variants — separate families because volatility curves
-  // differ enough that Hits + Singles is informationally redundant
-  // but Hits + Walks isn't.
-  singles: 'singles',
-  rbis: 'rbis',
-  walks: 'discipline',
-  strikeouts: 'discipline',
-  stolen_bases: 'speed',
-  // Pitcher families
-  ks: 'pitcher_dominance',
-  pitcher_outs: 'pitcher_volume',
-  innings_pitched: 'pitcher_volume',
-  pitches_thrown: 'pitcher_volume',
-  hits_allowed: 'pitcher_damage',
-  earned_runs_allowed: 'pitcher_damage',
-  walks_allowed: 'pitcher_damage',
-  home_runs_allowed: 'pitcher_damage',
-};
-
-function statFamilyOf(statKey: string): string {
-  return STAT_FAMILY[statKey] ?? statKey;
+// Per-card same-player cap. Per the 2026-05-08 MLB Slate Engine
+// spec example: "Aaron Judge Hits + Total Bases + Runs" is GOOD
+// (different volatility curves, all from offensive opportunity),
+// but adding HR/RBI on top creates "catastrophic dependency on
+// single offensive outcome." So the real rule is: cap same-player
+// legs at 3 on small cards (where users want concentrated edge),
+// 2 on size-5+ ("6-leg should behave like a diversified portfolio,
+// NOT a fan-made same-game stack" per spec).
+function maxLegsPerPlayer(cardSize: number): number {
+  if (cardSize >= 5) return 2;
+  return 3;
 }
 
-// Per-card same-player cap. Allow up to 2 same-player legs IF they're
-// in different stat families. Larger cards (5/6) tighten to 1 — the
-// spec calls out that "6-leg should behave like a diversified
-// portfolio, NOT a fan-made same-game stack."
-function maxLegsPerPlayer(cardSize: number): number {
-  if (cardSize >= 5) return 1;
-  return 2;
+// HR/triples are MAGNET stats — one swing of the bat triggers
+// every offensive prop for that player simultaneously (HR adds 4
+// TB + 1 R + ≥1 RBI). Pairing HR with TB/Runs/RBI/Hits on the
+// same player same card creates the catastrophic dependency the
+// spec calls out as BAD. Block it explicitly.
+const HR_MAGNET_STATS = new Set<string>(['home_runs', 'triples']);
+const HR_DEPENDENT_STATS = new Set<string>([
+  'rbis', 'runs', 'total_bases', 'hits', 'hits_runs_rbis', 'hitter_fantasy_score',
+]);
+
+// Returns true if adding this leg to the existing player's leg set
+// would create the spec's "catastrophic dependency on single
+// offensive outcome" anti-pattern.
+function createsHrDependency(
+  newStat: string,
+  existingStats: Set<string>,
+): boolean {
+  if (HR_MAGNET_STATS.has(newStat)) {
+    // Adding a HR/triples leg — block if any HR-dependent stat already.
+    for (const s of existingStats) if (HR_DEPENDENT_STATS.has(s)) return true;
+  }
+  if (HR_DEPENDENT_STATS.has(newStat)) {
+    // Adding hits/TB/runs/RBI — block if HR/triples already there.
+    for (const s of existingStats) if (HR_MAGNET_STATS.has(s)) return true;
+  }
+  return false;
 }
 
 // Per-mode stat blocklist. Per spec L8/Slate-Engine: Safe mode must
@@ -367,7 +356,7 @@ function pickTopN(
   const ranked = [...filtered].sort((a, b) => legScore(b, mode) - legScore(a, mode));
   const picked: ResolvedMlbLine[] = [];
   const playerLegCount = new Map<number, number>();
-  const playerFamiliesUsed = new Map<number, Set<string>>();
+  const playerStatsUsed = new Map<number, Set<string>>();
   const gameLegCount = new Map<string, number>();
   const teamSideLegCount = new Map<string, number>();
   const cap = maxLegsPerPlayer(n);
@@ -376,9 +365,13 @@ function pickTopN(
   for (const l of ranked) {
     const seen = playerLegCount.get(l.playerId) ?? 0;
     if (seen >= cap) continue;
-    const families = playerFamiliesUsed.get(l.playerId) ?? new Set();
-    const family = statFamilyOf(l.statKey);
-    if (families.has(family)) continue;     // family diversification
+    const usedStats = playerStatsUsed.get(l.playerId) ?? new Set();
+    // Block exact duplicate stat for same player (Hits+Hits is just a
+    // double-down, not diversification).
+    if (usedStats.has(l.statKey)) continue;
+    // HR-pairing block: per spec, HR/triples + RBI/Runs/TB/Hits on
+    // the same player on the same card = catastrophic dependency.
+    if (createsHrDependency(l.statKey, usedStats)) continue;
     // Same-game stack cap.
     const gameKey = l.gameKey;
     if (gameKey) {
@@ -393,8 +386,8 @@ function pickTopN(
     }
     picked.push(l);
     playerLegCount.set(l.playerId, seen + 1);
-    families.add(family);
-    playerFamiliesUsed.set(l.playerId, families);
+    usedStats.add(l.statKey);
+    playerStatsUsed.set(l.playerId, usedStats);
     if (gameKey) gameLegCount.set(gameKey, (gameLegCount.get(gameKey) ?? 0) + 1);
     if (tsKey) teamSideLegCount.set(tsKey, (teamSideLegCount.get(tsKey) ?? 0) + 1);
     if (picked.length >= n) break;

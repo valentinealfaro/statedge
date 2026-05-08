@@ -232,11 +232,11 @@ describe('buildMlbSlate — L8 strict subset (Best N+1 ⊇ Best N)', () => {
   });
 });
 
-describe('buildMlbSlate — same-player + stat-family rules (Phase 28)', () => {
-  test('Same-family duplicates on the same player are dropped (Hits + Total Bases + Runs are all production family)', () => {
-    // Aaron Judge with three production-family props all on one card
-    // would create catastrophic dependency. Builder picks at most one
-    // per family per player.
+describe('buildMlbSlate — same-player + correlation rules (Phase 28+32)', () => {
+  test('Spec example: Hits + Total Bases + Runs on same player is GOOD (different volatility curves)', () => {
+    // Per spec: "GOOD: Aaron Judge — Hits, Aaron Judge — Total Bases,
+    // Aaron Judge — Runs. Possible because all derive from offensive
+    // opportunity but have different volatility curves."
     const slate = [
       leg(1, { statKey: 'hits',         statLabel: 'Hits' },        { edgePercent: 20 }),
       leg(1, { statKey: 'total_bases',  statLabel: 'Total Bases' }, { edgePercent: 19 }),
@@ -246,37 +246,40 @@ describe('buildMlbSlate — same-player + stat-family rules (Phase 28)', () => {
       leg(4, {}, { edgePercent: 13 }),
     ];
     const r = buildMlbSlate(slate, 'balanced');
-    for (const slot of r.combos) {
-      if (!slot.combo) continue;
-      // For each player on the card, count their legs.
-      const countByPlayer = new Map<number, number>();
-      for (const l of slot.combo.legs) {
-        countByPlayer.set(l.playerId, (countByPlayer.get(l.playerId) ?? 0) + 1);
-      }
-      // Player 1 had 3 production-family props; should appear AT MOST 1 time
-      // because the family-diversification rule blocks the duplicates.
-      expect((countByPlayer.get(1) ?? 0)).toBeLessThanOrEqual(1);
+    const best4 = r.combos.find((c) => c.size === 4)?.combo;
+    if (best4) {
+      const player1Count = best4.legs.filter((l) => l.playerId === 1).length;
+      // Per spec, all 3 production-family stats on one player are
+      // allowed because volatility curves differ. Cap is 3 on
+      // size-4 cards.
+      expect(player1Count).toBeGreaterThanOrEqual(2);
+      expect(player1Count).toBeLessThanOrEqual(3);
     }
   });
 
-  test('Different stat families on the same player CAN stack on a small card (Hits + Walks → production + discipline)', () => {
-    // 4-leg card cap allows 2 same-player legs IF families differ.
+  test('Spec anti-pattern: HR + RBI on same player blocked (HR triggers RBI — catastrophic dependency)', () => {
     const slate = [
-      leg(1, { statKey: 'hits',         statLabel: 'Hits' },        { edgePercent: 20 }),
-      leg(1, { statKey: 'walks',        statLabel: 'Walks' },       { edgePercent: 19 }),
+      leg(1, { statKey: 'home_runs', statLabel: 'Home Runs' },     { edgePercent: 25 }),
+      leg(1, { statKey: 'rbis',      statLabel: 'RBIs' },          { edgePercent: 24 }),
+      leg(1, { statKey: 'runs',      statLabel: 'Runs' },          { edgePercent: 23 }),
+      leg(1, { statKey: 'total_bases', statLabel: 'Total Bases' }, { edgePercent: 22 }),
       leg(2, {}, { edgePercent: 15 }),
       leg(3, {}, { edgePercent: 14 }),
       leg(4, {}, { edgePercent: 13 }),
     ];
     const r = buildMlbSlate(slate, 'balanced');
-    const best2 = r.combos.find((c) => c.size === 2)?.combo;
-    if (best2) {
-      // Top scorer is one of player 1's two legs; second highest is the other.
-      // Builder allows both because hits=production, walks=discipline.
-      const player1Count = best2.legs.filter((l) => l.playerId === 1).length;
-      expect(player1Count).toBeGreaterThanOrEqual(1);
-      // (May be 1 or 2 depending on the legScore tie-break; the rule
-      // allows it but doesn't require it.)
+    for (const slot of r.combos) {
+      if (!slot.combo) continue;
+      const player1Stats = new Set(
+        slot.combo.legs.filter((l) => l.playerId === 1).map((l) => l.statKey),
+      );
+      // If HR is on the card for player 1, NONE of {RBI, Runs, TB, Hits}
+      // should also be there — HR triggers all of them.
+      if (player1Stats.has('home_runs')) {
+        expect(player1Stats.has('rbis')).toBe(false);
+        expect(player1Stats.has('runs')).toBe(false);
+        expect(player1Stats.has('total_bases')).toBe(false);
+      }
     }
   });
 
