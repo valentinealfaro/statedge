@@ -1952,6 +1952,54 @@ export async function getMlbGameLive(gamePk: number): Promise<MlbLiveFeed> {
   return (await res.json()) as MlbLiveFeed;
 }
 
+// Bulk live stats for ALL today's games. Used on /mlb/slate for
+// per-leg grading across the whole slate without 15 separate fetches.
+export type MlbLiveTodayPlayer = {
+  gamePk: number;
+  hits: number | null;
+  atBats: number | null;
+  runs: number | null;
+  rbis: number | null;
+  walks: number | null;
+  strikeouts: number | null;
+  homeRuns: number | null;
+  doubles: number | null;
+  triples: number | null;
+  stolenBases: number | null;
+  totalBases: number | null;
+  hitByPitch: number | null;
+  outsRecorded: number | null;
+  pitcherStrikeouts: number | null;
+  hitsAllowed: number | null;
+  earnedRunsAllowed: number | null;
+  walksAllowed: number | null;
+  homeRunsAllowed: number | null;
+};
+
+export type MlbLiveTodayGame = {
+  state: 'pregame' | 'live' | 'final';
+  detailedState: string;
+  awayAbbr: string;
+  homeAbbr: string;
+  awayScore: number | null;
+  homeScore: number | null;
+};
+
+export type MlbLiveTodayResponse = {
+  fetchedAt: string;
+  byGame: Record<string, MlbLiveTodayGame>;
+  byPlayer: Record<string, MlbLiveTodayPlayer>;
+};
+
+export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
+  const res = await fetch(`${API_BASE}/api/mlb/live/today`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbLiveTodayResponse;
+}
+
 export async function getMlbToday(date?: string): Promise<MlbTodayResponse> {
   const url = date
     ? `${API_BASE}/api/mlb/today?date=${date}`

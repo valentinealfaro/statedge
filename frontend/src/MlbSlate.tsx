@@ -19,9 +19,12 @@ import {
   buildMlbSlateRequest,
   clearMlbDailySlate,
   getMlbDailySlate,
+  getMlbLiveToday,
   rebuildMlbDailySlate,
   setMlbDailySlate,
   type MlbDailySlateResponse,
+  type MlbLiveTodayPlayer,
+  type MlbLiveTodayResponse,
   type MlbSlateResponse,
   type MlbWildCardCombo,
   type RawMlbSlateLine,
@@ -663,6 +666,103 @@ function PublicTodaySlate({
   );
 }
 
+// Polls /api/mlb/live/today every 30s while there's at least one
+// in-progress game; otherwise re-fetches on a slower 60s cadence so
+// the UI catches the moment the first game starts. Server-side cache
+// debounces upstream traffic — clients can poll freely.
+function useLiveToday(): MlbLiveTodayResponse | null {
+  const [feed, setFeed] = useState<MlbLiveTodayResponse | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMlbLiveToday()
+      .then((d) => { if (!cancelled) setFeed(d); })
+      .catch(() => { /* silent — no live data is fine */ });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  useEffect(() => {
+    const anyLive = feed
+      ? Object.values(feed.byGame).some((g) => g.state === 'live')
+      : false;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, anyLive ? 30_000 : 60_000);
+    return () => window.clearInterval(interval);
+  }, [feed]);
+
+  return feed;
+}
+
+// Mirrors the same statKey → live-stats lookup used on the
+// game-detail page. Keep these two implementations in sync.
+function liveValueForStat(stats: MlbLiveTodayPlayer, statKey: string): number | null {
+  switch (statKey) {
+    case 'hits':                return stats.hits;
+    case 'total_bases':         return stats.totalBases;
+    case 'runs':                return stats.runs;
+    case 'rbis':                return stats.rbis;
+    case 'walks':               return stats.walks;
+    case 'strikeouts':          return stats.strikeouts;
+    case 'home_runs':           return stats.homeRuns;
+    case 'doubles':             return stats.doubles;
+    case 'triples':             return stats.triples;
+    case 'stolen_bases':        return stats.stolenBases;
+    case 'hit_by_pitch':        return stats.hitByPitch;
+    case 'hits_runs_rbis': {
+      const h = stats.hits;
+      const r = stats.runs;
+      const ri = stats.rbis;
+      if (h === null && r === null && ri === null) return null;
+      return (h ?? 0) + (r ?? 0) + (ri ?? 0);
+    }
+    case 'pitcher_strikeouts':  return stats.pitcherStrikeouts;
+    case 'hits_allowed':        return stats.hitsAllowed;
+    case 'earned_runs_allowed': return stats.earnedRunsAllowed;
+    case 'walks_allowed':       return stats.walksAllowed;
+    case 'outs_recorded':       return stats.outsRecorded;
+    case 'home_runs_allowed':   return stats.homeRunsAllowed;
+    case 'pitching_outs':       return stats.outsRecorded;
+    default:                    return null;
+  }
+}
+
+type LiveGrade = 'HIT' | 'MISS' | 'PROGRESS' | 'PUSH' | 'PENDING';
+
+function gradeLeg(
+  direction: 'OVER' | 'UNDER',
+  line: number,
+  current: number | null,
+  state: 'pregame' | 'live' | 'final' | undefined,
+): LiveGrade {
+  if (current === null || !state || state === 'pregame') return 'PENDING';
+  const isFinal = state === 'final';
+  if (direction === 'OVER') {
+    if (current > line) return 'HIT';
+    if (isFinal) return current === line ? 'PUSH' : 'MISS';
+    return 'PROGRESS';
+  }
+  if (current > line) return 'MISS';
+  if (isFinal) return current === line ? 'PUSH' : 'HIT';
+  return 'PROGRESS';
+}
+
+// Resolve the live grade for a leg from the bulk live feed. Returns
+// PENDING when the leg's player isn't in the live data (e.g. game
+// hasn't started, or player wasn't in lineup).
+function resolveLegLive(
+  liveToday: MlbLiveTodayResponse | null,
+  leg: { playerId: number; statKey: string; line: number; direction: 'OVER' | 'UNDER' },
+): { grade: LiveGrade; current: number | null } {
+  if (!liveToday) return { grade: 'PENDING', current: null };
+  const ps = liveToday.byPlayer[String(leg.playerId)];
+  if (!ps) return { grade: 'PENDING', current: null };
+  const game = liveToday.byGame[String(ps.gamePk)];
+  const current = liveValueForStat(ps, leg.statKey);
+  return { grade: gradeLeg(leg.direction, leg.line, current, game?.state), current };
+}
+
 function SlateResultView({ data }: { data: MlbSlateResponse }) {
   // Engine activity summary — what did the engine actually do? Counts
   // are derived from the response so the user sees the work.
@@ -677,6 +777,11 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
       const hits = (l.reasonCodes ?? []).filter((r) => /calibration/i.test(r)).length;
       return n + (hits > 0 ? 1 : 0);
     }, 0);
+
+  // Live grading — fetched once at the rail level, drilled into both
+  // card types. When no games are live, all grades are PENDING and
+  // cards render exactly as before.
+  const liveToday = useLiveToday();
 
   return (
     <div className="mlb-slate-result">
@@ -713,9 +818,9 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
 
       <div className="best-picks-rail">
         {data.combos.map((slot) => (
-          <ComboCard key={slot.size} slot={slot} />
+          <ComboCard key={slot.size} slot={slot} liveToday={liveToday} />
         ))}
-        <WildCardCard wildCard={data.wildCard} />
+        <WildCardCard wildCard={data.wildCard} liveToday={liveToday} />
       </div>
 
       <p className="mlb-disclaimer">{data.disclaimer}</p>
@@ -781,7 +886,7 @@ function EngineActivityPanel({
 
 // Wild Card — uses the same `best-pick-card wild` styling as NBA so
 // users see one unified visual system across both sports.
-function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
+function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liveToday: MlbLiveTodayResponse | null }) {
   const kindLabel =
     wildCard.kind === 'standard' ? 'Standard'
     : wildCard.kind === 'near_miss' ? 'Near Miss'
@@ -837,6 +942,17 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
     wildCard.legs.reduce((sum, l) => sum + Math.abs(l.projection - l.line), 0) / wildCard.legs.length;
   const warnings = computeCardWarnings(wildCard.legs, size);
 
+  const grades = wildCard.legs.map((l) => resolveLegLive(liveToday, l));
+  const tally = {
+    hit: grades.filter((g) => g.grade === 'HIT').length,
+    miss: grades.filter((g) => g.grade === 'MISS').length,
+    progress: grades.filter((g) => g.grade === 'PROGRESS').length,
+    push: grades.filter((g) => g.grade === 'PUSH').length,
+  };
+  const anyLive = tally.hit + tally.miss + tally.progress + tally.push > 0;
+  const cardDead = tally.miss > 0;
+  const cardCleared = !cardDead && tally.hit === wildCard.legs.length;
+
   return (
     <div className="best-pick-card wild">
       <div className="best-pick-head">
@@ -846,6 +962,28 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
         </div>
         <span className="best-pick-size">{size}-LEG</span>
       </div>
+      {anyLive && (
+        <div
+          style={{
+            margin: '0 16px 8px',
+            padding: '6px 10px',
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            background: cardCleared ? 'rgba(102, 187, 106, 0.16)' : cardDead ? 'rgba(239, 83, 80, 0.16)' : 'rgba(122, 162, 255, 0.12)',
+            color: cardCleared ? '#66bb6a' : cardDead ? '#ef5350' : '#7aa2ff',
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+          title="Live grading — each leg checked against current game stats. ANY miss kills the whole parlay."
+        >
+          {cardCleared && <span>✓ ALL {wildCard.legs.length} HIT — CARD CLEARED</span>}
+          {cardDead && <span>✗ {tally.miss} LEG{tally.miss === 1 ? '' : 'S'} DEAD</span>}
+          {!cardCleared && !cardDead && <span>● {tally.hit}/{wildCard.legs.length} HIT · {tally.progress} LIVE</span>}
+        </div>
+      )}
       <div
         className="best-pick-pct"
         title={`Adjusted combined hit %. Raw: ${wildCard.rawCombinedHit.toFixed(1)}%, ${wildCard.correlationRisk} correlation penalty.`}
@@ -895,6 +1033,7 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
       <div className="best-pick-legs">
         {wildCard.legs.map((l, i) => {
           const conf = legConfidenceLabel(l.probability);
+          const live = grades[i];
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
@@ -918,6 +1057,24 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
                 {l.trapScore >= 60 && (
                   <span className="best-pick-leg-trap">
                     ⚠ {l.trapScore >= 80 ? 'EXTREME TRAP RISK' : 'HIGH TRAP RISK'}
+                  </span>
+                )}
+                {live.grade !== 'PENDING' && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      color:
+                        live.grade === 'HIT' ? '#66bb6a'
+                        : live.grade === 'MISS' ? '#ef5350'
+                        : live.grade === 'PUSH' ? '#ffb74d'
+                        : '#7aa2ff',
+                    }}
+                    title={live.current !== null ? `Current: ${live.current}` : 'Game not started'}
+                  >
+                    {live.grade}{live.current !== null ? ` · ${live.current}` : ''}
                   </span>
                 )}
               </div>
@@ -1016,7 +1173,7 @@ function computeCardWarnings(
 // Render a polished MLB combo card matching the NBA `best-pick-card`
 // design system: dense 4-stat grid, per-leg confidence + category +
 // trap badges, warnings strip, "Load parlay" CTA.
-function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
+function ComboCard({ slot, liveToday }: { slot: MlbSlateResponse['combos'][number]; liveToday: MlbLiveTodayResponse | null }) {
   if (!slot.combo) {
     return (
       <div className="best-pick-card empty">
@@ -1043,6 +1200,20 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
     c.legs.reduce((sum, l) => sum + Math.abs(l.projection - l.line), 0) / c.legs.length;
   const warnings = computeCardWarnings(c.legs, c.size);
 
+  // Live grading: evaluate each leg against current boxscore stats.
+  // When no game is live yet, every leg is PENDING and we render
+  // nothing live-related (clean fallback to the static design).
+  const grades = c.legs.map((l) => resolveLegLive(liveToday, l));
+  const tally = {
+    hit: grades.filter((g) => g.grade === 'HIT').length,
+    miss: grades.filter((g) => g.grade === 'MISS').length,
+    progress: grades.filter((g) => g.grade === 'PROGRESS').length,
+    push: grades.filter((g) => g.grade === 'PUSH').length,
+  };
+  const anyLive = tally.hit + tally.miss + tally.progress + tally.push > 0;
+  const cardDead = tally.miss > 0;     // any miss = parlay dead
+  const cardCleared = !cardDead && tally.hit === c.legs.length;
+
   return (
     <div className="best-pick-card">
       <div className="best-pick-head">
@@ -1052,6 +1223,28 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
         </div>
         <span className="best-pick-size">{c.size}-LEG</span>
       </div>
+      {anyLive && (
+        <div
+          style={{
+            margin: '0 16px 8px',
+            padding: '6px 10px',
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            background: cardCleared ? 'rgba(102, 187, 106, 0.16)' : cardDead ? 'rgba(239, 83, 80, 0.16)' : 'rgba(122, 162, 255, 0.12)',
+            color: cardCleared ? '#66bb6a' : cardDead ? '#ef5350' : '#7aa2ff',
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+          title="Live grading — each leg checked against current game stats. ANY miss kills the whole parlay."
+        >
+          {cardCleared && <span>✓ ALL {c.legs.length} HIT — CARD CLEARED</span>}
+          {cardDead && <span>✗ {tally.miss} LEG{tally.miss === 1 ? '' : 'S'} DEAD</span>}
+          {!cardCleared && !cardDead && <span>● {tally.hit}/{c.legs.length} HIT · {tally.progress} LIVE</span>}
+        </div>
+      )}
       <div
         className="best-pick-pct"
         title={`Adjusted combined hit %. Multiplies each leg's probability and applies a correlation penalty (${c.correlationRisk} risk this card). Raw uncorrected: ${c.rawCombinedHit.toFixed(1)}%.`}
@@ -1093,6 +1286,7 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
         {c.legs.map((l, i) => {
           const conf = legConfidenceLabel(l.probability);
           const cat = legCategory(l);
+          const live = grades[i];
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
@@ -1125,6 +1319,24 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
                     title={`Trap score ${l.trapScore}. Possible public-trap line.`}
                   >
                     ⚠ {l.trapScore >= 80 ? 'EXTREME TRAP RISK' : 'HIGH TRAP RISK'}
+                  </span>
+                )}
+                {live.grade !== 'PENDING' && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      color:
+                        live.grade === 'HIT' ? '#66bb6a'
+                        : live.grade === 'MISS' ? '#ef5350'
+                        : live.grade === 'PUSH' ? '#ffb74d'
+                        : '#7aa2ff',
+                    }}
+                    title={live.current !== null ? `Current: ${live.current}` : 'Game not started'}
+                  >
+                    {live.grade}{live.current !== null ? ` · ${live.current}` : ''}
                   </span>
                 )}
               </div>

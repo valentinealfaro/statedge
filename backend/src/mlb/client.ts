@@ -758,6 +758,31 @@ export function daysInMonth(year: number, month1Indexed: number): number {
 // season stats baked in. Pre-game it's typically empty until ~2 hours
 // before first pitch, when MLB posts the official lineups.
 
+export type MlbBoxscoreBatting = {
+  atBats?: number;
+  hits?: number;
+  runs?: number;
+  rbi?: number;
+  baseOnBalls?: number;
+  strikeOuts?: number;
+  doubles?: number;
+  triples?: number;
+  homeRuns?: number;
+  totalBases?: number;
+  stolenBases?: number;
+  hitByPitch?: number;
+};
+
+export type MlbBoxscorePitching = {
+  inningsPitched?: string;
+  strikeOuts?: number;
+  hits?: number;
+  earnedRuns?: number;
+  baseOnBalls?: number;
+  homeRuns?: number;
+  outs?: number;
+};
+
 export type MlbBoxscorePlayer = {
   person: { id: number; fullName: string };
   position: { code: string; abbreviation: string; type?: string };
@@ -768,8 +793,8 @@ export type MlbBoxscorePlayer = {
     pitching?: { era?: string; wins?: number; losses?: number; strikeOuts?: number };
   };
   stats?: {
-    batting?: { atBats?: number; hits?: number; runs?: number; rbi?: number };
-    pitching?: { inningsPitched?: string; strikeOuts?: number; hits?: number; earnedRuns?: number };
+    batting?: MlbBoxscoreBatting;
+    pitching?: MlbBoxscorePitching;
   };
 };
 

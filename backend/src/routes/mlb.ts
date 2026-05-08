@@ -1415,6 +1415,150 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
   }
 });
 
+// In-memory cache for the bulk live-stats response. The route fans
+// out to ~15 boxscore fetches per call; without a cache, every slate
+// page load + 30s poll would hammer statsapi. 25s TTL keeps the
+// data fresh enough for live grading while ensuring exactly one
+// upstream round-trip per refresh interval.
+let liveTodayCache: { fetchedAt: number; payload: unknown } | null = null;
+const LIVE_TODAY_TTL_MS = 25_000;
+
+// GET /api/mlb/live/today
+//
+// Bulk live stats keyed by playerId, for ALL of today's MLB games.
+// Powers per-leg live grading on /mlb/slate: each card leg looks up
+// its player in `byPlayer` to see current value vs line. Returns
+// only what the slate cards need — no play-by-play, no boxscore
+// metadata — to keep the payload small (~50KB even on a full slate).
+mlbRouter.get('/live/today', async (_req, res) => {
+  const now = Date.now();
+  if (liveTodayCache && now - liveTodayCache.fetchedAt < LIVE_TODAY_TTL_MS) {
+    res.json(liveTodayCache.payload);
+    return;
+  }
+
+  try {
+    const todayGames = await getTodaysMlbGames();
+
+    // Only fetch boxscores for games that are live or final — pregame
+    // boxscores have no player stats yet and would just waste calls.
+    const interesting = todayGames.filter(
+      (g) => g.status.abstractGameState === 'Live' || g.status.abstractGameState === 'Final',
+    );
+
+    // Per-game live state for the UI (inning, score, status). We
+    // already have most of this from /today; project just the
+    // fields the slate cards render.
+    const byGame: Record<string, {
+      state: 'pregame' | 'live' | 'final';
+      detailedState: string;
+      awayAbbr: string;
+      homeAbbr: string;
+      awayScore: number | null;
+      homeScore: number | null;
+    }> = {};
+
+    for (const g of todayGames) {
+      const abs = g.status.abstractGameState;
+      const state: 'pregame' | 'live' | 'final' =
+        abs === 'Live' ? 'live' : abs === 'Final' ? 'final' : 'pregame';
+      byGame[g.gamePk] = {
+        state,
+        detailedState: g.status.detailedState,
+        awayAbbr: g.away.abbreviation,
+        homeAbbr: g.home.abbreviation,
+        awayScore: g.away.score,
+        homeScore: g.home.score,
+      };
+    }
+
+    // Parallel boxscore fetches. Failure on one game doesn't poison
+    // the rest — settled-allSettled and ignore rejections.
+    const boxResults = await Promise.allSettled(
+      interesting.map((g) => getBoxscore(g.gamePk).then((b) => ({ gamePk: g.gamePk, box: b }))),
+    );
+
+    const byPlayer: Record<string, {
+      gamePk: number;
+      hits: number | null;
+      atBats: number | null;
+      runs: number | null;
+      rbis: number | null;
+      walks: number | null;
+      strikeouts: number | null;
+      homeRuns: number | null;
+      doubles: number | null;
+      triples: number | null;
+      stolenBases: number | null;
+      totalBases: number | null;
+      hitByPitch: number | null;
+      outsRecorded: number | null;
+      pitcherStrikeouts: number | null;
+      hitsAllowed: number | null;
+      earnedRunsAllowed: number | null;
+      walksAllowed: number | null;
+      homeRunsAllowed: number | null;
+    }> = {};
+
+    const ipStringToOuts = (ip: string | undefined): number | null => {
+      if (ip === undefined || ip === null || ip === '') return null;
+      const [whole, frac] = String(ip).split('.');
+      const wholeN = Number(whole);
+      const fracN = Number(frac ?? '0');
+      if (!Number.isFinite(wholeN) || !Number.isFinite(fracN)) return null;
+      return wholeN * 3 + fracN;
+    };
+
+    for (const result of boxResults) {
+      if (result.status !== 'fulfilled') continue;
+      const { gamePk, box } = result.value;
+      for (const sideKey of ['away', 'home'] as const) {
+        const players = box.teams[sideKey].players ?? {};
+        for (const key of Object.keys(players)) {
+          const p = players[key];
+          const id = p.person.id;
+          const b = p.stats?.batting;
+          const pi = p.stats?.pitching;
+          const outs = ipStringToOuts(pi?.inningsPitched) ?? (pi?.outs ?? null);
+          byPlayer[id] = {
+            gamePk,
+            hits:           b?.hits ?? null,
+            atBats:         b?.atBats ?? null,
+            runs:           b?.runs ?? null,
+            rbis:           b?.rbi ?? null,
+            walks:          b?.baseOnBalls ?? null,
+            strikeouts:     b?.strikeOuts ?? null,
+            homeRuns:       b?.homeRuns ?? null,
+            doubles:        b?.doubles ?? null,
+            triples:        b?.triples ?? null,
+            stolenBases:    b?.stolenBases ?? null,
+            totalBases:     b?.totalBases ?? null,
+            hitByPitch:     b?.hitByPitch ?? null,
+            outsRecorded:   outs,
+            pitcherStrikeouts:  pi?.strikeOuts ?? null,
+            hitsAllowed:        pi?.hits ?? null,
+            earnedRunsAllowed:  pi?.earnedRuns ?? null,
+            walksAllowed:       pi?.baseOnBalls ?? null,
+            homeRunsAllowed:    pi?.homeRuns ?? null,
+          };
+        }
+      }
+    }
+
+    const payload = {
+      fetchedAt: new Date().toISOString(),
+      byGame,
+      byPlayer,
+    };
+
+    liveTodayCache = { fetchedAt: now, payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('mlb/live/today failed', err);
+    res.status(500).json({ error: 'mlb live today fetch failed' });
+  }
+});
+
 // GET /api/mlb/calibration?windowDays=30
 //
 // Returns predicted-vs-actual buckets across the rolling window.
