@@ -119,6 +119,10 @@ export type MlbComboLeg = {
   edgePercent: number;
   riskScore: number;
   trapScore: number;
+  // L5 — surfaced so slate UI can show fragility next to trap.
+  // 0..100 + tier label.
+  fragilityScore: number;
+  fragilityTier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
   // L2 composite (50 = neutral, ≥65 = real momentum). Surfaced so slate
   // UI can highlight the high-momentum picks the Aggressive + Wild Card
   // tiebreakers leaned on.
@@ -382,6 +386,8 @@ function toComboLeg(l: ResolvedMlbLine): MlbComboLeg {
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,
+    fragilityScore: l.projection.fragilityScore,
+    fragilityTier: l.projection.fragilityTier,
     momentumExpansionScore: l.signals.momentumExpansionScore,
     reasonCodes: l.projection.reasonCodes,
     isPitcher: l.isPitcher,

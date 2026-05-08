@@ -440,7 +440,11 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
             <div className="mlb-slate-leg-edge">
               {leg.wildCardReason}
               {' · '}
-              <span title="L2 momentumExpansionScore: ≥65 = real momentum, ≤35 = anti-momentum.">
+              <span title={`L5 Fragility — ${leg.fragilityTier}.`}>
+                fragility {leg.fragilityScore.toFixed(0)}
+              </span>
+              {' · '}
+              <span title="L2 momentumExpansionScore: ≥65 = real momentum.">
                 momentum {leg.momentumExpansionScore.toFixed(0)}
               </span>
             </div>
@@ -499,10 +503,13 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
             </div>
             <div className="mlb-slate-leg-edge">
               edge {leg.edgePercent >= 0 ? '+' : ''}{leg.edgePercent.toFixed(1)}%
-              {' · '}risk {leg.riskScore}
               {' · '}trap {leg.trapScore}
               {' · '}
-              <span title="L2 momentumExpansionScore: production lift + season lift + projection separation + L10 hit rate. ≥65 = real momentum, ≤35 = anti-momentum.">
+              <span title={`L5 Fragility — ${leg.fragilityTier}. How little must go wrong for this leg to fail. SEPARATE from probability + trap.`}>
+                fragility {leg.fragilityScore.toFixed(0)}
+              </span>
+              {' · '}
+              <span title="L2 momentumExpansionScore: ≥65 = real momentum, ≤35 = anti-momentum.">
                 momentum {leg.momentumExpansionScore.toFixed(0)}
               </span>
             </div>

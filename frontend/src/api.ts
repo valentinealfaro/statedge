@@ -1484,6 +1484,8 @@ export type MlbSlateLeg = {
   edgePercent: number;
   riskScore: number;
   trapScore: number;
+  fragilityScore: number;
+  fragilityTier: 'Solid Floor' | 'Moderate Fragility' | 'Fragile' | 'Very Fragile';
   momentumExpansionScore: number;
   reasonCodes: string[];
   isPitcher: boolean;

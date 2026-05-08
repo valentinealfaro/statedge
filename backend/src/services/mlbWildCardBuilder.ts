@@ -251,6 +251,8 @@ function toComboLegWithReason(
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,
+    fragilityScore: l.projection.fragilityScore,
+    fragilityTier: l.projection.fragilityTier,
     momentumExpansionScore: l.signals.momentumExpansionScore,
     reasonCodes: l.projection.reasonCodes,
     isPitcher: l.isPitcher,
