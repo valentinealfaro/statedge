@@ -14,23 +14,52 @@ import { getMlbToday, type MlbTodayGame, type MlbTodayResponse } from './api';
 export function MlbTodaysGames() {
   const [data, setData] = useState<MlbTodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
+  // Initial load + 60-second poll while the tab is visible. Pulls
+  // fresh game state (scores, status, in-progress innings) so the
+  // strip becomes a live tracker once games start. When games are
+  // all Final or all Pregame, the poll is wasted but cheap; when
+  // games are live, this is the engagement surface.
   useEffect(() => {
     let alive = true;
     getMlbToday()
       .then((d) => { if (alive) setData(d); })
       .catch((err: Error) => { if (alive) setError(err.message); });
     return () => { alive = false; };
+  }, [tick]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      // Skip the poll when the tab is hidden — saves bandwidth and
+      // doesn't let stale state stack up.
+      if (document.visibilityState === 'visible') {
+        setTick((t) => t + 1);
+      }
+    }, 60_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   if (error) return null;                  // silent on error
   if (!data || data.games.length === 0) return null;
+  // Show "● LIVE" indicator when any game is in progress.
+  const anyLive = data.games.some((g) => g.status.inProgress);
 
   return (
     <section className="mlb-today">
       <div className="mlb-today-head">
-        <h2 className="mlb-today-heading">Tonight's MLB games</h2>
-        <span className="muted small">{data.games.length} game{data.games.length === 1 ? '' : 's'} · {data.date}</span>
+        <h2 className="mlb-today-heading">
+          Tonight's MLB games
+          {anyLive && (
+            <span style={{ marginLeft: 10, color: '#ef5350', fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}>
+              ● LIVE
+            </span>
+          )}
+        </h2>
+        <span className="muted small">
+          {data.games.length} game{data.games.length === 1 ? '' : 's'} · {data.date}
+          {anyLive && <> · auto-refresh 60s</>}
+        </span>
       </div>
       <div className="mlb-today-grid">
         {data.games.map((g) => <GameCard key={g.gamePk} game={g} />)}

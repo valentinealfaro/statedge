@@ -25,6 +25,7 @@ import {
   type MlbWildCardCombo,
   type RawMlbSlateLine,
 } from './api';
+import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -400,6 +401,11 @@ export function MlbSlate() {
             {adminMode ? '← Public view' : (isAdmin ? 'Admin →' : 'Admin login →')}
           </button>
         </div>
+
+        {/* Tonight's MLB games rail — auto-refreshes every 60s during
+            live games so the slate page becomes a live-tracker
+            surface as games progress. */}
+        <MlbTodaysGames />
 
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (
