@@ -55,6 +55,12 @@ import {
   type MonteCarloResult,
 } from './mlbMonteCarloEngine.js';
 import { computeMomentumExpansionScore } from './mlbMomentumExpansion.js';
+import {
+  applyBayesianRegression,
+  computeRobustBaseline,
+  getStabilizationGames,
+  type RobustBaselineComponents,
+} from './mlbBaselineEngine.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -74,6 +80,11 @@ export type ProjectionInputs = {
   // have been logged. Drives the "regression to the mean" anchor.
   seasonAverage: number | null;
   seasonGames: number;
+  // Per-game stat values, ordered most-recent first. Optional —
+  // when absent the engine falls back to the simpler last10/last5/
+  // season blend. When present, the L1 robust baseline composes
+  // L30/L20/L10/L5/median/trimmedMean per the institutional spec.
+  orderedValues?: number[];
 
   // Per-opponent average (player vs this specific opponent's pitching
   // staff or defense). Most reliable signal we have for matchup.
@@ -232,6 +243,13 @@ export type ProjectionResult = {
   // this is the primary tiebreaker for Aggressive + Wild Card.
   momentumExpansionScore: number;
 
+  // L1 robust baseline transparency. Components are the raw window
+  // averages (season, L30, L20, L10, L5) plus median + trimmed mean
+  // that were blended into the baseline. null when the engine fell
+  // back to the legacy season/L10/L5 path (test inputs without
+  // orderedValues; very short samples).
+  robustBaselineComponents: RobustBaselineComponents | null;
+
   // ---- Line raising (NBA-style elite-conviction signal) ----
   // When the model has elite conviction (high probability + high
   // confidence + low trap + projection well above line), we test
@@ -260,12 +278,19 @@ export type ProjectionResult = {
 
 // v0 weights. Renormalized to whatever signals are present. Per spec,
 // these are tuned later via calibration.
+//
+// L1 (robustBaseline) replaces the old last10/last5/season triplet
+// with a 7-window composite (season/L30/L20/L10/L5/median/trimmedMean)
+// computed by mlbBaselineEngine. Total baseline weight stays at 0.70
+// to preserve the engine's overall balance — opponent/homeAway
+// (matchup signals, Layer 3) keep their existing weights on top.
 const BASE_WEIGHTS = {
-  last10: 0.40,           // recent baseline — strongest single signal
-  last5: 0.20,            // recent momentum
-  opponent: 0.20,         // matchup history
-  homeAway: 0.10,         // venue split
-  season: 0.10,           // long-term anchor
+  robustBaseline: 0.70,
+  last10:         0.40,   // legacy fallback when orderedValues is missing
+  last5:          0.20,   // legacy fallback
+  opponent:       0.20,
+  homeAway:       0.10,
+  season:         0.10,   // legacy fallback
 } as const;
 
 type SignalKey = keyof typeof BASE_WEIGHTS;
@@ -320,6 +345,7 @@ function emptyResult(
     last10Average: 0,
     last5Average: null,
     last10HitRate: null,
+    robustBaselineComponents: null,
     momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,
@@ -710,11 +736,56 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   }
 
   // ----- Renormalized weighted projection -----
+  //
+  // L1 robustBaseline (institutional 7-window composite) replaces the
+  // legacy season/L10/L5 triplet when ordered season values are
+  // available. When they're not (e.g. degraded test inputs), fall
+  // back to the legacy signals so the engine still produces an answer.
   const signals: Array<{ key: SignalKey; value: number; weight: number }> = [];
-  signals.push({ key: 'last10', value: last10.last10Average, weight: BASE_WEIGHTS.last10 });
-  if (last10.last5Average !== null) {
-    signals.push({ key: 'last5', value: last10.last5Average, weight: BASE_WEIGHTS.last5 });
+  let robustComponents: RobustBaselineComponents | null = null;
+  let robustWeights: Record<string, number> = {};
+  let bayesian: { sampleStrength: number; anchorWeight: number } | null = null;
+
+  if (inputs.orderedValues && inputs.orderedValues.length > 0) {
+    const robust = computeRobustBaseline(inputs.orderedValues);
+    robustComponents = robust.components;
+    robustWeights = robust.weightsUsed;
+    // Apply Bayesian regression toward season average when sample
+    // is below the stat-specific stabilization threshold. For full-
+    // season players (gamesPlayed ≥ threshold), sampleStrength = 1
+    // and the robust value passes through unchanged.
+    let robustValue = robust.robust;
+    if (inputs.seasonAverage !== null && inputs.seasonGames > 0) {
+      const threshold = getStabilizationGames(inputs.statKey);
+      const reg = applyBayesianRegression({
+        recent: robust.robust,
+        anchor: inputs.seasonAverage,
+        gamesPlayed: inputs.seasonGames,
+        threshold,
+      });
+      robustValue = reg.blended;
+      bayesian = {
+        sampleStrength: reg.sampleStrength,
+        anchorWeight: reg.anchorWeight,
+      };
+    }
+    signals.push({
+      key: 'robustBaseline',
+      value: robustValue,
+      weight: BASE_WEIGHTS.robustBaseline,
+    });
+  } else {
+    // Legacy fallback — preserves test compatibility for synthetic
+    // inputs that don't supply orderedValues.
+    signals.push({ key: 'last10', value: last10.last10Average, weight: BASE_WEIGHTS.last10 });
+    if (last10.last5Average !== null) {
+      signals.push({ key: 'last5', value: last10.last5Average, weight: BASE_WEIGHTS.last5 });
+    }
+    if (inputs.seasonAverage !== null && inputs.seasonGames >= 5) {
+      signals.push({ key: 'season', value: inputs.seasonAverage, weight: BASE_WEIGHTS.season });
+    }
   }
+
   if (inputs.opponentAverage !== null && inputs.opponentGames > 0) {
     // De-weight opponent if very small sample (<3 games) — it's still
     // signal but noisy. Half-weight under 3 games.
@@ -727,9 +798,6 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       signals.push({ key: 'homeAway', value: venueAvg, weight: BASE_WEIGHTS.homeAway });
     }
   }
-  if (inputs.seasonAverage !== null && inputs.seasonGames >= 5) {
-    signals.push({ key: 'season', value: inputs.seasonAverage, weight: BASE_WEIGHTS.season });
-  }
 
   const totalWeight = signals.reduce((s, x) => s + x.weight, 0);
   const baselineProjection =
@@ -740,6 +808,17 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const weightsUsed: Record<string, number> = {};
   for (const s of signals) {
     weightsUsed[s.key] = Math.round((s.weight / totalWeight) * 100) / 100;
+  }
+  // Surface the robust-baseline internal weights so the UI can show
+  // "season=0.18, L30=0.14, ..." breakdowns.
+  if (Object.keys(robustWeights).length > 0) {
+    for (const [k, v] of Object.entries(robustWeights)) {
+      weightsUsed[`robust:${k}`] = v;
+    }
+  }
+  if (bayesian) {
+    weightsUsed['bayesian:sample'] = bayesian.sampleStrength;
+    weightsUsed['bayesian:anchor'] = bayesian.anchorWeight;
   }
 
   // ----- Context layer multipliers -----
@@ -993,6 +1072,7 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
     last10Average: round2(inputs.last10.last10Average),
     last5Average: inputs.last10.last5Average !== null ? round2(inputs.last10.last5Average) : null,
     last10HitRate: inputs.last10.hitRate?.rate ?? null,
+    robustBaselineComponents: robustComponents,
     momentumExpansionScore: computeMomentumExpansionScore({
       direction: inputs.direction,
       last10Average: inputs.last10.last10Average,
@@ -1277,6 +1357,7 @@ export async function projectMlbStat(
     opponentGames: baselines.opponentGames,
     homeAverage: baselines.homeAverage,
     awayAverage: baselines.awayAverage,
+    orderedValues: baselines.orderedValues,
     isHome: resolvedIsHome,
     parkFactor,
     weather: gameContext?.weather ?? null,
@@ -1346,6 +1427,9 @@ type Baselines = {
   opponentGames: number;
   homeAverage: number | null;
   awayAverage: number | null;
+  // Per-game stat values, ordered most-recent first. Powers the L1
+  // robust baseline (L30/L20/L10/L5/median/trimmedMean blend).
+  orderedValues: number[];
 };
 
 async function loadHittingBaselines(
@@ -1353,6 +1437,9 @@ async function loadHittingBaselines(
   statKey: MlbHitterStatKey,
   opponentTeamId: number | undefined,
 ): Promise<Baselines> {
+  // JOIN mlb_games so we can order by game_date DESC. Ordered
+  // values feed the L1 robust baseline; unordered aggregates feed
+  // home/away/opponent splits.
   const { rows } = await getPool().query<{
     is_home: boolean | null;
     opponent_team_id: number | null;
@@ -1368,11 +1455,13 @@ async function loadHittingBaselines(
     strikeouts: number | null;
     stolen_bases: number | null;
   }>(
-    `SELECT is_home, opponent_team_id,
-            hits, singles, doubles, triples, home_runs, total_bases,
-            runs, rbis, walks, strikeouts, stolen_bases
-       FROM mlb_hitting_stats
-      WHERE player_id = $1`,
+    `SELECT s.is_home, s.opponent_team_id,
+            s.hits, s.singles, s.doubles, s.triples, s.home_runs, s.total_bases,
+            s.runs, s.rbis, s.walks, s.strikeouts, s.stolen_bases
+       FROM mlb_hitting_stats s
+       JOIN mlb_games g ON g.id = s.game_id
+      WHERE s.player_id = $1
+      ORDER BY g.game_date DESC`,
     [playerId],
   );
 
@@ -1397,11 +1486,13 @@ async function loadPitchingBaselines(
     strikeouts: number | null;
     home_runs_allowed: number | null;
   }>(
-    `SELECT is_home, opponent_team_id,
-            outs_recorded, innings_pitched, pitches_thrown, hits_allowed,
-            earned_runs_allowed, walks_allowed, strikeouts, home_runs_allowed
-       FROM mlb_pitching_stats
-      WHERE player_id = $1`,
+    `SELECT s.is_home, s.opponent_team_id,
+            s.outs_recorded, s.innings_pitched, s.pitches_thrown, s.hits_allowed,
+            s.earned_runs_allowed, s.walks_allowed, s.strikeouts, s.home_runs_allowed
+       FROM mlb_pitching_stats s
+       JOIN mlb_games g ON g.id = s.game_id
+      WHERE s.player_id = $1
+      ORDER BY g.game_date DESC`,
     [playerId],
   );
 
@@ -1414,6 +1505,8 @@ function reduceBaselines<R extends { is_home: boolean | null; opponent_team_id: 
   opponentTeamId: number | undefined,
   toValue: (r: R) => number | null,
 ): Baselines {
+  // rows arrive ordered most-recent first (per the SQL ORDER BY).
+  // `all` preserves that order — feeds the L1 robust baseline windows.
   const all: number[] = [];
   const opp: number[] = [];
   const home: number[] = [];
@@ -1435,6 +1528,7 @@ function reduceBaselines<R extends { is_home: boolean | null; opponent_team_id: 
     opponentGames: opp.length,
     homeAverage: home.length > 0 ? avg(home) : null,
     awayAverage: away.length > 0 ? avg(away) : null,
+    orderedValues: all,         // most-recent first per the SQL ORDER BY
   };
 }
 

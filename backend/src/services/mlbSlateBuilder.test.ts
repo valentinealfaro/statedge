@@ -30,6 +30,7 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     last10Average: 1.5,
     last5Average: 1.5,
     last10HitRate: 60,
+    robustBaselineComponents: null,
     momentumExpansionScore: 50,
     monteCarlo: null,
     originalLine: null,

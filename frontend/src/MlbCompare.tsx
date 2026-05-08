@@ -514,6 +514,10 @@ function ProjectionPanel({ data }: { data: MlbProjectionResponse }) {
 
       <ContextAdjustments data={data} />
 
+      {data.robustBaselineComponents && (
+        <RobustBaselinePanel components={data.robustBaselineComponents} />
+      )}
+
       {data.monteCarlo && <MonteCarloBands data={data} />}
 
       {data.reasonCodes.length > 0 && (
@@ -655,6 +659,50 @@ function ContextChip({ label, mult, wired }: { label: string; mult: number; wire
       <span className="mlb-context-value">
         {pct > 0 ? '+' : ''}{pct}%
       </span>
+    </div>
+  );
+}
+
+// L1 baseline composition — surfaces the 7-window blend the engine
+// uses as the projection anchor (per the institutional MLB
+// Intelligence Engine spec). Mission-aligned transparency: users see
+// season / L30 / L20 / L10 / L5 / median / trimmedMean side-by-side
+// instead of a black-box "projection".
+function RobustBaselinePanel({
+  components,
+}: {
+  components: {
+    seasonAverage: number | null;
+    last30Average: number | null;
+    last20Average: number | null;
+    last10Average: number | null;
+    last5Average: number | null;
+    median: number | null;
+    trimmedMean: number | null;
+  };
+}) {
+  const rows: Array<{ label: string; value: number | null; hint: string }> = [
+    { label: 'Season',      value: components.seasonAverage,  hint: 'Full-season mean' },
+    { label: 'Last 30',     value: components.last30Average,  hint: 'Most-recent 30 games (≥15 required)' },
+    { label: 'Last 20',     value: components.last20Average,  hint: 'Most-recent 20 games (≥10 required)' },
+    { label: 'Last 10',     value: components.last10Average,  hint: 'Most-recent 10 games (≥5 required)' },
+    { label: 'Last 5',      value: components.last5Average,   hint: 'Most-recent 5 games (≥3 required)' },
+    { label: 'Median',      value: components.median,         hint: 'Outlier-resistant midpoint' },
+    { label: 'Trim mean',   value: components.trimmedMean,    hint: 'Top + bottom 10% trimmed' },
+  ];
+  const present = rows.filter((r) => r.value !== null);
+  if (present.length === 0) return null;
+  return (
+    <div className="mlb-context" title="L1 robust baseline — the 7-window composite the engine uses as the projection anchor before context adjustments.">
+      <div className="mlb-context-heading">Baseline composition</div>
+      <div className="mlb-context-grid">
+        {present.map((r) => (
+          <div key={r.label} className="mlb-context-chip neutral" title={r.hint}>
+            <span className="mlb-context-label">{r.label}</span>
+            <span className="mlb-context-value">{r.value!.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

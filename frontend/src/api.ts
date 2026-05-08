@@ -1360,6 +1360,18 @@ export type MlbProjectionResponse = {
   last10Average: number;
   last5Average: number | null;
   last10HitRate: number | null;
+  // L1 robust baseline transparency. The 7-window composite the
+  // engine used to anchor the projection. null when the engine fell
+  // back to the legacy season/L10/L5 path (very short samples).
+  robustBaselineComponents: {
+    seasonAverage: number | null;
+    last30Average: number | null;
+    last20Average: number | null;
+    last10Average: number | null;
+    last5Average: number | null;
+    median: number | null;
+    trimmedMean: number | null;
+  } | null;
   // Layer 2 of the institutional MLB engine: composite of L5 vs L10,
   // L10 vs season, projection separation, and L10 hit rate. Direction-
   // aware; 50 = neutral, ≥65 = real momentum, ≤35 = anti-momentum.
