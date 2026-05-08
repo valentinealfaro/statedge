@@ -239,21 +239,92 @@ function legScore(leg: ResolvedMlbLine, mode: MlbResolvedSlateMode): number {
   }
 }
 
-// Pick top-N legs respecting same-player uniqueness. Player can only
-// appear once per card — Aaron Judge HR + Aaron Judge total bases is
-// definitionally correlated, blocked here.
+// MLB stat families. Within a card, allow at most one leg per player
+// per family — so Aaron Judge can have Hits + Walks (different families)
+// but NOT Hits + Total Bases + Runs (all production family — too
+// correlated, every leg dies on the same bad night).
+//
+// Per the 2026-05-08 MLB Slate Engine spec: same player IS allowed
+// across multiple cards (was blocked NBA-style; that rule was wrong
+// for MLB), and within a card same player is allowed up to N picks
+// IF stat families differ.
+const STAT_FAMILY: Record<string, string> = {
+  // Production (offensive opportunity, all same volatility regime)
+  hits: 'production',
+  total_bases: 'production',
+  runs: 'production',
+  hits_runs_rbis: 'production',
+  hitter_fantasy_score: 'production',
+  // Power (rare, high-leverage, strongly correlated)
+  home_runs: 'power',
+  doubles: 'power',
+  triples: 'power',
+  // Counting variants — separate families because volatility curves
+  // differ enough that Hits + Singles is informationally redundant
+  // but Hits + Walks isn't.
+  singles: 'singles',
+  rbis: 'rbis',
+  walks: 'discipline',
+  strikeouts: 'discipline',
+  stolen_bases: 'speed',
+  // Pitcher families
+  ks: 'pitcher_dominance',
+  pitcher_outs: 'pitcher_volume',
+  innings_pitched: 'pitcher_volume',
+  pitches_thrown: 'pitcher_volume',
+  hits_allowed: 'pitcher_damage',
+  earned_runs_allowed: 'pitcher_damage',
+  walks_allowed: 'pitcher_damage',
+  home_runs_allowed: 'pitcher_damage',
+};
+
+function statFamilyOf(statKey: string): string {
+  return STAT_FAMILY[statKey] ?? statKey;
+}
+
+// Per-card same-player cap. Allow up to 2 same-player legs IF they're
+// in different stat families. Larger cards (5/6) tighten to 1 — the
+// spec calls out that "6-leg should behave like a diversified
+// portfolio, NOT a fan-made same-game stack."
+function maxLegsPerPlayer(cardSize: number): number {
+  if (cardSize >= 5) return 1;
+  return 2;
+}
+
+// Per-mode stat blocklist. Per spec L8/Slate-Engine: Safe mode must
+// avoid HR / SB / RBI props — they're inherently fragile and break
+// the survivability promise. Insane mode actively prefers them
+// (handled as preferredStats below).
+const SAFE_BLOCKED_STATS = new Set<string>([
+  'home_runs', 'stolen_bases', 'rbis', 'triples', 'home_runs_allowed',
+]);
+
+// Pick top-N legs with same-player + stat-family rules per the
+// MLB Slate Engine spec.
 function pickTopN(
   pool: ResolvedMlbLine[],
   n: number,
   mode: MlbResolvedSlateMode,
 ): ResolvedMlbLine[] {
-  const ranked = [...pool].sort((a, b) => legScore(b, mode) - legScore(a, mode));
+  // Apply per-mode stat blocklists BEFORE ranking.
+  const filtered = mode === 'safe'
+    ? pool.filter((l) => !SAFE_BLOCKED_STATS.has(l.statKey))
+    : pool;
+  const ranked = [...filtered].sort((a, b) => legScore(b, mode) - legScore(a, mode));
   const picked: ResolvedMlbLine[] = [];
-  const usedPlayers = new Set<number>();
+  const playerLegCount = new Map<number, number>();
+  const playerFamiliesUsed = new Map<number, Set<string>>();
+  const cap = maxLegsPerPlayer(n);
   for (const l of ranked) {
-    if (usedPlayers.has(l.playerId)) continue;
+    const seen = playerLegCount.get(l.playerId) ?? 0;
+    if (seen >= cap) continue;
+    const families = playerFamiliesUsed.get(l.playerId) ?? new Set();
+    const family = statFamilyOf(l.statKey);
+    if (families.has(family)) continue;     // diversification rule
     picked.push(l);
-    usedPlayers.add(l.playerId);
+    playerLegCount.set(l.playerId, seen + 1);
+    families.add(family);
+    playerFamiliesUsed.set(l.playerId, families);
     if (picked.length >= n) break;
   }
   return picked;
@@ -491,15 +562,12 @@ export function buildMlbSlate(
   // expects small-to-large in the rendered list.
   slots.sort((a, b) => a.size - b.size);
 
-  // Wild Card slot. Track which players we've already placed in
-  // safe/balanced/aggressive/insane cards so the Wild Card surfaces
-  // genuinely different picks rather than duplicating our top legs.
-  const usedPlayers = new Set<number>();
-  for (const slot of slots) {
-    if (!slot.combo) continue;
-    for (const leg of slot.combo.legs) usedPlayers.add(leg.playerId);
-  }
-  const wildCard = buildMlbWildCard(lines, usedPlayers);
+  // Wild Card slot. Per the 2026-05-08 MLB Slate Engine spec, MLB
+  // ALLOWS same-player across cards (the NBA-style block was wrong
+  // for MLB — elite matchup leverage justifies heavy exposure). We
+  // pass an empty set so Wild Card can re-pick the slate's best
+  // legs if they qualify on the wildCardScore formula.
+  const wildCard = buildMlbWildCard(lines, new Set<number>());
 
   return { resolvedMode, combos: slots, wildCard };
 }

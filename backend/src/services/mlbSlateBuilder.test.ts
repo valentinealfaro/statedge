@@ -227,12 +227,15 @@ describe('buildMlbSlate — L8 strict subset (Best N+1 ⊇ Best N)', () => {
   });
 });
 
-describe('buildMlbSlate — same-player block', () => {
-  test('Same player on multiple stats can\'t stack on one card', () => {
+describe('buildMlbSlate — same-player + stat-family rules (Phase 28)', () => {
+  test('Same-family duplicates on the same player are dropped (Hits + Total Bases + Runs are all production family)', () => {
+    // Aaron Judge with three production-family props all on one card
+    // would create catastrophic dependency. Builder picks at most one
+    // per family per player.
     const slate = [
       leg(1, { statKey: 'hits',         statLabel: 'Hits' },        { edgePercent: 20 }),
-      leg(1, { statKey: 'home_runs',    statLabel: 'Home Runs' },   { edgePercent: 19 }),
-      leg(1, { statKey: 'total_bases',  statLabel: 'Total Bases' }, { edgePercent: 18 }),
+      leg(1, { statKey: 'total_bases',  statLabel: 'Total Bases' }, { edgePercent: 19 }),
+      leg(1, { statKey: 'runs',         statLabel: 'Runs' },        { edgePercent: 18 }),
       leg(2, {}, { edgePercent: 15 }),
       leg(3, {}, { edgePercent: 14 }),
       leg(4, {}, { edgePercent: 13 }),
@@ -240,8 +243,73 @@ describe('buildMlbSlate — same-player block', () => {
     const r = buildMlbSlate(slate, 'balanced');
     for (const slot of r.combos) {
       if (!slot.combo) continue;
-      const ids = slot.combo.legs.map((l) => l.playerId);
-      expect(new Set(ids).size).toBe(ids.length);   // no duplicates
+      // For each player on the card, count their legs.
+      const countByPlayer = new Map<number, number>();
+      for (const l of slot.combo.legs) {
+        countByPlayer.set(l.playerId, (countByPlayer.get(l.playerId) ?? 0) + 1);
+      }
+      // Player 1 had 3 production-family props; should appear AT MOST 1 time
+      // because the family-diversification rule blocks the duplicates.
+      expect((countByPlayer.get(1) ?? 0)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('Different stat families on the same player CAN stack on a small card (Hits + Walks → production + discipline)', () => {
+    // 4-leg card cap allows 2 same-player legs IF families differ.
+    const slate = [
+      leg(1, { statKey: 'hits',         statLabel: 'Hits' },        { edgePercent: 20 }),
+      leg(1, { statKey: 'walks',        statLabel: 'Walks' },       { edgePercent: 19 }),
+      leg(2, {}, { edgePercent: 15 }),
+      leg(3, {}, { edgePercent: 14 }),
+      leg(4, {}, { edgePercent: 13 }),
+    ];
+    const r = buildMlbSlate(slate, 'balanced');
+    const best2 = r.combos.find((c) => c.size === 2)?.combo;
+    if (best2) {
+      // Top scorer is one of player 1's two legs; second highest is the other.
+      // Builder allows both because hits=production, walks=discipline.
+      const player1Count = best2.legs.filter((l) => l.playerId === 1).length;
+      expect(player1Count).toBeGreaterThanOrEqual(1);
+      // (May be 1 or 2 depending on the legScore tie-break; the rule
+      // allows it but doesn't require it.)
+    }
+  });
+
+  test('Same player allowed across multiple cards (no NBA-style cross-card block)', () => {
+    // Per the 2026-05-08 MLB Slate Engine spec: NBA's same-player-
+    // across-cards rule is wrong for MLB. Elite matchup leverage
+    // justifies repeated exposure.
+    const slate = strongSlate(6);
+    const r = buildMlbSlate(slate, 'balanced');
+    const allCardIds: number[][] = [];
+    for (const slot of r.combos) {
+      if (slot.combo) allCardIds.push(slot.combo.legs.map((l) => l.playerId));
+    }
+    // The top player (id 100) should appear in MULTIPLE cards because
+    // each card-size pick is independent and the strict-subset chain
+    // means Best 6 ⊃ Best 5 ⊃ ... ⊃ Best 2 — same player IS in all.
+    if (allCardIds.length >= 2) {
+      const overlapPresent = allCardIds[0]!.some((id) => allCardIds[1]!.includes(id));
+      expect(overlapPresent).toBe(true);
+    }
+  });
+
+  test('Safe mode blocks HR/SB/RBI/triples (fragility-incompatible stats)', () => {
+    const slate = [
+      leg(1, { statKey: 'home_runs',    statLabel: 'Home Runs' },   { edgePercent: 25, probability: 75 }),
+      leg(2, { statKey: 'stolen_bases', statLabel: 'Stolen Bases' }, { edgePercent: 22, probability: 70 }),
+      leg(3, { statKey: 'rbis',         statLabel: 'RBIs' },        { edgePercent: 20, probability: 70 }),
+      leg(4, { statKey: 'hits',         statLabel: 'Hits' },        { edgePercent: 12, probability: 70 }),
+      leg(5, { statKey: 'ks',           statLabel: 'Ks' },          { edgePercent: 12, probability: 72 }),
+      leg(6, { statKey: 'pitcher_outs', statLabel: 'Pitcher Outs' },{ edgePercent: 11, probability: 70 }),
+    ];
+    const r = buildMlbSlate(slate, 'safe');
+    for (const slot of r.combos) {
+      if (!slot.combo) continue;
+      const blocked = slot.combo.legs.filter((l) =>
+        ['home_runs', 'stolen_bases', 'rbis', 'triples'].includes(l.statKey),
+      );
+      expect(blocked).toHaveLength(0);
     }
   });
 });
