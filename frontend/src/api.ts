@@ -1695,6 +1695,31 @@ export async function clearMlbDailySlate(adminSecret: string): Promise<{ ok: boo
   return (await res.json()) as { ok: boolean };
 }
 
+// Re-runs the slate builder against the stored raw lines without
+// requiring a re-paste. Used after new engine code deploys to apply
+// the new logic to today's slate without admin re-entry.
+export async function rebuildMlbDailySlate(adminSecret: string): Promise<{
+  ok: boolean;
+  message: string;
+  date: string;
+  count: number;
+}> {
+  const res = await fetch(`${API_BASE}/api/mlb/slate/today/rebuild`, {
+    method: 'POST',
+    headers: { 'x-admin-secret': adminSecret },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as {
+    ok: boolean;
+    message: string;
+    date: string;
+    count: number;
+  };
+}
+
 export type MlbCalibrationBucket = {
   label: string;
   predictedAverage: number;

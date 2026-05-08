@@ -731,6 +731,96 @@ mlbRouter.get('/slate/history', async (req, res) => {
   }
 });
 
+// POST /api/mlb/slate/today/rebuild — admin only. Re-runs the
+// builder against the stored raw lines without requiring a full
+// re-publish. Useful when new card-construction logic deploys
+// (Phases 28-33 etc.) and the admin wants to apply it to today's
+// already-published slate without re-pasting 3000 lines.
+//
+// Purges the cache, then pre-warms with current code. ~30-45s.
+mlbRouter.post('/slate/today/rebuild', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const secret = process.env.SLATE_ADMIN_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured on server' });
+    return;
+  }
+  const provided = req.header('x-admin-secret');
+  if (provided !== secret) {
+    res.status(401).json({ error: 'admin secret mismatch' });
+    return;
+  }
+  try {
+    const stored = await getMlbDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.status(404).json({ error: 'No slate to rebuild — publish first.' });
+      return;
+    }
+    await purgeMlbSlateCache();
+    // Re-bump updatedAt so the cache key changes (forces fresh
+    // computation everywhere even if the old cache key's TTL hadn't
+    // expired). Same pattern POST uses.
+    await setMlbDailySlateInDb({
+      lines: stored.lines,
+      rawText: stored.rawText,
+      mode: stored.mode,
+    });
+    // Pre-warm with current code.
+    const refreshed = await getMlbDailySlateFromDb();
+    if (refreshed) {
+      const mode: MlbSlateMode =
+        refreshed.mode === 'safe' || refreshed.mode === 'balanced'
+          || refreshed.mode === 'aggressive' || refreshed.mode === 'insane'
+          || refreshed.mode === 'auto'
+          ? refreshed.mode : 'balanced';
+      const { lines: resolvedLines, unresolved: prewarmUnresolved } =
+        await resolveMlbSlate(
+          refreshed.lines.map((l) => ({
+            playerId: l.playerId,
+            statKey: l.statKey as MlbStatKey,
+            line: l.line,
+            direction: l.direction,
+            gamePk: l.gamePk,
+            opponentTeamId: l.opponentTeamId,
+            isHome: l.isHome,
+            opposingPitcherId: l.opposingPitcherId,
+          })),
+        );
+      const slate = buildMlbSlate(resolvedLines, mode);
+      const payload = {
+        slate: {
+          date: refreshed.date,
+          count: refreshed.lines.length,
+          rawText: refreshed.rawText,
+          mode: refreshed.mode,
+          updatedAt: refreshed.updatedAt,
+        },
+        resolved: {
+          ...slate,
+          unresolved: prewarmUnresolved,
+          lineCount: resolvedLines.length,
+          requestedMode: mode,
+          disclaimer: MLB_DISCLAIMER,
+        },
+      };
+      const cacheKey = `${refreshed.date}::${mode}::${refreshed.updatedAt}`;
+      await setMlbSlateCache(cacheKey, payload, 5 * 60 * 1000).catch(() => {});
+    }
+    res.json({
+      ok: true,
+      message: `Rebuilt today's slate with current engine code. Cache primed.`,
+      date: stored.date,
+      count: stored.lines.length,
+    });
+  } catch (err) {
+    console.error('mlb/slate/today/rebuild failed', err);
+    res.status(500).json({ error: 'mlb slate rebuild failed' });
+  }
+});
+
 // DELETE /api/mlb/slate/today — admin only. Wipes today's slate so
 // the public page renders empty until the next POST.
 mlbRouter.delete('/slate/today', async (req, res) => {

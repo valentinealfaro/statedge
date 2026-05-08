@@ -19,6 +19,7 @@ import {
   buildMlbSlateRequest,
   clearMlbDailySlate,
   getMlbDailySlate,
+  rebuildMlbDailySlate,
   setMlbDailySlate,
   type MlbDailySlateResponse,
   type MlbSlateResponse,
@@ -282,6 +283,20 @@ export function MlbSlate() {
     try {
       await clearMlbDailySlate(adminSecret);
       setPublishMessage('Cleared today\'s slate.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function handleRebuildToday() {
+    setPublishing(true);
+    setPublishMessage(null);
+    setError(null);
+    try {
+      const r = await rebuildMlbDailySlate(adminSecret);
+      setPublishMessage(`${r.message} ${r.count} lines re-projected for ${r.date}.`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -553,15 +568,26 @@ export function MlbSlate() {
               {publishing ? 'Publishing…' : 'Publish today\'s slate'}
             </button>
             {today?.slate && (
-              <button
-                type="button"
-                className="mlb-clear-player"
-                onClick={handleClearToday}
-                disabled={publishing}
-                title="Wipe today's published slate."
-              >
-                Clear today's slate
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="mlb-clear-player"
+                  onClick={handleRebuildToday}
+                  disabled={publishing}
+                  title="Re-run the builder on today's stored lines using the latest engine code. Useful after new logic deploys (Phase 28-34 etc.) — applies new card-construction rules without re-pasting."
+                >
+                  Rebuild with current engine
+                </button>
+                <button
+                  type="button"
+                  className="mlb-clear-player"
+                  onClick={handleClearToday}
+                  disabled={publishing}
+                  title="Wipe today's published slate."
+                >
+                  Clear today's slate
+                </button>
+              </>
             )}
             {publishing && (
               <span className="muted small">
