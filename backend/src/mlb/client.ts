@@ -301,3 +301,14 @@ export function inningsPitchedToNumeric(ip?: string): number | null {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Days in a calendar month (1-indexed: 1=Jan...12=Dec). Leap-year
+// aware. Critical for the schedule sync — passing "2026-04-31" to
+// the MLB API silently drops the request, so we walk month-by-month
+// using the actual last day. Years like 2024 (leap) return 29 for Feb.
+export function daysInMonth(year: number, month1Indexed: number): number {
+  // JS Date months are 0-indexed but day=0 means "day before the 1st",
+  // which lands on the previous month's last day. So passing the
+  // 1-indexed month directly lines up: Date.UTC(2026, 4, 0) = April 30.
+  return new Date(Date.UTC(year, month1Indexed, 0)).getUTCDate();
+}

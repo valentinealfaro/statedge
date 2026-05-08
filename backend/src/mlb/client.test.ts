@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  daysInMonth,
   inningsPitchedToNumeric,
   leagueCodeFromId,
   MLB_DISCLAIMER,
@@ -40,6 +41,42 @@ describe('inningsPitchedToNumeric', () => {
     const ip = inningsPitchedToNumeric('5.2');
     expect(ip).not.toBeNull();
     expect(Math.round(ip! * 3)).toBe(17);
+  });
+});
+
+describe('daysInMonth', () => {
+  // Critical helper for the schedule sync. Previous version of the
+  // sync script hardcoded 31 for every month, which generated invalid
+  // dates like "2026-04-31" for April. The MLB API silently dropped
+  // those, so the sync was missing all April / June / September /
+  // November games every season.
+  test('31-day months return 31', () => {
+    expect(daysInMonth(2026, 1)).toBe(31);   // January
+    expect(daysInMonth(2026, 3)).toBe(31);   // March
+    expect(daysInMonth(2026, 5)).toBe(31);   // May
+    expect(daysInMonth(2026, 7)).toBe(31);   // July
+    expect(daysInMonth(2026, 8)).toBe(31);   // August
+    expect(daysInMonth(2026, 10)).toBe(31);  // October
+    expect(daysInMonth(2026, 12)).toBe(31);  // December
+  });
+  test('30-day months return 30 — the bug-fix targets', () => {
+    expect(daysInMonth(2026, 4)).toBe(30);   // April
+    expect(daysInMonth(2026, 6)).toBe(30);   // June
+    expect(daysInMonth(2026, 9)).toBe(30);   // September
+    expect(daysInMonth(2026, 11)).toBe(30);  // November
+  });
+  test('February in non-leap year returns 28', () => {
+    expect(daysInMonth(2025, 2)).toBe(28);
+    expect(daysInMonth(2026, 2)).toBe(28);
+    expect(daysInMonth(2027, 2)).toBe(28);
+  });
+  test('February in leap year returns 29', () => {
+    expect(daysInMonth(2024, 2)).toBe(29);
+    expect(daysInMonth(2028, 2)).toBe(29);
+    expect(daysInMonth(2000, 2)).toBe(29);   // century leap
+  });
+  test('1900 century year is NOT a leap year (divisible by 100 but not 400)', () => {
+    expect(daysInMonth(1900, 2)).toBe(28);
   });
 });
 

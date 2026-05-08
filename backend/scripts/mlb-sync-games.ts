@@ -16,6 +16,7 @@
 import 'dotenv/config';
 import { isDbConfigured } from '../src/db.js';
 import {
+  daysInMonth,
   getGameLog,
   getScheduleRange,
   sleep,
@@ -49,11 +50,15 @@ async function syncSchedule(season: number): Promise<number> {
   // payload is large — chunking keeps memory and timeouts reasonable.
   let total = 0;
   for (let month = 3; month <= 11; month += 1) {
+    const lastDay = daysInMonth(season, month);
     const start = `${season}-${String(month).padStart(2, '0')}-01`;
-    const end =   `${season}-${String(month).padStart(2, '0')}-${month === 2 ? 28 : 31}`;
+    const end   = `${season}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     try {
       const games = await getScheduleRange(start, end);
-      if (games.length === 0) continue;
+      if (games.length === 0) {
+        console.log(`  ${start} → ${end}: 0 games (empty)`);
+        continue;
+      }
       const upserted = await upsertMlbGames(games);
       total += upserted;
       console.log(`  ${start} → ${end}: ${upserted} games`);
