@@ -65,6 +65,7 @@ function leg(
     modelDirection: 'OVER',
     projection: projection(proj),
     signals: signals(sigs),
+    gameKey: null,
     gamePk: null,
     venueName: null,
   };

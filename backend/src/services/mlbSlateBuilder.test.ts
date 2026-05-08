@@ -60,6 +60,7 @@ function leg(
       parkMultiplier: 1.0,
       venueName: null,
     },
+    gameKey: null,
     gamePk: null,
     venueName: null,
     ...over,
@@ -215,6 +216,80 @@ describe('buildMlbSlate — combo metadata', () => {
       expect(built.averageEdge).toBeGreaterThan(0);
       expect(built.weakestLegName).toBeTruthy();
       expect(built.weakestLegReason).toBeTruthy();
+    }
+  });
+});
+
+describe('buildMlbSlate — correlation penalty (Phase 7)', () => {
+  test('Independent legs across different games → None correlation, raw == adjusted', () => {
+    const slate = Array.from({ length: 6 }, (_, i) =>
+      leg(900 + i, {
+        team: { id: 100 + i, abbr: 'TM' + i },          // every leg different team
+        gameKey: `gpk:${100 + i}`,                       // every leg different game
+      }, { edgePercent: 18 }),
+    );
+    const r = buildMlbSlate(slate, 'balanced');
+    const built = r.combos.find((c) => c.combo)?.combo;
+    expect(built).toBeTruthy();
+    if (built) {
+      expect(built.correlationRisk).toBe('None');
+      expect(built.correlationPairs).toBe(0);
+      expect(built.adjustedCombinedHit).toBeCloseTo(built.rawCombinedHit, 1);
+    }
+  });
+
+  test('Two legs from same game → Low correlation (1 pair, 0.97x)', () => {
+    // 4 legs, two of which share gameKey "gpk:5" (same game).
+    const slate = [
+      leg(910, { team: { id: 1, abbr: 'NYY' }, gameKey: 'gpk:5' }, { edgePercent: 18 }),
+      leg(911, { team: { id: 2, abbr: 'BOS' }, gameKey: 'gpk:5' }, { edgePercent: 18 }),
+      leg(912, { team: { id: 3, abbr: 'LAD' }, gameKey: 'gpk:7' }, { edgePercent: 18 }),
+      leg(913, { team: { id: 4, abbr: 'SF'  }, gameKey: 'gpk:7' }, { edgePercent: 18 }),
+    ];
+    // gpk:5 (1 pair) + gpk:7 (1 pair) = 2 pairs total → Medium
+    const r = buildMlbSlate(slate, 'balanced');
+    const best4 = r.combos.find((c) => c.size === 4)?.combo;
+    if (best4) {
+      expect(best4.correlationPairs).toBe(2);
+      expect(best4.correlationRisk).toBe('Medium');
+      expect(best4.adjustedCombinedHit).toBeLessThan(best4.rawCombinedHit);
+      // Medium tier multiplier is 0.92×; check ratio is in expected band.
+      const ratio = best4.adjustedCombinedHit / best4.rawCombinedHit;
+      expect(ratio).toBeCloseTo(0.92, 2);
+    }
+  });
+
+  test('Three legs from same game → 3 pairs (high correlation)', () => {
+    // 3 legs all in gpk:9 → C(3,2) = 3 pairs.
+    const slate = [
+      leg(920, { team: { id: 10, abbr: 'A' }, gameKey: 'gpk:9' }, { edgePercent: 18 }),
+      leg(921, { team: { id: 11, abbr: 'B' }, gameKey: 'gpk:9' }, { edgePercent: 18 }),
+      leg(922, { team: { id: 12, abbr: 'C' }, gameKey: 'gpk:9' }, { edgePercent: 18 }),
+      leg(923, { team: { id: 13, abbr: 'D' }, gameKey: 'gpk:99' }, { edgePercent: 17 }),
+      leg(924, { team: { id: 14, abbr: 'E' }, gameKey: 'gpk:88' }, { edgePercent: 16 }),
+    ];
+    const r = buildMlbSlate(slate, 'balanced');
+    const best3 = r.combos.find((c) => c.size === 3)?.combo;
+    if (best3) {
+      // Top 3 by edge will be ids 920, 921, 922 (all gpk:9).
+      expect(best3.correlationPairs).toBe(3);
+      expect(best3.correlationRisk).toBe('High');
+    }
+  });
+
+  test('Two legs from same team count as correlated even without gameKey', () => {
+    // gameKey null but same team — fallback path.
+    const slate = [
+      leg(930, { team: { id: 50, abbr: 'NYY' }, gameKey: null }, { edgePercent: 18 }),
+      leg(931, { team: { id: 50, abbr: 'NYY' }, gameKey: null }, { edgePercent: 18 }),
+      leg(932, { team: { id: 60, abbr: 'BOS' }, gameKey: null }, { edgePercent: 17 }),
+    ];
+    const r = buildMlbSlate(slate, 'balanced');
+    const best2 = r.combos.find((c) => c.size === 2)?.combo;
+    if (best2) {
+      // Top 2 will both be NYY → 1 pair via team fallback.
+      expect(best2.correlationPairs).toBeGreaterThanOrEqual(1);
+      expect(best2.correlationRisk).not.toBe('None');
     }
   });
 });

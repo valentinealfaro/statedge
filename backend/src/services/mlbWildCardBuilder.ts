@@ -35,7 +35,11 @@ import type {
   ResolvedMlbLine,
   WildCardSignals,
 } from './mlbSlatePipeline.js';
-import type { MlbComboLeg } from './mlbSlateBuilder.js';
+import {
+  computeCorrelationRisk,
+  type MlbComboCorrelationRisk,
+  type MlbComboLeg,
+} from './mlbSlateBuilder.js';
 
 export type MlbWildCardKind =
   | 'standard'
@@ -51,6 +55,9 @@ export type MlbWildCardCombo = {
   subtitle: string;
   legs: Array<MlbComboLeg & { wildCardReason: string }>;
   rawCombinedHit: number;
+  adjustedCombinedHit: number;
+  correlationRisk: MlbComboCorrelationRisk;
+  correlationPairs: number;
   averageEdge: number;
   averageTrap: number;
   closestCandidates?: Array<MlbComboLeg & { wildCardReason: string }>;
@@ -280,12 +287,18 @@ export function buildMlbWildCard(
     const tierPool = uniqueByPlayer(eligible.filter(tier.predicate));
     if (tierPool.length < MIN_LEGS) continue;
     const picks = pickTopByDistance(tierPool, TARGET_LEGS);
+    const raw = combinedHit(picks);
+    const corr = computeCorrelationRisk(picks);
+    const adjusted = Math.round(raw * corr.multiplier * 10) / 10;
     return {
       label: 'Wild Card',
       kind: tier.kind,
       subtitle: SUBTITLES[tier.kind],
       legs: picks.map((l) => toComboLegWithReason(l, reasonFor(tier.kind, l))),
-      rawCombinedHit: combinedHit(picks),
+      rawCombinedHit: raw,
+      adjustedCombinedHit: adjusted,
+      correlationRisk: corr.tier,
+      correlationPairs: corr.pairs,
       averageEdge: avg(picks.map((l) => l.projection.edgePercent)),
       averageTrap: avg(picks.map((l) => l.projection.trapScore)),
     };
@@ -300,6 +313,9 @@ export function buildMlbWildCard(
     subtitle: SUBTITLES.no_edge,
     legs: [],
     rawCombinedHit: 0,
+    adjustedCombinedHit: 0,
+    correlationRisk: 'None',
+    correlationPairs: 0,
     averageEdge: 0,
     averageTrap: 0,
     closestCandidates: closest.map((l) => toComboLegWithReason(l, reasonFor('no_edge', l))),

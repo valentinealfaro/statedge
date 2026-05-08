@@ -5491,6 +5491,41 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   border-color: var(--border-subtle);
 }
 
+/* Correlation-risk chip — shows on cards with same-game / same-team
+   leg stacks. Already factored into adjustedCombinedHit, this chip
+   just makes the stack visible to users. Mission alignment:
+   transparency about WHY combined hit % is what it is. */
+.mlb-correlation-chip {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.mlb-correlation-chip.corr-low {
+  background: rgba(33, 150, 243, 0.10);
+  color: #64b5f6;
+  border-color: rgba(33, 150, 243, 0.30);
+}
+.mlb-correlation-chip.corr-medium {
+  background: rgba(255, 152, 0, 0.10);
+  color: #ffa726;
+  border-color: rgba(255, 152, 0, 0.30);
+}
+.mlb-correlation-chip.corr-high {
+  background: rgba(229, 57, 53, 0.10);
+  color: #ef5350;
+  border-color: rgba(229, 57, 53, 0.30);
+}
+.mlb-correlation-chip.corr-very-high {
+  background: rgba(229, 57, 53, 0.18);
+  color: #ef5350;
+  border-color: rgba(229, 57, 53, 0.50);
+  font-weight: 800;
+}
+
 /* MLB calibration bucket table — predicted vs observed accuracy
    per probability bucket / stat type / risk tier / card type. */
 .mlb-bucket-table {

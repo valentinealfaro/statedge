@@ -120,12 +120,26 @@ export type MlbComboLeg = {
   bookableSide: 'over' | 'under' | 'both';
 };
 
+export type MlbComboCorrelationRisk =
+  | 'None'
+  | 'Low'
+  | 'Medium'
+  | 'High'
+  | 'Very High';
+
 export type MlbCombo = {
   label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6';
   subtitle: string;
   size: number;
   legs: MlbComboLeg[];
   rawCombinedHit: number;          // Π probabilities, no correlation penalty
+  // Adjusted for correlation: legs that share a game (same gameKey)
+  // or same team are penalized because they share game-script /
+  // weather / pitcher-vs-lineup risk. Mission-aligned honesty —
+  // independent-leg math overstates combined hit on stacked games.
+  adjustedCombinedHit: number;
+  correlationRisk: MlbComboCorrelationRisk;
+  correlationPairs: number;        // count of same-game/team leg pairs
   averageEdge: number;
   averageTrap: number;
   weakestLegName: string;
@@ -232,6 +246,45 @@ function combinedHit(legs: ResolvedMlbLine[]): number {
   return Math.round(p * 1000) / 10;     // 0-100, 1 decimal
 }
 
+// Correlation penalty per the NBA spec we're now porting to MLB.
+// Counts pairs of legs that share a game (same gameKey) OR same
+// team (cross-game stacks like two Yankees hitters on different
+// nights are NOT penalized — only same-game / same-team-same-night).
+// Tier multiplier:
+//   None      → 1.00× (independent)
+//   Low       → 0.97× (1 same-game pair)
+//   Medium    → 0.92× (2 pairs)
+//   High      → 0.85× (3 pairs)
+//   Very High → 0.75× (4+ pairs — capped here, denser stacks should
+//                       have been blocked at selection time)
+export function computeCorrelationRisk(
+  legs: ResolvedMlbLine[],
+): { tier: MlbComboCorrelationRisk; multiplier: number; pairs: number } {
+  let pairs = 0;
+  for (let i = 0; i < legs.length; i++) {
+    for (let j = i + 1; j < legs.length; j++) {
+      const a = legs[i]!;
+      const b = legs[j]!;
+      // Same game (strongest correlation): same gameKey.
+      if (a.gameKey && b.gameKey && a.gameKey === b.gameKey) {
+        pairs += 1;
+        continue;
+      }
+      // Same team on the same slate is a softer signal — usually
+      // means same game, but if gameKeys differ (rare data-quality
+      // issue) team-only still indicates correlation.
+      if (a.team.id !== null && b.team.id !== null && a.team.id === b.team.id) {
+        pairs += 1;
+      }
+    }
+  }
+  if (pairs === 0) return { tier: 'None',      multiplier: 1.00, pairs };
+  if (pairs === 1) return { tier: 'Low',       multiplier: 0.97, pairs };
+  if (pairs === 2) return { tier: 'Medium',    multiplier: 0.92, pairs };
+  if (pairs === 3) return { tier: 'High',      multiplier: 0.85, pairs };
+  return            { tier: 'Very High',       multiplier: 0.75, pairs };
+}
+
 function avg(nums: number[]): number {
   if (nums.length === 0) return 0;
   let s = 0;
@@ -280,12 +333,19 @@ function makeCombo(
       /thin|small[- ]sample|trap|volat|inherent/i.test(r),
     ) ?? `Highest combined trap + risk on this card.`;
 
+  const raw = combinedHit(legs);
+  const corr = computeCorrelationRisk(legs);
+  const adjusted = Math.round(raw * corr.multiplier * 10) / 10;
+
   return {
     label,
     subtitle: subtitleFor(mode, size),
     size,
     legs: legs.map(toComboLeg),
-    rawCombinedHit: combinedHit(legs),
+    rawCombinedHit: raw,
+    adjustedCombinedHit: adjusted,
+    correlationRisk: corr.tier,
+    correlationPairs: corr.pairs,
     averageEdge: avg(legs.map((l) => l.projection.edgePercent)),
     averageTrap: avg(legs.map((l) => l.projection.trapScore)),
     weakestLegName: worst.playerName,

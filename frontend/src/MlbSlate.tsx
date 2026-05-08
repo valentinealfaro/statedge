@@ -219,10 +219,22 @@ function WildCardCard({ wildCard }: { wildCard: MlbWildCardCombo }) {
         <span className="mlb-slate-card-subtitle">{wildCard.subtitle}</span>
       </div>
       <div className="mlb-slate-card-summary">
-        <Stat label="Combined hit" value={`${wildCard.rawCombinedHit.toFixed(1)}%`} />
+        <Stat
+          label="Adjusted hit"
+          value={`${wildCard.adjustedCombinedHit.toFixed(1)}%`}
+          hint={wildCard.correlationPairs > 0
+            ? `Raw ${wildCard.rawCombinedHit.toFixed(1)}% × correlation penalty (${wildCard.correlationRisk})`
+            : `No correlated stacks.`}
+        />
         <Stat label="Avg edge" value={`${wildCard.averageEdge >= 0 ? '+' : ''}${wildCard.averageEdge.toFixed(1)}%`} />
         <Stat label="Avg trap" value={`${wildCard.averageTrap.toFixed(0)}/100`} />
       </div>
+      {wildCard.correlationRisk !== 'None' && (
+        <div className={`mlb-correlation-chip corr-${wildCard.correlationRisk.toLowerCase().replace(' ', '-')}`}
+             title="Same-game / same-team leg pairs share game-script risk.">
+          ⚠ {wildCard.correlationRisk} correlation · {wildCard.correlationPairs} pair{wildCard.correlationPairs === 1 ? '' : 's'}
+        </div>
+      )}
       <ul className="mlb-slate-legs">
         {wildCard.legs.map((leg, i) => (
           <li key={i} className="mlb-slate-leg">
@@ -261,10 +273,22 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
         <span className="mlb-slate-card-subtitle">{c.subtitle}</span>
       </div>
       <div className="mlb-slate-card-summary">
-        <Stat label="Combined hit" value={`${c.rawCombinedHit.toFixed(1)}%`} />
+        <Stat
+          label="Adjusted hit"
+          value={`${c.adjustedCombinedHit.toFixed(1)}%`}
+          hint={c.correlationPairs > 0
+            ? `Raw ${c.rawCombinedHit.toFixed(1)}% × correlation penalty (${c.correlationRisk}, ${c.correlationPairs} same-game pair${c.correlationPairs === 1 ? '' : 's'})`
+            : `No correlated stacks — independent legs.`}
+        />
         <Stat label="Avg edge" value={`${c.averageEdge >= 0 ? '+' : ''}${c.averageEdge.toFixed(1)}%`} />
         <Stat label="Avg trap" value={`${c.averageTrap.toFixed(0)}/100`} />
       </div>
+      {c.correlationRisk !== 'None' && (
+        <div className={`mlb-correlation-chip corr-${c.correlationRisk.toLowerCase().replace(' ', '-')}`}
+             title="Same-game / same-team leg pairs share game-script risk. Adjusted hit % already accounts for this.">
+          ⚠ {c.correlationRisk} correlation · {c.correlationPairs} pair{c.correlationPairs === 1 ? '' : 's'}
+        </div>
+      )}
       <ul className="mlb-slate-legs">
         {c.legs.map((leg, i) => (
           <li key={i} className="mlb-slate-leg">
@@ -290,9 +314,17 @@ function ComboCard({ slot }: { slot: MlbSlateResponse['combos'][number] }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
-    <div className="mlb-stat">
+    <div className="mlb-stat" title={hint}>
       <span className="mlb-stat-label">{label}</span>
       <span className="mlb-stat-value">{value}</span>
     </div>

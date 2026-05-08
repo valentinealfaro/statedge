@@ -89,6 +89,12 @@ export type ResolvedMlbLine = {
   // Wild Card / momentum signals. Populated even when the projection
   // engine didn't have full context — fields gracefully degrade.
   signals: WildCardSignals;
+  // Synthetic key identifying the game this leg's player is in. We
+  // don't have an MLB gameId at line-input time (admin paste doesn't
+  // include it for every line), so we derive: gamePk if provided,
+  // else `{teamId}-{opponentTeamId}` sorted. Used by the slate
+  // builder to detect same-game leg stacks for correlation penalty.
+  gameKey: string | null;
   // Game-context surface for UI. When gamePk wasn't provided these
   // are null — pipeline doesn't fabricate context.
   gamePk: number | null;
@@ -173,6 +179,18 @@ export async function resolveMlbSlate(
         venueName: null,
       });
 
+      // Build gameKey for correlation detection. gamePk is the
+      // strongest signal (every leg from gamePk=746234 belongs to
+      // the same game). When gamePk is missing, fall back to a
+      // sorted team-opp pair so two Yankees-Red Sox legs collide
+      // even without gamePks.
+      const gameKey =
+        raw.gamePk !== undefined
+          ? `gpk:${raw.gamePk}`
+          : (player.teamId !== null && raw.opponentTeamId !== undefined
+              ? [player.teamId, raw.opponentTeamId].sort((a, b) => a - b).join('-')
+              : null);
+
       lines.push({
         playerId: raw.playerId,
         playerName: player.fullName,
@@ -186,6 +204,7 @@ export async function resolveMlbSlate(
         modelDirection,
         projection,
         signals,
+        gameKey,
         gamePk: raw.gamePk ?? null,
         venueName: null,                  // populated in a future slice
       });

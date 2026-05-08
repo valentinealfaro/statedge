@@ -1419,12 +1419,21 @@ export type MlbSlateLeg = {
   bookableSide: 'over' | 'under' | 'both';
 };
 
+export type MlbComboCorrelationRisk =
+  | 'None' | 'Low' | 'Medium' | 'High' | 'Very High';
+
 export type MlbSlateCombo = {
   label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6';
   subtitle: string;
   size: number;
   legs: MlbSlateLeg[];
   rawCombinedHit: number;
+  // Correlation-adjusted hit % (always ≤ rawCombinedHit). Same-game
+  // and same-team leg pairs are penalized because they share game-
+  // script risk. This is the "honest" hit % to display.
+  adjustedCombinedHit: number;
+  correlationRisk: MlbComboCorrelationRisk;
+  correlationPairs: number;
   averageEdge: number;
   averageTrap: number;
   weakestLegName: string;
@@ -1447,6 +1456,9 @@ export type MlbWildCardCombo = {
   subtitle: string;
   legs: MlbWildCardLeg[];
   rawCombinedHit: number;
+  adjustedCombinedHit: number;
+  correlationRisk: MlbComboCorrelationRisk;
+  correlationPairs: number;
   averageEdge: number;
   averageTrap: number;
   closestCandidates?: MlbWildCardLeg[];
