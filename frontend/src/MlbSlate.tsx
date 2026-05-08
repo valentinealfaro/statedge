@@ -41,6 +41,12 @@ type ModeKey = 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
 const SEEN_KEY = 'statedge:mlbSlate:seenLines:v1';
 const SEEN_TTL_MS = 60 * 60 * 1000;
 
+// Textarea content is also persisted so the user's paste survives a
+// page reload. Without this, returning to /mlb/slate showed the
+// sample again while the dedup memory still held 3130 entries —
+// confusing because the user couldn't see what they already pasted.
+const TEXT_KEY = 'statedge:mlbSlate:input:v1';
+
 type SeenMap = Record<string, number>;     // normalizedLine → epoch ms
 
 function loadSeen(): SeenMap {
@@ -61,6 +67,14 @@ function loadSeen(): SeenMap {
 
 function saveSeen(seen: SeenMap): void {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* full quota */ }
+}
+
+function loadText(): string | null {
+  try { return localStorage.getItem(TEXT_KEY); } catch { return null; }
+}
+
+function saveText(text: string): void {
+  try { localStorage.setItem(TEXT_KEY, text); } catch { /* full quota */ }
 }
 
 // Normalize a raw line for dedup. Same form used to remember built
@@ -124,7 +138,10 @@ function detectFormat(text: string): 'json' | 'pipe' {
 export function MlbSlate() {
   useTitle(['MLB Slate']);
 
-  const [linesText, setLinesText] = useState(SAMPLE_LINES);
+  // Restore last-saved paste so the user's slate survives reloads —
+  // the dedup memory remembering 3130 lines but the textarea showing
+  // only the sample was the source of much confusion.
+  const [linesText, setLinesText] = useState(() => loadText() ?? SAMPLE_LINES);
   const [mode, setMode] = useState<ModeKey>('balanced');
   const [result, setResult] = useState<MlbSlateResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -141,6 +158,13 @@ export function MlbSlate() {
 
   // Persist memory anytime it changes.
   useEffect(() => { saveSeen(seen); }, [seen]);
+
+  // Persist the paste so reloads don't wipe it. Skip persisting the
+  // unchanged sample (no value, just clutter).
+  useEffect(() => {
+    if (linesText === SAMPLE_LINES) return;
+    saveText(linesText);
+  }, [linesText]);
 
   function clearSeen(): void {
     setSeen({});
@@ -172,11 +196,19 @@ export function MlbSlate() {
       }
       setSkippedCount(skipped);
       if (fresh.length === 0) {
-        setError(
-          skipped > 0
-            ? `All ${skipped} lines were built within the last hour. Use "Force build all" to re-run anyway.`
-            : 'No lines provided.',
-        );
+        if (skipped > 0) {
+          // Special-cased: every line is already memorized. This is
+          // the most common confusion case (user re-pastes a slate
+          // they already built). Give them a one-click recovery
+          // path instead of just an error string.
+          setError(
+            `All ${skipped} of your lines were already built within the last hour. ` +
+            `The model already has fresh projections for them. ` +
+            `Tick "Force build all" above to re-project anyway, or click "Forget memory" to start over.`,
+          );
+        } else {
+          setError('No lines provided.');
+        }
         setLoading(false);
         return;
       }
@@ -272,7 +304,12 @@ export function MlbSlate() {
             <button
               type="button"
               className="mlb-clear-player"
-              onClick={() => { setLinesText(SAMPLE_LINES); setResult(null); setError(null); }}
+              onClick={() => {
+                setLinesText(SAMPLE_LINES);
+                setResult(null);
+                setError(null);
+                try { localStorage.removeItem(TEXT_KEY); } catch { /* ignore */ }
+              }}
             >
               Reset to sample
             </button>
