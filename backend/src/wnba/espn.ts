@@ -223,6 +223,127 @@ export async function fetchWnbaGameSummary(eventId: string): Promise<EspnGameSum
   return fetchEspnSummary(eventId, 'wnba');
 }
 
+// ---------- Player search + gamelog ----------
+
+export type WnbaSearchPlayer = {
+  id: string;
+  displayName: string;
+  shortName: string;
+  team: string | null;
+  position: string | null;
+  headshot: string | null;
+};
+
+export async function fetchWnbaPlayerSearch(query: string): Promise<WnbaSearchPlayer[]> {
+  if (!query || query.trim().length < 2) return [];
+  const url = `https://site.api.espn.com/apis/common/v3/search?query=${encodeURIComponent(query)}&limit=20&type=player&sport=basketball&league=wnba`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const j = await res.json() as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items: any[] = j.items ?? [];
+  return items
+    .filter((it) => it.type === 'player' && it.league === 'wnba')
+    .map((it): WnbaSearchPlayer => ({
+      id: String(it.id ?? ''),
+      displayName: String(it.displayName ?? ''),
+      shortName: String(it.shortName ?? ''),
+      team: it.teamRelationships?.[0]?.core?.abbreviation ?? null,
+      position: it.position?.abbreviation ?? null,
+      headshot: it.image?.href ?? null,
+    }));
+}
+
+export type WnbaGameLogEntry = {
+  gameId: string;
+  date: string;             // YYYY-MM-DD
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  score: string;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  threePtMade: number;
+  threePtAttempted: number;
+  fgMade: number;
+  fgAttempted: number;
+  ftMade: number;
+  ftAttempted: number;
+  fouls: number;
+};
+
+function parseMA(s: unknown): { made: number; attempted: number } {
+  const str = String(s ?? '');
+  const [m, a] = str.split('-').map(Number);
+  return {
+    made: Number.isFinite(m) ? (m ?? 0) : 0,
+    attempted: Number.isFinite(a) ? (a ?? 0) : 0,
+  };
+}
+
+export async function fetchWnbaPlayerGameLog(
+  athleteId: string,
+  season?: number,
+): Promise<WnbaGameLogEntry[]> {
+  const seasonParam = season ? `?season=${season}` : '';
+  const url = `https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba/athletes/${encodeURIComponent(athleteId)}/gamelog${seasonParam}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`ESPN WNBA gamelog ${res.status}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const j = await res.json() as any;
+  // ESPN's gamelog: events keyed by gameId with stats. seasonTypes has
+  // arrays of events grouped by reg/post-season.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eventsObj: Record<string, any> = j.events ?? {};
+  const out: WnbaGameLogEntry[] = [];
+  for (const [gameId, ev] of Object.entries(eventsObj)) {
+    if (!ev) continue;
+    // The stats array aligns with j.names array — same order.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats: string[] = (ev as any).stats ?? [];
+    const num = (i: number) => Number(stats[i] ?? 0) || 0;
+    // names = ["minutes","points","totalRebounds","assists","steals","blocks","turnovers","fieldGoalsMade-fieldGoalsAttempted","fieldGoalPct","threePointFieldGoalsMade-threePointFieldGoalsAttempted","threePointPct","freeThrowsMade-freeThrowsAttempted","freeThrowPct","fouls"]
+    const fg = parseMA(stats[7]);
+    const tp = parseMA(stats[9]);
+    const ft = parseMA(stats[11]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const evAny = ev as any;
+    const dateRaw = String(evAny.gameDate ?? evAny.date ?? '');
+    const date = dateRaw ? dateRaw.slice(0, 10) : '';
+    out.push({
+      gameId,
+      date,
+      opponentAbbr: String(evAny.opponent?.abbreviation ?? ''),
+      isHome: !!evAny.atVs && String(evAny.atVs).toLowerCase() === 'vs',
+      result: evAny.gameResult === 'W' ? 'W' : evAny.gameResult === 'L' ? 'L' : null,
+      score: String(evAny.score ?? ''),
+      minutes:    num(0),
+      points:     num(1),
+      rebounds:   num(2),
+      assists:    num(3),
+      steals:     num(4),
+      blocks:     num(5),
+      turnovers:  num(6),
+      fgMade:        fg.made,
+      fgAttempted:   fg.attempted,
+      threePtMade:        tp.made,
+      threePtAttempted:   tp.attempted,
+      ftMade:        ft.made,
+      ftAttempted:   ft.attempted,
+      fouls:      num(13),
+    });
+  }
+  // Sort newest first.
+  out.sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : 0));
+  return out;
+}
+
 // ---------- Player headshot CDN (parity with NBA + MLB Avatar setup) ----------
 
 export function wnbaPlayerHeadshotUrl(athleteId: number | string): string {

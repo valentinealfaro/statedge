@@ -5,6 +5,8 @@
 import { Router } from 'express';
 import {
   fetchWnbaGameSummary,
+  fetchWnbaPlayerGameLog,
+  fetchWnbaPlayerSearch,
   fetchWnbaScoreboard,
   fetchWnbaStandings,
   fetchWnbaTeams,
@@ -95,6 +97,61 @@ wnbaRouter.get('/game/:eventId', async (req, res) => {
   } catch (err) {
     console.error('wnba/game/:eventId failed', err);
     res.status(502).json({ error: 'wnba game summary fetch failed' });
+  }
+});
+
+// Player search — small, fast, ESPN-proxied. 60s cache per query.
+const searchCache = new Map<string, Cache<unknown>>();
+const SEARCH_TTL = 60_000;
+
+wnbaRouter.get('/players/search', async (req, res) => {
+  const q = String(req.query.q ?? '').trim();
+  if (q.length < 2) {
+    res.json({ players: [] });
+    return;
+  }
+  const now = Date.now();
+  const cached = searchCache.get(q.toLowerCase());
+  if (cached && now - cached.fetchedAt < SEARCH_TTL) {
+    res.json(cached.data);
+    return;
+  }
+  try {
+    const players = await fetchWnbaPlayerSearch(q);
+    const payload = { players };
+    searchCache.set(q.toLowerCase(), { fetchedAt: now, data: payload });
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/players/search failed', err);
+    res.status(502).json({ error: 'wnba search failed' });
+  }
+});
+
+// Player gamelog — current season, last N games. 5min cache per
+// player; ESPN updates within minutes after a game finishes anyway.
+const gamelogCache = new Map<string, Cache<unknown>>();
+const GAMELOG_TTL = 5 * 60_000;
+
+wnbaRouter.get('/player/:athleteId/gamelog', async (req, res) => {
+  const athleteId = String(req.params.athleteId);
+  if (!athleteId) {
+    res.status(400).json({ error: 'athleteId required' });
+    return;
+  }
+  const now = Date.now();
+  const cached = gamelogCache.get(athleteId);
+  if (cached && now - cached.fetchedAt < GAMELOG_TTL) {
+    res.json(cached.data);
+    return;
+  }
+  try {
+    const games = await fetchWnbaPlayerGameLog(athleteId);
+    const payload = { athleteId, games, disclaimer: WNBA_DISCLAIMER };
+    gamelogCache.set(athleteId, { fetchedAt: now, data: payload });
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/player/gamelog failed', err);
+    res.status(502).json({ error: 'wnba gamelog failed' });
   }
 });
 

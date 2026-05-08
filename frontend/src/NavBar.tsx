@@ -52,9 +52,9 @@ const MLB_SUBNAV: SubnavItem[] = [
 
 // WNBA subnav grows as Phase 74-78 ship each surface. Only the items
 // that ACTUALLY exist appear here per the mission's "no fake
-// completeness" rule. Compare / Slate / Calibration land in their
-// own phases.
+// completeness" rule. Slate / Calibration land in their own phases.
 const WNBA_SUBNAV: SubnavItem[] = [
+  { label: 'Compare', path: '/wnba/compare' },
   { label: 'Standings', path: '/wnba/standings' },
 ];
 
@@ -69,7 +69,8 @@ function switchSportPath(currentPath: string, target: SportKey): string {
   const matched = targetSubnav.find((it) => it.path.endsWith(`/${tail}`));
   // Sport-specific landing fallback when the current page has no
   // counterpart (e.g. /mlb/calibration doesn't exist for WNBA yet).
-  return matched?.path ?? `/${target}/standings`;
+  // Default landing is each sport's Compare page.
+  return matched?.path ?? `/${target}/compare`;
 }
 
 export function NavBar() {
@@ -108,7 +109,7 @@ export function NavBar() {
               MLB
             </Link>
             <Link
-              to="/wnba/standings"
+              to="/wnba/compare"
               className={sport === 'wnba' ? 'navlink active sport-wnba' : 'navlink'}
             >
               WNBA

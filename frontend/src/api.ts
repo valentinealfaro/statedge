@@ -2258,6 +2258,62 @@ export async function getWnbaGameSummary(eventId: string): Promise<EspnGameSumma
   return data.summary;
 }
 
+// =============================================================
+// WNBA Compare (Phase 76): player search + gamelog
+// =============================================================
+
+export type WnbaSearchPlayer = {
+  id: string;
+  displayName: string;
+  shortName: string;
+  team: string | null;
+  position: string | null;
+  headshot: string | null;
+};
+
+export async function searchWnbaPlayers(query: string, signal?: AbortSignal): Promise<WnbaSearchPlayer[]> {
+  if (query.trim().length < 2) return [];
+  const res = await fetch(`${API_BASE}/api/wnba/players/search?q=${encodeURIComponent(query)}`, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { players: WnbaSearchPlayer[] };
+  return data.players;
+}
+
+export type WnbaGameLogEntry = {
+  gameId: string;
+  date: string;
+  opponentAbbr: string;
+  isHome: boolean;
+  result: 'W' | 'L' | null;
+  score: string;
+  minutes: number;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  threePtMade: number;
+  threePtAttempted: number;
+  fgMade: number;
+  fgAttempted: number;
+  ftMade: number;
+  ftAttempted: number;
+  fouls: number;
+};
+
+export type WnbaGameLogResponse = {
+  athleteId: string;
+  games: WnbaGameLogEntry[];
+  disclaimer: string;
+};
+
+export async function getWnbaPlayerGameLog(athleteId: string): Promise<WnbaGameLogResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/player/${encodeURIComponent(athleteId)}/gamelog`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaGameLogResponse;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {

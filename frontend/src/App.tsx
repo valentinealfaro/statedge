@@ -15,6 +15,7 @@ import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
+import { WnbaCompare } from './WnbaCompare';
 import { WnbaGameDetail } from './WnbaGameDetail';
 import { WnbaStandings } from './WnbaStandings';
 
@@ -52,8 +53,9 @@ export function App() {
               other surfaces (compare/slate/calibration/game) land in
               subsequent phases. */}
           <Route path="/wnba/standings" element={<WnbaStandings />} />
+          <Route path="/wnba/compare" element={<WnbaCompare />} />
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
-          <Route path="/wnba" element={<Navigate to="/wnba/standings" replace />} />
+          <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}
           <Route path="/game/:gameId" element={<GameDetail />} />
