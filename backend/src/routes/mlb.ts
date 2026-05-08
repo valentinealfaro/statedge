@@ -17,6 +17,8 @@ import {
   MlbStatTypeMismatchError,
 } from '../services/mlbLast10Engine.js';
 import { projectMlbStat } from '../services/mlbProjectionEngine.js';
+import { resolveMlbSlate, type RawMlbLine } from '../services/mlbSlatePipeline.js';
+import { buildMlbSlate, type MlbSlateMode } from '../services/mlbSlateBuilder.js';
 import {
   listStatsForPlayerType,
   statMeta,
@@ -292,5 +294,47 @@ mlbRouter.get('/projection', async (req, res) => {
     }
     console.error('mlb/projection failed', err);
     res.status(500).json({ error: 'mlb projection failed' });
+  }
+});
+
+// POST /api/mlb/slate
+// Body: { lines: RawMlbLine[], mode?: MlbSlateMode }
+//
+// Single-shot slate construction. Admin pastes tonight's lines as
+// JSON, we project + rank + build cards. v1 doesn't persist
+// snapshots (the NBA equivalent does — we'll add MLB grading after
+// Phase 5). Returns the resolved mode (Auto's underlying choice),
+// each card slot's status (combo built or eligibility-gated reason),
+// and any unresolved input lines with reasons.
+mlbRouter.post('/slate', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'MLB requires DB' });
+    return;
+  }
+  const body = req.body as { lines?: RawMlbLine[]; mode?: MlbSlateMode } | undefined;
+  if (!body || !Array.isArray(body.lines) || body.lines.length === 0) {
+    res.status(400).json({
+      error: 'POST body must be { lines: RawMlbLine[], mode?: SlateMode }.',
+    });
+    return;
+  }
+  const mode: MlbSlateMode =
+    body.mode === 'safe' || body.mode === 'balanced' || body.mode === 'aggressive'
+      || body.mode === 'insane' || body.mode === 'auto'
+      ? body.mode
+      : 'balanced';
+  try {
+    const { lines, unresolved } = await resolveMlbSlate(body.lines);
+    const slate = buildMlbSlate(lines, mode);
+    res.json({
+      ...slate,
+      requestedMode: mode,
+      lineCount: lines.length,
+      unresolved,
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/slate failed', err);
+    res.status(500).json({ error: 'mlb slate construction failed' });
   }
 });

@@ -1382,6 +1382,85 @@ export async function getMlbProjection(opts: {
   return (await res.json()) as MlbProjectionResponse;
 }
 
+// =============================================================
+// MLB slate builder — Phase 4. POST a list of raw lines, get back
+// pre-built combos respecting Safe / Balanced / Aggressive / Insane
+// eligibility per the spec.
+// =============================================================
+
+export type RawMlbSlateLine = {
+  playerId: number;
+  playerName?: string;
+  statKey: string;
+  line: number;
+  direction?: 'over' | 'under' | 'both';
+  gamePk?: number;
+  opponentTeamId?: number;
+  isHome?: boolean;
+  opposingPitcherId?: number;
+};
+
+export type MlbSlateLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  projection: number;
+  edgePercent: number;
+  riskScore: number;
+  trapScore: number;
+  reasonCodes: string[];
+  isPitcher: boolean;
+  gamePk: number | null;
+  bookableSide: 'over' | 'under' | 'both';
+};
+
+export type MlbSlateCombo = {
+  label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6';
+  subtitle: string;
+  size: number;
+  legs: MlbSlateLeg[];
+  rawCombinedHit: number;
+  averageEdge: number;
+  averageTrap: number;
+  weakestLegName: string;
+  weakestLegReason: string;
+};
+
+export type MlbSlateResponse = {
+  resolvedMode: 'safe' | 'balanced' | 'aggressive' | 'insane';
+  requestedMode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
+  lineCount: number;
+  combos: Array<{
+    size: number;
+    label: MlbSlateCombo['label'];
+    combo: MlbSlateCombo | null;
+    reason: string;
+  }>;
+  unresolved: Array<{ raw: RawMlbSlateLine; reason: string }>;
+  disclaimer: string;
+};
+
+export async function buildMlbSlateRequest(
+  lines: RawMlbSlateLine[],
+  mode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto',
+): Promise<MlbSlateResponse> {
+  const res = await fetch(`${API_BASE}/api/mlb/slate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lines, mode }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MlbSlateResponse;
+}
+
 export async function getMlbHealth(): Promise<MlbHealth> {
   const res = await fetch(`${API_BASE}/api/mlb/health`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
