@@ -20,7 +20,11 @@ import { currentSeason } from '../nba/client.js';
 import { getGemini, GEMINI_MODEL } from '../services/gemini.js';
 import { computeCalibration } from '../services/slateCalibration.js';
 import { buildCombos, type Combo, type SlateMode } from '../services/slateCombos.js';
-import { gradeCombo, type GradedCombo } from '../services/slateGrade.js';
+import {
+  comboPredictedHit,
+  gradeCombo,
+  type GradedCombo,
+} from '../services/slateGrade.js';
 
 // Parse + validate the ?mode= query param. Unknown / missing values
 // fall back to 'balanced' (the EV-engine default).
@@ -667,11 +671,14 @@ slateRouter.get('/history', async (_req, res) => {
       }
 
       // Not yet ripe (today or future) → ship the ungraded combos.
+      // Stamp `predictedHit` on the way out so the History UI shows
+      // the combined hit % even before the day grades. Raw Combo has
+      // adjustedCombinedHit; the frontend reads `predictedHit`.
       if (!shouldAttemptGrade(row.date, today)) {
         days.push({
           date: row.date,
           status: 'pending',
-          combos,
+          combos: combos.map((c) => ({ ...c, predictedHit: comboPredictedHit(c) })),
           resolvedAt: null,
         });
         continue;
@@ -704,7 +711,7 @@ slateRouter.get('/history', async (_req, res) => {
         days.push({
           date: row.date,
           status: 'pending',
-          combos,
+          combos: combos.map((c) => ({ ...c, predictedHit: comboPredictedHit(c) })),
           resolvedAt: null,
         });
       }
@@ -770,7 +777,7 @@ slateRouter.get('/history/:date', async (req, res) => {
       res.json({
         date: row.date,
         status: 'pending' as const,
-        combos,
+        combos: combos.map((c) => ({ ...c, predictedHit: comboPredictedHit(c) })),
         resolvedAt: null,
       });
       return;

@@ -222,8 +222,10 @@ export function gradeLeg(
 
 // Read the predicted-hit % off a Combo, tolerating both new and
 // legacy shapes. New: adjustedCombinedHit (or rawCombinedHit fallback).
-// Legacy: combinedPct.
-function comboPredictedHit(combo: Combo): number {
+// Legacy: combinedPct. Exported because the history route also needs
+// to materialize predictedHit on pending (ungraded) combos before
+// shipping them to the frontend.
+export function comboPredictedHit(combo: Combo): number {
   const c = combo as {
     adjustedCombinedHit?: number;
     rawCombinedHit?: number;
