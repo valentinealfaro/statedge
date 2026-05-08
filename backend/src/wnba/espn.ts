@@ -211,6 +211,18 @@ export async function fetchWnbaScoreboard(date?: string): Promise<{
   return { date: j.day?.date ?? null, games };
 }
 
+// ---------- Game summary (boxscore + leaders + injuries + linescore + winProb) ----------
+//
+// ESPN's basketball summary schema is identical between NBA and
+// WNBA — fetchGameSummary in nba/espn.ts handles all the projection.
+// Re-export with the WNBA league slug pre-bound so the route layer
+// reads naturally.
+import { fetchGameSummary as fetchEspnSummary, type EspnGameSummary } from '../nba/espn.js';
+
+export async function fetchWnbaGameSummary(eventId: string): Promise<EspnGameSummary> {
+  return fetchEspnSummary(eventId, 'wnba');
+}
+
 // ---------- Player headshot CDN (parity with NBA + MLB Avatar setup) ----------
 
 export function wnbaPlayerHeadshotUrl(athleteId: number | string): string {

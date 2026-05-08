@@ -15,6 +15,7 @@ import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
+import { WnbaGameDetail } from './WnbaGameDetail';
 import { WnbaStandings } from './WnbaStandings';
 
 // Routes are sport-grouped per the UX spec: /nba/* and /mlb/*. Old
@@ -51,6 +52,7 @@ export function App() {
               other surfaces (compare/slate/calibration/game) land in
               subsequent phases. */}
           <Route path="/wnba/standings" element={<WnbaStandings />} />
+          <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/standings" replace />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}

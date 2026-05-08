@@ -8,6 +8,13 @@
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
 
+// ESPN's basketball boxscore schema is identical between NBA and
+// WNBA — same competitors / linescores / players-by-team / leaders /
+// injuries / lastFiveGames / winProbability / predictor blocks.
+// fetchGameSummary takes an optional leagueSlug so WNBA can reuse
+// every line of parsing logic. Defaults to 'nba' for backward compat.
+const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball';
+
 export type EspnGameTeam = {
   id: string;
   abbreviation: string;
@@ -197,8 +204,11 @@ export type EspnGameSummary = {
   lastFive: { away: EspnLastFiveGame[]; home: EspnLastFiveGame[] };
 };
 
-export async function fetchGameSummary(eventId: string): Promise<EspnGameSummary> {
-  const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`);
+export async function fetchGameSummary(
+  eventId: string,
+  leagueSlug: 'nba' | 'wnba' = 'nba',
+): Promise<EspnGameSummary> {
+  const res = await fetch(`${ESPN_BASE}/${leagueSlug}/summary?event=${encodeURIComponent(eventId)}`);
   if (!res.ok) throw new Error(`ESPN summary ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const j = await res.json() as any;

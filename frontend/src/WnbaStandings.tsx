@@ -9,6 +9,7 @@ import { WnbaTeamLogo } from './Avatar';
 import { getWnbaStandings, type WnbaStandingRow, type WnbaStandingsResponse } from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
+import { WnbaTodaysGames } from './WnbaTodaysGames';
 import { useTitle } from './useTitle';
 
 export function WnbaStandings() {
@@ -26,6 +27,7 @@ export function WnbaStandings() {
     <div className="app">
       <NavBar />
       <div className="mlb-compare-shell">
+        <WnbaTodaysGames />
         <h1>WNBA · Standings</h1>
         <p className="muted small">
           Conference rollup with point differential, home/away splits,

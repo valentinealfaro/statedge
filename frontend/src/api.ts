@@ -2248,6 +2248,16 @@ export async function getWnbaToday(): Promise<WnbaTodayResponse> {
   return (await res.json()) as WnbaTodayResponse;
 }
 
+// WNBA game summary — same EspnGameSummary shape as NBA since
+// ESPN's basketball summary endpoint is schema-identical between
+// the two leagues. Reusing the type avoids duplication.
+export async function getWnbaGameSummary(eventId: string): Promise<EspnGameSummary> {
+  const res = await fetch(`${API_BASE}/api/wnba/game/${encodeURIComponent(eventId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { summary: EspnGameSummary };
+  return data.summary;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {

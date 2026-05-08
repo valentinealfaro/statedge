@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import {
+  fetchWnbaGameSummary,
   fetchWnbaScoreboard,
   fetchWnbaStandings,
   fetchWnbaTeams,
@@ -66,6 +67,34 @@ wnbaRouter.get('/standings', async (_req, res) => {
   } catch (err) {
     console.error('wnba/standings failed', err);
     res.status(502).json({ error: 'wnba standings fetch failed' });
+  }
+});
+
+// Per-game summary cache. Identical pattern to NBA's espn-game route
+// — 30s TTL while live, frontend handles polling.
+const summaryCache = new Map<string, Cache<unknown>>();
+const SUMMARY_TTL = 30_000;
+
+wnbaRouter.get('/game/:eventId', async (req, res) => {
+  const eventId = String(req.params.eventId);
+  if (!eventId) {
+    res.status(400).json({ error: 'eventId required' });
+    return;
+  }
+  const now = Date.now();
+  const cached = summaryCache.get(eventId);
+  if (cached && now - cached.fetchedAt < SUMMARY_TTL) {
+    res.json(cached.data);
+    return;
+  }
+  try {
+    const summary = await fetchWnbaGameSummary(eventId);
+    const payload = { summary, disclaimer: WNBA_DISCLAIMER };
+    summaryCache.set(eventId, { fetchedAt: now, data: payload });
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/game/:eventId failed', err);
+    res.status(502).json({ error: 'wnba game summary fetch failed' });
   }
 });
 

@@ -11,12 +11,14 @@ import { Link } from 'react-router-dom';
 import {
   getMlbToday,
   getTodayGames,
+  getWnbaToday,
   type EspnScoreboardGame,
   type MlbTodayGame,
+  type WnbaScoreboardGame,
 } from './api';
 
 type LiveTile = {
-  sport: 'NBA' | 'MLB';
+  sport: 'NBA' | 'MLB' | 'WNBA';
   href: string;
   awayAbbr: string;
   homeAbbr: string;
@@ -34,6 +36,7 @@ export function LiveDeck() {
     Promise.allSettled([
       getTodayGames(),
       getMlbToday(),
+      getWnbaToday(),
     ]).then((results) => {
       if (cancelled) return;
       const out: LiveTile[] = [];
@@ -64,6 +67,21 @@ export function LiveDeck() {
             awayScore: g.away.score !== null ? String(g.away.score) : '0',
             homeScore: g.home.score !== null ? String(g.home.score) : '0',
             statusDetail: g.status.detailedState,
+          });
+        }
+      }
+      // WNBA
+      if (results[2].status === 'fulfilled') {
+        const wnba = results[2].value.games.filter((g: WnbaScoreboardGame) => g.status.state === 'in');
+        for (const g of wnba) {
+          out.push({
+            sport: 'WNBA',
+            href: `/wnba/game/${g.id}`,
+            awayAbbr: g.away.abbreviation,
+            homeAbbr: g.home.abbreviation,
+            awayScore: g.away.score || '0',
+            homeScore: g.home.score || '0',
+            statusDetail: g.status.detail,
           });
         }
       }
@@ -138,7 +156,12 @@ export function LiveDeck() {
                 marginBottom: 6,
               }}
             >
-              <span style={{ color: t.sport === 'NBA' ? '#7aa2ff' : '#66bb6a' }}>{t.sport}</span>
+              <span style={{
+                color:
+                  t.sport === 'NBA'  ? '#7aa2ff'
+                  : t.sport === 'MLB' ? '#66bb6a'
+                  : '#b388ff',     // WNBA = purple per spec
+              }}>{t.sport}</span>
               <span style={{ color: '#ef5350' }}>● {t.statusDetail}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
