@@ -1898,6 +1898,28 @@ export type MlbLivePlay = {
   pitcher: string | null;
 };
 
+export type MlbLivePlayerStats = {
+  hits: number | null;
+  atBats: number | null;
+  runs: number | null;
+  rbis: number | null;
+  walks: number | null;
+  strikeouts: number | null;
+  homeRuns: number | null;
+  doubles: number | null;
+  triples: number | null;
+  stolenBases: number | null;
+  totalBases: number | null;
+  hitByPitch: number | null;
+  inningsPitched: number | null;
+  outsRecorded: number | null;
+  pitcherStrikeouts: number | null;
+  hitsAllowed: number | null;
+  earnedRunsAllowed: number | null;
+  walksAllowed: number | null;
+  homeRunsAllowed: number | null;
+};
+
 export type MlbLiveFeed = {
   gamePk: number;
   state: 'pregame' | 'live' | 'final';
@@ -1918,6 +1940,7 @@ export type MlbLiveFeed = {
     description: string | null;
   } | null;
   recentPlays: MlbLivePlay[];
+  playerStats: Record<string, MlbLivePlayerStats>;
 };
 
 export async function getMlbGameLive(gamePk: number): Promise<MlbLiveFeed> {

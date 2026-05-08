@@ -21,6 +21,7 @@ import {
   type MlbDailySlateResponse,
   type MlbGamePreview,
   type MlbLiveFeed,
+  type MlbLivePlayerStats,
   type MlbStandingRow,
   type MlbTeamLast5,
   type MlbTodayGame,
@@ -240,9 +241,65 @@ function ProbablePitchers({ game }: { game: MlbTodayGame }) {
   );
 }
 
+// Map slate stat keys to live boxscore fields. Keep in sync with the
+// statKey vocabulary the slate uses (see backend/src/mlb/stats.ts).
+function liveValueForStat(stats: MlbLivePlayerStats, statKey: string): number | null {
+  switch (statKey) {
+    case 'hits':                return stats.hits;
+    case 'total_bases':         return stats.totalBases;
+    case 'runs':                return stats.runs;
+    case 'rbis':                return stats.rbis;
+    case 'walks':               return stats.walks;
+    case 'strikeouts':          return stats.strikeouts;
+    case 'home_runs':           return stats.homeRuns;
+    case 'doubles':             return stats.doubles;
+    case 'triples':             return stats.triples;
+    case 'stolen_bases':        return stats.stolenBases;
+    case 'hit_by_pitch':        return stats.hitByPitch;
+    case 'hits_runs_rbis': {
+      // Combo: only definitive when all three components are loaded.
+      const h = stats.hits;
+      const r = stats.runs;
+      const ri = stats.rbis;
+      if (h === null && r === null && ri === null) return null;
+      return (h ?? 0) + (r ?? 0) + (ri ?? 0);
+    }
+    case 'pitcher_strikeouts':  return stats.pitcherStrikeouts;
+    case 'hits_allowed':        return stats.hitsAllowed;
+    case 'earned_runs_allowed': return stats.earnedRunsAllowed;
+    case 'walks_allowed':       return stats.walksAllowed;
+    case 'outs_recorded':       return stats.outsRecorded;
+    case 'home_runs_allowed':   return stats.homeRunsAllowed;
+    case 'pitching_outs':       return stats.outsRecorded;
+    default:                    return null;
+  }
+}
+
+type LegGrade = 'HIT' | 'MISS' | 'PROGRESS' | 'PUSH' | 'PENDING';
+
+function gradeLeg(
+  direction: 'OVER' | 'UNDER',
+  line: number,
+  current: number | null,
+  isFinal: boolean,
+): LegGrade {
+  if (current === null) return 'PENDING';
+  if (direction === 'OVER') {
+    if (current > line) return 'HIT';
+    if (isFinal) return current === line ? 'PUSH' : 'MISS';
+    return 'PROGRESS';
+  }
+  // UNDER
+  if (current > line) return 'MISS';
+  if (isFinal) return current === line ? 'PUSH' : 'HIT';
+  return 'PROGRESS';
+}
+
 function SameGameParlay({ game }: { game: MlbTodayGame }) {
   const [slate, setSlate] = useState<MlbDailySlateResponse | null>(null);
+  const [live, setLive] = useState<MlbLiveFeed | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,6 +308,24 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, []);
+
+  // Pull live feed for grading. Re-poll every 30s when game is live;
+  // pregame/final fetches once.
+  useEffect(() => {
+    let cancelled = false;
+    getMlbGameLive(game.gamePk)
+      .then((f) => { if (!cancelled) setLive(f); })
+      .catch(() => { /* silent — pregame/final still grade fine */ });
+    return () => { cancelled = true; };
+  }, [game.gamePk, tick]);
+
+  useEffect(() => {
+    if (live?.state !== 'live') return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setTick((t) => t + 1);
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [live?.state]);
 
   // Filter today's slate legs to those whose player team matches one
   // of this game's two teams. We don't have gamePk on stored legs,
@@ -287,10 +362,38 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
     ? sgpLegs.reduce((p, l) => p * (l.probability / 100), 1) * 100
     : 0;
 
+  // Live grade per leg (only when game is live or final).
+  const isLiveOrFinal = live?.state === 'live' || live?.state === 'final';
+  const isFinal = live?.state === 'final';
+  const graded = sgpLegs.map((l) => {
+    if (!isLiveOrFinal || !live) {
+      return { leg: l, current: null as number | null, grade: 'PENDING' as LegGrade };
+    }
+    const ps = live.playerStats[String(l.playerId)] ?? null;
+    if (!ps) return { leg: l, current: null, grade: 'PENDING' as LegGrade };
+    const current = liveValueForStat(ps, l.statKey);
+    return { leg: l, current, grade: gradeLeg(l.direction, l.line, current, isFinal) };
+  });
+  const tally = {
+    hit: graded.filter((g) => g.grade === 'HIT').length,
+    miss: graded.filter((g) => g.grade === 'MISS').length,
+    progress: graded.filter((g) => g.grade === 'PROGRESS').length,
+    push: graded.filter((g) => g.grade === 'PUSH').length,
+    pending: graded.filter((g) => g.grade === 'PENDING').length,
+  };
+
   return (
     <details className="mlb-context" open>
       <summary className="mlb-context-heading">
         Same-Game Parlay <span className="muted small">— top edge legs from this matchup</span>
+        {isLiveOrFinal && sgpLegs.length > 0 && (
+          <span style={{ marginLeft: 10, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}>
+            <span style={{ color: '#66bb6a' }}>● {tally.hit} HIT</span>
+            {tally.miss > 0 && <span style={{ color: '#ef5350', marginLeft: 8 }}>● {tally.miss} MISS</span>}
+            {tally.progress > 0 && <span style={{ color: '#7aa2ff', marginLeft: 8 }}>● {tally.progress} LIVE</span>}
+            {tally.push > 0 && <span style={{ color: '#ffb74d', marginLeft: 8 }}>● {tally.push} PUSH</span>}
+          </span>
+        )}
       </summary>
       {error && <p className="muted small" style={{ marginTop: 8 }}>{error}</p>}
       {!error && sgpLegs.length === 0 && (
@@ -303,8 +406,12 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
         <>
           <div className="mlb-projection-grid" style={{ marginTop: 8 }}>
             <div className="mlb-stat" title="Independent-leg combined probability. Same-game legs share game-script risk so the true hit rate is typically 5-15% lower.">
-              <span className="mlb-stat-label">Raw hit %</span>
-              <span className="mlb-stat-value">{combinedHit.toFixed(1)}%</span>
+              <span className="mlb-stat-label">{isFinal ? 'Final hit rate' : isLiveOrFinal ? 'Live hit/legs' : 'Raw hit %'}</span>
+              <span className="mlb-stat-value">
+                {isLiveOrFinal
+                  ? `${tally.hit}/${sgpLegs.length}`
+                  : `${combinedHit.toFixed(1)}%`}
+              </span>
             </div>
             <div className="mlb-stat">
               <span className="mlb-stat-label">Legs</span>
@@ -318,7 +425,7 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
             </div>
           </div>
           <div className="best-pick-legs" style={{ marginTop: 10 }}>
-            {sgpLegs.map((l, i) => (
+            {graded.map(({ leg: l, current, grade }, i) => (
               <div key={i} className="best-pick-leg-block">
                 <div className="best-pick-leg">
                   <span className="best-pick-leg-name">{l.playerName}</span>
@@ -336,14 +443,41 @@ function SameGameParlay({ game }: { game: MlbTodayGame }) {
                   {l.team && (
                     <span className="best-pick-leg-cat">{l.team}</span>
                   )}
+                  {isLiveOrFinal && (
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                        color:
+                          grade === 'HIT' ? '#66bb6a'
+                          : grade === 'MISS' ? '#ef5350'
+                          : grade === 'PUSH' ? '#ffb74d'
+                          : '#7aa2ff',
+                      }}
+                      title={current !== null ? `Current: ${current}` : 'No live stats yet'}
+                    >
+                      {grade}{current !== null ? ` · ${current}` : ''}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
           </div>
-          <p className="muted small" style={{ marginTop: 8 }}>
-            ⚠ Same-game legs share game-script risk (one team scoring zero kills offensive overs simultaneously).
-            Treat the raw hit % as an upper bound — real correlation-adjusted hit is typically 5-15% lower.
-          </p>
+          {!isLiveOrFinal && (
+            <p className="muted small" style={{ marginTop: 8 }}>
+              ⚠ Same-game legs share game-script risk (one team scoring zero kills offensive overs simultaneously).
+              Treat the raw hit % as an upper bound — real correlation-adjusted hit is typically 5-15% lower.
+            </p>
+          )}
+          {isLiveOrFinal && (
+            <p className="muted small" style={{ marginTop: 8 }}>
+              {isFinal
+                ? `Final result: ${tally.hit} hit, ${tally.miss} miss${tally.push ? `, ${tally.push} push` : ''}.`
+                : `Live: ${tally.hit} legs already cleared, ${tally.miss} dead, ${tally.progress} still live. Auto-refresh every 30s.`}
+            </p>
+          )}
         </>
       )}
     </details>

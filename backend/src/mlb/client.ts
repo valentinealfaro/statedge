@@ -850,6 +850,38 @@ export type MlbLivePlay = {
   count?: { balls?: number; strikes?: number; outs?: number };
 };
 
+export type MlbLiveBoxscorePlayerStats = {
+  batting?: {
+    atBats?: number;
+    runs?: number;
+    hits?: number;
+    doubles?: number;
+    triples?: number;
+    homeRuns?: number;
+    rbi?: number;
+    baseOnBalls?: number;
+    strikeOuts?: number;
+    stolenBases?: number;
+    totalBases?: number;
+    hitByPitch?: number;
+  };
+  pitching?: {
+    inningsPitched?: string;
+    hits?: number;
+    runs?: number;
+    earnedRuns?: number;
+    baseOnBalls?: number;
+    strikeOuts?: number;
+    homeRuns?: number;
+    outs?: number;
+  };
+};
+
+export type MlbLiveBoxscorePlayer = {
+  person: { id: number; fullName: string };
+  stats?: MlbLiveBoxscorePlayerStats;
+};
+
 export type MlbLiveFeed = {
   gameData: {
     status: { codedGameState: string; detailedState: string; abstractGameState: string };
@@ -877,6 +909,12 @@ export type MlbLiveFeed = {
         pitcher?: { fullName?: string };
       };
       teams?: { home?: { runs?: number }; away?: { runs?: number } };
+    };
+    boxscore?: {
+      teams: {
+        away: { players: Record<string, MlbLiveBoxscorePlayer> };
+        home: { players: Record<string, MlbLiveBoxscorePlayer> };
+      };
     };
   };
 };

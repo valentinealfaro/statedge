@@ -1306,6 +1306,78 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
       : abstractState === 'Final' ? 'final'
       : 'pregame';
 
+    // Per-player current stats for live leg grading. Project the
+    // boxscore down to the same statKeys we use on slate legs so the
+    // frontend can match by playerId without a translation layer.
+    // Pre-game: empty map (no in-game stats yet). Live/final: filled.
+    const playerStats: Record<string, {
+      hits: number | null;
+      atBats: number | null;
+      runs: number | null;
+      rbis: number | null;
+      walks: number | null;
+      strikeouts: number | null;
+      homeRuns: number | null;
+      doubles: number | null;
+      triples: number | null;
+      stolenBases: number | null;
+      totalBases: number | null;
+      hitByPitch: number | null;
+      // Pitching
+      inningsPitched: number | null;        // numeric (4.2 = 4 + 2/3)
+      outsRecorded: number | null;
+      pitcherStrikeouts: number | null;
+      hitsAllowed: number | null;
+      earnedRunsAllowed: number | null;
+      walksAllowed: number | null;
+      homeRunsAllowed: number | null;
+    }> = {};
+
+    const ipStringToOuts = (ip: string | undefined): number | null => {
+      if (ip === undefined || ip === null || ip === '') return null;
+      // MLB API ships "4.2" meaning 4 full innings + 2 outs. Not 4.667.
+      const [whole, frac] = String(ip).split('.');
+      const wholeN = Number(whole);
+      const fracN = Number(frac ?? '0');
+      if (!Number.isFinite(wholeN) || !Number.isFinite(fracN)) return null;
+      return wholeN * 3 + fracN;
+    };
+
+    const boxscore = feed.liveData.boxscore;
+    if (boxscore) {
+      for (const sideKey of ['away', 'home'] as const) {
+        const side = boxscore.teams[sideKey];
+        for (const key of Object.keys(side.players ?? {})) {
+          const p = side.players[key];
+          const id = p.person.id;
+          const b = p.stats?.batting;
+          const pi = p.stats?.pitching;
+          const outs = ipStringToOuts(pi?.inningsPitched) ?? (pi?.outs ?? null);
+          playerStats[id] = {
+            hits:           b?.hits ?? null,
+            atBats:         b?.atBats ?? null,
+            runs:           b?.runs ?? null,
+            rbis:           b?.rbi ?? null,
+            walks:          b?.baseOnBalls ?? null,
+            strikeouts:     b?.strikeOuts ?? null,
+            homeRuns:       b?.homeRuns ?? null,
+            doubles:        b?.doubles ?? null,
+            triples:        b?.triples ?? null,
+            stolenBases:    b?.stolenBases ?? null,
+            totalBases:     b?.totalBases ?? null,
+            hitByPitch:     b?.hitByPitch ?? null,
+            inningsPitched: outs !== null ? Math.round((outs / 3) * 10) / 10 : null,
+            outsRecorded:   outs,
+            pitcherStrikeouts:  pi?.strikeOuts ?? null,
+            hitsAllowed:        pi?.hits ?? null,
+            earnedRunsAllowed:  pi?.earnedRuns ?? null,
+            walksAllowed:       pi?.baseOnBalls ?? null,
+            homeRunsAllowed:    pi?.homeRuns ?? null,
+          };
+        }
+      }
+    }
+
     res.json({
       gamePk,
       state,
@@ -1335,6 +1407,7 @@ mlbRouter.get('/game/:gamePk/live', async (req, res) => {
       },
       currentPlay,
       recentPlays,
+      playerStats,
     });
   } catch (err) {
     console.error('mlb/game/live failed', err);
