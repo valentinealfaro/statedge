@@ -134,4 +134,12 @@ describe('mlbSlateTextParser — unaccentLower (player name folding)', () => {
   test('Hyphenated names preserve hyphens', () => {
     expect(unaccentLower('Hao-Yu Lee')).toBe('hao-yu lee');
   });
+
+  test('Internal double-space collapses to single (matches MLB API quirk)', () => {
+    // MLB Stats API stores some names with double spaces (e.g.
+    // 'Hao-Yu  Lee'). The user's paste has a single space — without
+    // collapsing, the lookup misses.
+    expect(unaccentLower('Hao-Yu  Lee')).toBe('hao-yu lee');
+    expect(unaccentLower('  Aaron   Judge  ')).toBe('aaron judge');
+  });
 });

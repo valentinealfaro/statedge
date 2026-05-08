@@ -19,14 +19,20 @@ import { ensureMlbTables } from '../mlb/db.js';
 import { statMeta, type MlbStatKey } from '../mlb/stats.js';
 import type { RawMlbLine } from './mlbSlatePipeline.js';
 
-// Strip diacritics + lowercase. Mirrors Postgres unaccent() so the JS
-// side of name resolution matches the SQL filter regardless of which
-// form (accented vs ASCII) the DB or the user uses. Without this,
-// "José Ramírez" → 'josé ramírez' on the JS side never equals the
-// SQL's unaccent'd 'jose ramirez', and 40+ Latino-named players fail
-// to resolve on every paste.
+// Strip diacritics + collapse internal whitespace + lowercase. Mirrors
+// the SQL fold so JS-side resolution matches regardless of which form
+// the DB or the user uses. Without this:
+//   - "José Ramírez" never matched the unaccent'd 'jose ramirez' from
+//     SQL — 40+ Latino-named players unresolvable on every paste.
+//   - "Hao-Yu  Lee" (the DB has a double space — MLB API quirk) never
+//     matched the user's single-space version.
 function unaccentLower(s: string): string {
-  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  return s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')   // collapse whitespace (handles MLB API double-space rows)
+    .trim()
+    .toLowerCase();
 }
 
 // Exported solely so tests can pin the unaccent behavior — never call
@@ -156,10 +162,14 @@ async function resolvePlayerIds(
     full_name: string;
     abbreviation: string;
   }>(
+    // SQL side must mirror the JS unaccentLower exactly — strip
+    // diacritics, collapse internal whitespace, lowercase. The
+    // double-space in DB rows like 'Hao-Yu  Lee' (MLB Stats API
+    // quirk) only matches when both sides collapse.
     `SELECT p.id, p.full_name, t.abbreviation
        FROM mlb_players p
        JOIN mlb_teams t ON t.id = p.team_id
-      WHERE unaccent(lower(p.full_name)) = ANY($1::text[])
+      WHERE regexp_replace(unaccent(lower(p.full_name)), '\\s+', ' ', 'g') = ANY($1::text[])
         AND t.abbreviation = ANY($2::text[])`,
     [names, teams],
   );
