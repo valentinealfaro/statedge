@@ -2158,6 +2158,96 @@ export async function getMlbSlatePlayers(): Promise<MlbSlatePlayersResponse> {
   return (await res.json()) as MlbSlatePlayersResponse;
 }
 
+// =============================================================
+// WNBA — Phase 74 foundation. Standings + scoreboard + team list.
+// Compare/slate/calibration land in subsequent phases.
+// =============================================================
+
+export type WnbaTeam = {
+  id: string;
+  abbreviation: string;
+  displayName: string;
+  shortDisplayName: string;
+  color: string;
+  alternateColor: string;
+  logo: string;
+};
+
+export type WnbaTeamsResponse = {
+  teams: WnbaTeam[];
+  disclaimer: string;
+};
+
+export async function getWnbaTeams(): Promise<WnbaTeamsResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/teams`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaTeamsResponse;
+}
+
+export type WnbaStandingRow = {
+  teamId: string;
+  abbreviation: string;
+  displayName: string;
+  logo: string;
+  conference: 'Eastern' | 'Western' | string;
+  wins: number;
+  losses: number;
+  winPct: number;
+  gamesBack: number;
+  pointDiff: number;
+  ppg: number;
+  oppPpg: number;
+  homeRecord: string;
+  awayRecord: string;
+  l10Wins: number;
+  l10Losses: number;
+  streak: string;
+};
+
+export type WnbaStandingsResponse = {
+  eastern: WnbaStandingRow[];
+  western: WnbaStandingRow[];
+  total: number;
+  disclaimer: string;
+};
+
+export async function getWnbaStandings(): Promise<WnbaStandingsResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/standings`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaStandingsResponse;
+}
+
+export type WnbaScoreboardTeam = {
+  id: string;
+  abbreviation: string;
+  displayName: string;
+  logo: string;
+  score: string;
+  homeAway: 'home' | 'away';
+  record?: string;
+  color?: string;
+};
+
+export type WnbaScoreboardGame = {
+  id: string;
+  date: string;
+  status: { state: 'pre' | 'in' | 'post'; name: string; detail: string; completed: boolean };
+  away: WnbaScoreboardTeam;
+  home: WnbaScoreboardTeam;
+};
+
+export type WnbaTodayResponse = {
+  date: string | null;
+  games: WnbaScoreboardGame[];
+  disclaimer: string;
+};
+
+export async function getWnbaToday(): Promise<WnbaTodayResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaTodayResponse;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {

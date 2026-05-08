@@ -1,0 +1,91 @@
+// WNBA routes mounted at /api/wnba. Phase 74 surface area: enough to
+// power the WNBA standings page + nav entry + future scoreboard rail.
+// Compare/slate/calibration land in subsequent phases.
+
+import { Router } from 'express';
+import {
+  fetchWnbaScoreboard,
+  fetchWnbaStandings,
+  fetchWnbaTeams,
+} from '../wnba/espn.js';
+
+export const wnbaRouter: Router = Router();
+
+const WNBA_DISCLAIMER =
+  'StatEdge provides sports analytics, projections, probability ' +
+  'estimates, and historical trend analysis only. StatEdge does not ' +
+  'provide gambling advice, financial advice, or guaranteed outcomes. ' +
+  'Users are responsible for how they interpret and use the information.';
+
+// In-memory caches — ESPN data is cheap to refetch but we coalesce
+// concurrent users. 5min TTL on teams (rarely change), 5min on
+// standings (game-by-game updates), 60s on scoreboard.
+type Cache<T> = { fetchedAt: number; data: T };
+let teamsCache: Cache<unknown> | null = null;
+let standingsCache: Cache<unknown> | null = null;
+const scoreboardCache = new Map<string, Cache<unknown>>();
+const TEAMS_TTL = 5 * 60_000;
+const STANDINGS_TTL = 5 * 60_000;
+const SCOREBOARD_TTL = 60_000;
+
+wnbaRouter.get('/teams', async (_req, res) => {
+  const now = Date.now();
+  if (teamsCache && now - teamsCache.fetchedAt < TEAMS_TTL) {
+    res.json(teamsCache.data);
+    return;
+  }
+  try {
+    const teams = await fetchWnbaTeams();
+    const payload = { teams, disclaimer: WNBA_DISCLAIMER };
+    teamsCache = { fetchedAt: now, data: payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/teams failed', err);
+    res.status(502).json({ error: 'wnba teams fetch failed' });
+  }
+});
+
+wnbaRouter.get('/standings', async (_req, res) => {
+  const now = Date.now();
+  if (standingsCache && now - standingsCache.fetchedAt < STANDINGS_TTL) {
+    res.json(standingsCache.data);
+    return;
+  }
+  try {
+    const teams = await fetchWnbaStandings();
+    const eastern = teams.filter((t) => t.conference === 'Eastern');
+    const western = teams.filter((t) => t.conference === 'Western');
+    const payload = {
+      eastern,
+      western,
+      total: teams.length,
+      disclaimer: WNBA_DISCLAIMER,
+    };
+    standingsCache = { fetchedAt: now, data: payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/standings failed', err);
+    res.status(502).json({ error: 'wnba standings fetch failed' });
+  }
+});
+
+wnbaRouter.get('/today', async (req, res) => {
+  const dateRaw = req.query.date as string | undefined;
+  const date = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : undefined;
+  const cacheKey = date ?? 'today';
+  const now = Date.now();
+  const cached = scoreboardCache.get(cacheKey);
+  if (cached && now - cached.fetchedAt < SCOREBOARD_TTL) {
+    res.json(cached.data);
+    return;
+  }
+  try {
+    const data = await fetchWnbaScoreboard(date);
+    const payload = { ...data, disclaimer: WNBA_DISCLAIMER };
+    scoreboardCache.set(cacheKey, { fetchedAt: now, data: payload });
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/today failed', err);
+    res.status(502).json({ error: 'wnba scoreboard fetch failed' });
+  }
+});

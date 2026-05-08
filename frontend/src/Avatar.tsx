@@ -26,6 +26,17 @@ function mlbTeamLogoUrl(abbr: string): string {
   return `https://a.espncdn.com/i/teamlogos/mlb/500/${abbr.toLowerCase()}.png`;
 }
 
+// WNBA — uses ESPN's headshot CDN, same path pattern as the men's NBA
+// but under /wnba/. Athlete ids come straight from ESPN's WNBA APIs.
+function wnbaPlayerHeadshotUrl(playerId: number | string): string {
+  return `https://a.espncdn.com/i/headshots/wnba/players/full/${playerId}.png`;
+}
+
+// ESPN's WNBA logo CDN. Same convention as NBA/MLB — 3-letter team abbr.
+function wnbaTeamLogoUrl(abbr: string): string {
+  return `https://a.espncdn.com/i/teamlogos/wnba/500/${abbr.toLowerCase()}.png`;
+}
+
 function initials(name: string): string {
   return name
     .split(/\s+/)
@@ -118,6 +129,51 @@ export function MlbTeamLogo({ abbr, name, size = 'md' }: TeamLogoProps) {
     <img
       className={`avatar team ${size}`}
       src={mlbTeamLogoUrl(abbr)}
+      alt={name}
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+}
+
+// ---------- WNBA versions ----------
+//
+// Identical contracts to NBA + MLB so any UI component can render
+// avatars/logos for any sport just by picking the right component.
+
+export function WnbaPlayerAvatar({ playerId, name, size = 'md' }: { playerId: number | string; name: string; size?: 'md' | 'lg' }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !playerId) {
+    return (
+      <div className={`avatar avatar-fallback ${size}`} aria-label={name}>
+        {initials(name)}
+      </div>
+    );
+  }
+  return (
+    <img
+      className={`avatar player ${size}`}
+      src={wnbaPlayerHeadshotUrl(playerId)}
+      alt={name}
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+}
+
+export function WnbaTeamLogo({ abbr, name, size = 'md' }: TeamLogoProps) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className={`avatar avatar-fallback ${size}`} aria-label={name}>
+        {abbr}
+      </div>
+    );
+  }
+  return (
+    <img
+      className={`avatar team ${size}`}
+      src={wnbaTeamLogoUrl(abbr)}
       alt={name}
       onError={() => setFailed(true)}
       loading="lazy"

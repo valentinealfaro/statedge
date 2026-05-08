@@ -15,6 +15,7 @@ import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
+import { WnbaStandings } from './WnbaStandings';
 
 // Routes are sport-grouped per the UX spec: /nba/* and /mlb/*. Old
 // flat routes (/compare, /slate, /standings) redirect to the
@@ -45,6 +46,12 @@ export function App() {
           <Route path="/mlb/standings" element={<MlbStandings />} />
           <Route path="/mlb/player/:playerId" element={<MlbPlayerLog />} />
           <Route path="/mlb/game/:gamePk" element={<MlbGameDetail />} />
+
+          {/* WNBA — Phase 74 foundation. Standings is shipped; the
+              other surfaces (compare/slate/calibration/game) land in
+              subsequent phases. */}
+          <Route path="/wnba/standings" element={<WnbaStandings />} />
+          <Route path="/wnba" element={<Navigate to="/wnba/standings" replace />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}
           <Route path="/game/:gameId" element={<GameDetail />} />

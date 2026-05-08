@@ -20,7 +20,7 @@ import { UserMenu } from './UserMenu';
 // All three land in the nav as soon as they're real pages, not
 // placeholder links.
 
-type SportKey = 'nba' | 'mlb';
+type SportKey = 'nba' | 'mlb' | 'wnba';
 
 // Resolve which sport the user is currently viewing from the URL.
 // Falls back to 'nba' as the default when the user is on a route
@@ -28,6 +28,7 @@ type SportKey = 'nba' | 'mlb';
 function resolveSport(pathname: string): SportKey | null {
   if (pathname.startsWith('/nba')) return 'nba';
   if (pathname.startsWith('/mlb')) return 'mlb';
+  if (pathname.startsWith('/wnba')) return 'wnba';
   return null;
 }
 
@@ -49,16 +50,26 @@ const MLB_SUBNAV: SubnavItem[] = [
   { label: 'Calibration', path: '/mlb/calibration' },
 ];
 
+// WNBA subnav grows as Phase 74-78 ship each surface. Only the items
+// that ACTUALLY exist appear here per the mission's "no fake
+// completeness" rule. Compare / Slate / Calibration land in their
+// own phases.
+const WNBA_SUBNAV: SubnavItem[] = [
+  { label: 'Standings', path: '/wnba/standings' },
+];
+
 // Toggle the sport prefix in the current URL. /nba/slate ↔ /mlb/slate
 // swaps the prefix while preserving the rest of the path. Lands on
 // the sport's "compare" page when the current page doesn't have a
 // counterpart in the other sport (e.g. /mlb/calibration → /nba/compare
 // because NBA calibration lives inside /nba/slate as a tab).
 function switchSportPath(currentPath: string, target: SportKey): string {
-  const tail = currentPath.replace(/^\/(nba|mlb)\//, '');
-  const targetSubnav = target === 'nba' ? NBA_SUBNAV : MLB_SUBNAV;
+  const tail = currentPath.replace(/^\/(nba|mlb|wnba)\//, '');
+  const targetSubnav = target === 'nba' ? NBA_SUBNAV : target === 'mlb' ? MLB_SUBNAV : WNBA_SUBNAV;
   const matched = targetSubnav.find((it) => it.path.endsWith(`/${tail}`));
-  return matched?.path ?? `/${target}/compare`;
+  // Sport-specific landing fallback when the current page has no
+  // counterpart (e.g. /mlb/calibration doesn't exist for WNBA yet).
+  return matched?.path ?? `/${target}/standings`;
 }
 
 export function NavBar() {
@@ -67,7 +78,11 @@ export function NavBar() {
   const isPro = plan === 'pro' || isAdmin;
   const sport = resolveSport(pathname);
 
-  const subnav = sport === 'nba' ? NBA_SUBNAV : sport === 'mlb' ? MLB_SUBNAV : [];
+  const subnav =
+    sport === 'nba'  ? NBA_SUBNAV
+    : sport === 'mlb' ? MLB_SUBNAV
+    : sport === 'wnba' ? WNBA_SUBNAV
+    : [];
 
   return (
     <>
@@ -91,6 +106,12 @@ export function NavBar() {
               className={sport === 'mlb' ? 'navlink active sport-mlb' : 'navlink'}
             >
               MLB
+            </Link>
+            <Link
+              to="/wnba/standings"
+              className={sport === 'wnba' ? 'navlink active sport-wnba' : 'navlink'}
+            >
+              WNBA
             </Link>
           </div>
         ) : (
@@ -127,6 +148,13 @@ export function NavBar() {
               aria-selected={sport === 'mlb'}
             >
               MLB
+            </Link>
+            <Link
+              to={switchSportPath(pathname, 'wnba')}
+              className={`sport-pill ${sport === 'wnba' ? 'active sport-wnba' : ''}`}
+              aria-selected={sport === 'wnba'}
+            >
+              WNBA
             </Link>
           </div>
         )}
