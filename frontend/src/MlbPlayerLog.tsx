@@ -28,6 +28,7 @@ import {
 } from './api';
 import { NavBar } from './NavBar';
 import { PlayerNewsSection } from './PlayerNewsSection';
+import { PlayerStatCalibration } from './PlayerStatCalibration';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
@@ -152,6 +153,16 @@ export function MlbPlayerLog() {
               value={lineInput}
               onChange={(e) => setLineInput(e.target.value)}
             />
+
+            {/* Player-scoped truth metric: how has StatEdge done on
+                THIS player's THIS stat? Self-hides if no graded sample. */}
+            {selectedStat && (
+              <PlayerStatCalibration
+                sport="mlb"
+                playerId={playerId}
+                statKey={selectedStat}
+              />
+            )}
           </section>
         )}
 

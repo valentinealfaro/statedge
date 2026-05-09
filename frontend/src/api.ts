@@ -3188,6 +3188,7 @@ export type ClvByStatType = {
 export type ClvRow = {
   projectionId: number;
   gameDate: string;
+  playerId: number | string | null;
   rawPlayerName: string | null;
   team: string | null;
   statKey: string;
