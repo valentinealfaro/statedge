@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { MobileBottomNav } from './MobileBottomNav';
 import { NavSearch } from './NavSearch';
 import { usePlan } from './plan';
 import { UserMenu } from './UserMenu';
@@ -192,6 +193,8 @@ export function NavBar() {
           ))}
         </nav>
       )}
+
+      <MobileBottomNav />
     </>
   );
 }
