@@ -25,6 +25,7 @@ import {
   valueFromHittingRow,
   valueFromPitchingRow,
 } from '../mlb/stats.js';
+import { classifyFailure } from './failureArchetype.js';
 import {
   listMlbProjections,
   setMlbProjectionResult,
@@ -123,10 +124,29 @@ async function gradeOne(row: StoredProjection): Promise<GradeOutcome> {
       [actual, row.id],
     );
   } else {
+    // Phase 102 Loss Forensics — only on misses. Hits get null
+    // failure_archetype so the calibration aggregator can filter
+    // cleanly with `WHERE failure_archetype IS NOT NULL`.
+    const failureArchetype = outcome === 'miss'
+      ? classifyFailure({
+          probability: row.probability,
+          edgePercent: row.edgePercent ?? 0,
+          projection: row.projectionValue,
+          line: row.lineValue,
+          direction: row.direction,
+          trapScore: row.trapScore ?? 0,
+          fragilityScore: row.fragilityScore ?? 50,
+          momentumScore: row.momentumScore,
+          lineInflationScore: row.lineInflationScore ?? 0,
+          publicBiasTags: row.publicBiasTags ?? [],
+          resultValue: actual,
+        })
+      : null;
     await setMlbProjectionResult({
       id: row.id,
       resultValue: actual,
       hitOrMiss: outcome === 'hit',
+      failureArchetype,
     });
   }
   return outcome;

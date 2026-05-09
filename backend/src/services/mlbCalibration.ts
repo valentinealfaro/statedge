@@ -17,6 +17,11 @@
 //   - Predicted - observed delta surfaced so users see WHERE the
 //     model is overconfident or underconfident.
 
+import {
+  summarizeArchetypes,
+  type FailureArchetype,
+  type FailureArchetypeBucket,
+} from './failureArchetype.js';
 import { listMlbProjections, type StoredProjection } from './mlbProjectionHistory.js';
 
 // Bayesian prior — the pseudo-count we assume before any data, modeling
@@ -59,6 +64,10 @@ export type MlbCalibrationReport = {
   byStatType: MlbCalibrationBucket[];
   byRiskTier: MlbCalibrationBucket[];
   byCardType: MlbCalibrationBucket[];
+  // Phase 102 — Loss Forensics. Distribution of failure archetypes
+  // across all misses in the window. Tells the user WHERE misses are
+  // concentrating, not just how many there were.
+  failureArchetypes: FailureArchetypeBucket[];
 };
 
 // Probability ranges. Boundaries chosen to align with how PrizePicks
@@ -160,6 +169,13 @@ export async function computeMlbCalibration(opts?: {
     .map((c) => bucketize(graded.filter((r) => (r.cardType ?? 'Unknown') === c), c))
     .sort((a, b) => b.graded - a.graded);
 
+  // Phase 102 — Loss Forensics. Pull failure archetypes from miss
+  // rows (rows where hit_or_miss === false). Hits + pushes excluded.
+  const missArchetypes = graded
+    .filter((r) => r.hitOrMiss === false && r.failureArchetype)
+    .map((r) => r.failureArchetype as FailureArchetype);
+  const failureArchetypes = summarizeArchetypes(missArchetypes);
+
   return {
     windowDays,
     totalGraded: graded.length,
@@ -173,6 +189,7 @@ export async function computeMlbCalibration(opts?: {
     byStatType,
     byRiskTier,
     byCardType,
+    failureArchetypes,
   };
 }
 

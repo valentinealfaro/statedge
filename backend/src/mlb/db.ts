@@ -160,6 +160,25 @@ export async function ensureMlbTables(): Promise<void> {
       CHECK (bats IS NULL OR bats IN ('L', 'R', 'S'));
   `);
 
+  // ---- Phase 102 — Market Memory schema additions ----
+  // Snapshot the full Phase 101 market intelligence at write time so
+  // historical archetype detection has the data to train on. Plus
+  // failure_archetype populated at grading time by classifyFailure().
+  // ADD COLUMN IF NOT EXISTS is idempotent — safe to re-run on any deploy.
+  await pool.query(`
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS market_implied_prob   NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS edge_percent          NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS line_inflation_score  NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS public_bias_tags      TEXT[];
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS sharpness_score       NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS edge_durability       TEXT;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS fragility_score       NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS momentum_score        NUMERIC;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS reason_codes          TEXT[];
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS why_market_wrong      TEXT;
+    ALTER TABLE mlb_projection_history ADD COLUMN IF NOT EXISTS failure_archetype     TEXT;
+  `);
+
   mlbTablesEnsured = true;
 }
 

@@ -36,6 +36,7 @@ function report(over: Partial<MlbCalibrationReport> = {}): MlbCalibrationReport 
     byStatType: [],
     byRiskTier: [],
     byCardType: [],
+    failureArchetypes: [],
     ...over,
   };
 }

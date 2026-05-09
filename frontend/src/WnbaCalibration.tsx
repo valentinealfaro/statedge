@@ -10,6 +10,7 @@ import {
   type WnbaCalibrationBucket,
   type WnbaCalibrationReport,
 } from './api';
+import { LossForensics } from './LossForensics';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -108,6 +109,11 @@ function CalibrationView({ report }: { report: WnbaCalibrationReport }) {
       <BucketTable title="By predicted probability" buckets={report.byProbability} />
       <BucketTable title="By stat type"             buckets={report.byStatType} />
       <BucketTable title="By card type"             buckets={report.byCardType} />
+
+      <LossForensics
+        archetypes={report.failureArchetypes}
+        totalMisses={report.totalMisses}
+      />
 
       <p className="mlb-disclaimer">{report.disclaimer}</p>
     </div>

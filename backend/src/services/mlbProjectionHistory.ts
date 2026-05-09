@@ -70,13 +70,21 @@ export async function recordMlbSlateProjections(opts: {
            selected_stat, line_value, direction,
            projection_value, probability, confidence_score,
            risk_score, trap_score, edge_score, ev_score,
-           card_type, model_version, inputs_json
+           card_type, model_version, inputs_json,
+           market_implied_prob, edge_percent, line_inflation_score,
+           public_bias_tags, sharpness_score, edge_durability,
+           fragility_score, momentum_score, reason_codes,
+           why_market_wrong
          ) VALUES (
            $1, $2, NULL, NULL,
            $3, $4, $5,
            $6, $7, $8,
            $9, $10, $11, $12,
-           $13, $14, $15
+           $13, $14, $15,
+           $16, $17, $18,
+           $19, $20, $21,
+           $22, $23, $24,
+           $25
          )`,
         [
           opts.gameDate,
@@ -94,6 +102,17 @@ export async function recordMlbSlateProjections(opts: {
           cardType,
           MLB_MODEL_VERSION,
           JSON.stringify(inputsJson),
+          // Phase 102 — Market Memory snapshot.
+          leg.marketImpliedProb ?? null,
+          leg.edgePercent ?? null,
+          leg.lineInflationScore ?? null,
+          leg.publicBiasTags ?? [],
+          leg.sharpnessScore ?? null,
+          leg.edgeDurability ?? null,
+          leg.fragilityScore ?? null,
+          leg.momentumExpansionScore ?? null,
+          leg.reasonCodes ?? [],
+          leg.whyMarketWrong ?? null,
         ],
       );
       inserted += 1;
@@ -141,13 +160,21 @@ export async function recordMlbSgpLegs(opts: {
          selected_stat, line_value, direction,
          projection_value, probability, confidence_score,
          risk_score, trap_score, edge_score, ev_score,
-         card_type, model_version, inputs_json
+         card_type, model_version, inputs_json,
+         market_implied_prob, edge_percent, line_inflation_score,
+         public_bias_tags, sharpness_score, edge_durability,
+         fragility_score, momentum_score, reason_codes,
+         why_market_wrong
        ) VALUES (
          $1, $2, NULL, NULL,
          $3, $4, $5,
          $6, $7, $8,
          $9, $10, $11, $12,
-         $13, $14, $15
+         $13, $14, $15,
+         $16, $17, $18,
+         $19, $20, $21,
+         $22, $23, $24,
+         $25
        )`,
       [
         opts.gameDate,
@@ -165,6 +192,17 @@ export async function recordMlbSgpLegs(opts: {
         'SGP',
         MLB_MODEL_VERSION,
         JSON.stringify(inputsJson),
+        // Phase 102 — Market Memory snapshot for SGP legs too.
+        leg.projection.marketImpliedProb,
+        leg.projection.edgePercent,
+        leg.projection.lineInflationScore,
+        leg.projection.publicBiasTags,
+        leg.projection.sharpnessScore,
+        leg.projection.edgeDurability,
+        leg.projection.fragilityScore,
+        leg.projection.momentumExpansionScore,
+        leg.projection.reasonCodes,
+        leg.projection.whyMarketWrong,
       ],
     );
     inserted += 1;
@@ -190,6 +228,19 @@ export type StoredProjection = {
   resultValue: number | null;
   hitOrMiss: boolean | null;
   gradedAt: string | null;
+  // Phase 102 — Market Memory fields snapshotted at projection time.
+  // Nullable because legacy rows pre-Phase-102 don't have them.
+  marketImpliedProb: number | null;
+  edgePercent: number | null;
+  lineInflationScore: number | null;
+  publicBiasTags: string[] | null;
+  sharpnessScore: number | null;
+  edgeDurability: string | null;
+  fragilityScore: number | null;
+  momentumScore: number | null;
+  reasonCodes: string[] | null;
+  whyMarketWrong: string | null;
+  failureArchetype: string | null;
 };
 
 export async function listMlbProjections(opts: {
@@ -219,10 +270,25 @@ export async function listMlbProjections(opts: {
     result_value: string | null;
     hit_or_miss: boolean | null;
     graded_at: Date | null;
+    market_implied_prob: string | null;
+    edge_percent: string | null;
+    line_inflation_score: string | null;
+    public_bias_tags: string[] | null;
+    sharpness_score: string | null;
+    edge_durability: string | null;
+    fragility_score: string | null;
+    momentum_score: string | null;
+    reason_codes: string[] | null;
+    why_market_wrong: string | null;
+    failure_archetype: string | null;
   }>(
     `SELECT id, game_date, player_id, selected_stat, line_value, direction,
             projection_value, probability, risk_score, trap_score, card_type,
-            result_value, hit_or_miss, graded_at
+            result_value, hit_or_miss, graded_at,
+            market_implied_prob, edge_percent, line_inflation_score,
+            public_bias_tags, sharpness_score, edge_durability,
+            fragility_score, momentum_score, reason_codes,
+            why_market_wrong, failure_archetype
        FROM mlb_projection_history
       WHERE game_date >= (CURRENT_DATE - $1::int)
             ${gradedClause}
@@ -244,22 +310,37 @@ export async function listMlbProjections(opts: {
     resultValue: r.result_value === null ? null : Number(r.result_value),
     hitOrMiss: r.hit_or_miss,
     gradedAt: r.graded_at ? r.graded_at.toISOString() : null,
+    marketImpliedProb: r.market_implied_prob === null ? null : Number(r.market_implied_prob),
+    edgePercent: r.edge_percent === null ? null : Number(r.edge_percent),
+    lineInflationScore: r.line_inflation_score === null ? null : Number(r.line_inflation_score),
+    publicBiasTags: r.public_bias_tags,
+    sharpnessScore: r.sharpness_score === null ? null : Number(r.sharpness_score),
+    edgeDurability: r.edge_durability,
+    fragilityScore: r.fragility_score === null ? null : Number(r.fragility_score),
+    momentumScore: r.momentum_score === null ? null : Number(r.momentum_score),
+    reasonCodes: r.reason_codes,
+    whyMarketWrong: r.why_market_wrong,
+    failureArchetype: r.failure_archetype,
   }));
 }
 
 // Update a single graded row. Used by the grader to fill in results.
+// Phase 102 — also persists failure_archetype on misses so the
+// calibration page can show "where are misses concentrating?"
 export async function setMlbProjectionResult(opts: {
   id: number;
   resultValue: number;
   hitOrMiss: boolean;
+  failureArchetype?: string | null;
 }): Promise<void> {
   await getPool().query(
     `UPDATE mlb_projection_history
-        SET result_value = $1,
-            hit_or_miss  = $2,
-            graded_at    = NOW()
-      WHERE id = $3`,
-    [opts.resultValue, opts.hitOrMiss, opts.id],
+        SET result_value      = $1,
+            hit_or_miss       = $2,
+            graded_at         = NOW(),
+            failure_archetype = $3
+      WHERE id = $4`,
+    [opts.resultValue, opts.hitOrMiss, opts.failureArchetype ?? null, opts.id],
   );
 }
 

@@ -1783,6 +1783,14 @@ export type MlbCalibrationBucket = {
   sampleTier: 'thin' | 'small' | 'medium' | 'strong';
 };
 
+// Phase 102 — Loss Forensics archetype distribution. One row per
+// archetype, sorted by count desc.
+export type FailureArchetypeBucket = {
+  archetype: string;
+  count: number;
+  pct: number;
+};
+
 export type MlbCalibrationReport = {
   windowDays: number;
   totalGraded: number;
@@ -1796,6 +1804,8 @@ export type MlbCalibrationReport = {
   byStatType: MlbCalibrationBucket[];
   byRiskTier: MlbCalibrationBucket[];
   byCardType: MlbCalibrationBucket[];
+  // Phase 102 — Loss Forensics. Optional for legacy snapshots.
+  failureArchetypes?: FailureArchetypeBucket[];
   gradedThisRequest: {
     scanned: number;
     graded: number;
@@ -2487,6 +2497,8 @@ export type WnbaCalibrationReport = {
   byProbability: WnbaCalibrationBucket[];
   byStatType: WnbaCalibrationBucket[];
   byCardType: WnbaCalibrationBucket[];
+  // Phase 102 — Loss Forensics. Optional for legacy snapshots.
+  failureArchetypes?: FailureArchetypeBucket[];
   modelVersion: string;
   gradedThisRequest: { scanned: number; graded: number; unmatched: number } | null;
   disclaimer: string;

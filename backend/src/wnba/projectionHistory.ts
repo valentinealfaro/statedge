@@ -12,6 +12,12 @@
 // when the model is wrong. Long-term EV over short-term excitement.
 
 import { getPool } from '../db.js';
+import {
+  classifyFailure,
+  summarizeArchetypes,
+  type FailureArchetype,
+  type FailureArchetypeBucket,
+} from '../services/failureArchetype.js';
 import { fetchWnbaPlayerGameLog, type WnbaGameLogEntry } from './espn.js';
 import type { ProjectedWnbaLine } from './projection.js';
 
@@ -46,6 +52,17 @@ async function ensureWnbaProjectionHistoryTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS wnba_proj_history_date_idx ON wnba_projection_history (game_date DESC);
     CREATE INDEX IF NOT EXISTS wnba_proj_history_athlete_idx ON wnba_projection_history (athlete_id);
   `);
+  // Phase 102 — Market Memory schema additions. Idempotent.
+  await getPool().query(`
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS market_implied_prob   NUMERIC;
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS line_inflation_score  NUMERIC;
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS public_bias_tags      TEXT[];
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS sharpness_score       NUMERIC;
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS edge_durability       TEXT;
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS reason_codes          TEXT[];
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS why_market_wrong      TEXT;
+    ALTER TABLE wnba_projection_history ADD COLUMN IF NOT EXISTS failure_archetype     TEXT;
+  `);
   tablesEnsured = true;
 }
 
@@ -72,13 +89,19 @@ export async function recordWnbaProjections(opts: {
          stat_key, line_value, direction,
          projection_value, probability, edge_percent,
          trap_score, fragility_score, momentum_score,
-         card_type, model_version
+         card_type, model_version,
+         market_implied_prob, line_inflation_score,
+         public_bias_tags, sharpness_score, edge_durability,
+         reason_codes, why_market_wrong
        ) VALUES (
          $1, $2, $3, $4,
          $5, $6, $7,
          $8, $9, $10,
          $11, $12, $13,
-         $14, $15
+         $14, $15,
+         $16, $17,
+         $18, $19, $20,
+         $21, $22
        )`,
       [
         opts.gameDate,
@@ -96,6 +119,14 @@ export async function recordWnbaProjections(opts: {
         line.momentumScore,
         cardType,
         WNBA_MODEL_VERSION,
+        // Phase 102 — Market Memory snapshot.
+        line.marketImpliedProb ?? null,
+        line.lineInflationScore ?? null,
+        line.publicBiasTags ?? [],
+        line.sharpnessScore ?? null,
+        line.edgeDurability ?? null,
+        line.reasonCodes ?? [],
+        line.whyMarketWrong ?? null,
       ],
     );
     inserted += 1;
@@ -139,7 +170,9 @@ export async function gradeWnbaProjections(opts: { windowDays?: number } = {}): 
   const windowDays = opts.windowDays ?? 30;
   const pool = getPool();
   // Pull every ungraded row whose game_date is at least 1 day in the
-  // past (give ESPN time to populate gamelogs).
+  // past (give ESPN time to populate gamelogs). Phase 102: also pull
+  // the projection-time signals so the failure-archetype classifier
+  // can run on misses.
   const { rows } = await pool.query<{
     id: number;
     game_date: Date;
@@ -147,8 +180,19 @@ export async function gradeWnbaProjections(opts: { windowDays?: number } = {}): 
     stat_key: string;
     line_value: string;
     direction: string;
+    probability: string | null;
+    edge_percent: string | null;
+    projection_value: string | null;
+    trap_score: string | null;
+    fragility_score: string | null;
+    momentum_score: string | null;
+    line_inflation_score: string | null;
+    public_bias_tags: string[] | null;
   }>(
-    `SELECT id, game_date, athlete_id, stat_key, line_value, direction
+    `SELECT id, game_date, athlete_id, stat_key, line_value, direction,
+            probability, edge_percent, projection_value, trap_score,
+            fragility_score, momentum_score, line_inflation_score,
+            public_bias_tags
        FROM wnba_projection_history
       WHERE hit_or_miss IS NULL
         AND game_date >= (CURRENT_DATE - $1::int)
@@ -183,11 +227,33 @@ export async function gradeWnbaProjections(opts: { windowDays?: number } = {}): 
     if (r.direction === 'OVER')      hit = actual > line;
     else if (r.direction === 'UNDER') hit = actual < line;
     else continue;     // 'both' isn't a graded direction
+
+    // Phase 102 — failure archetype classification on misses only.
+    let failureArchetype: string | null = null;
+    if (!hit) {
+      failureArchetype = classifyFailure({
+        probability: r.probability === null ? 50 : Number(r.probability),
+        edgePercent: r.edge_percent === null ? 0 : Number(r.edge_percent),
+        projection: r.projection_value === null ? 0 : Number(r.projection_value),
+        line,
+        direction: r.direction === 'OVER' ? 'OVER' : 'UNDER',
+        trapScore: r.trap_score === null ? 0 : Number(r.trap_score),
+        fragilityScore: r.fragility_score === null ? 50 : Number(r.fragility_score),
+        momentumScore: r.momentum_score === null ? null : Number(r.momentum_score),
+        lineInflationScore: r.line_inflation_score === null ? 0 : Number(r.line_inflation_score),
+        publicBiasTags: r.public_bias_tags ?? [],
+        resultValue: actual,
+      });
+    }
+
     await pool.query(
       `UPDATE wnba_projection_history
-          SET result_value = $1, hit_or_miss = $2, graded_at = NOW()
-        WHERE id = $3`,
-      [actual, hit, r.id],
+          SET result_value      = $1,
+              hit_or_miss       = $2,
+              graded_at         = NOW(),
+              failure_archetype = $3
+        WHERE id = $4`,
+      [actual, hit, failureArchetype, r.id],
     );
     graded += 1;
   }
@@ -219,6 +285,9 @@ export type WnbaCalibrationReport = {
   byProbability: CalibrationBucket[];
   byStatType: CalibrationBucket[];
   byCardType: CalibrationBucket[];
+  // Phase 102 — Loss Forensics. Distribution of failure archetypes
+  // across all misses in the window.
+  failureArchetypes: FailureArchetypeBucket[];
   modelVersion: string;
 };
 
@@ -297,8 +366,10 @@ export async function computeWnbaCalibration(opts: { windowDays?: number } = {})
     stat_key: string;
     card_type: string | null;
     hit_or_miss: boolean;
+    failure_archetype: string | null;
   }>(
-    `SELECT probability, edge_percent, stat_key, card_type, hit_or_miss
+    `SELECT probability, edge_percent, stat_key, card_type, hit_or_miss,
+            failure_archetype
        FROM wnba_projection_history
       WHERE hit_or_miss IS NOT NULL
         AND game_date >= (CURRENT_DATE - $1::int)`,
@@ -378,6 +449,15 @@ export async function computeWnbaCalibration(opts: { windowDays?: number } = {})
     };
   });
 
+  // Phase 102 — Loss Forensics. Distribution of failure archetypes
+  // across rows where hit_or_miss === false AND failure_archetype is
+  // populated. Older rows pre-Phase-102 will have null archetypes
+  // and are excluded from the distribution.
+  const missArchetypes = rows
+    .filter((r) => r.hit_or_miss === false && r.failure_archetype)
+    .map((r) => r.failure_archetype as FailureArchetype);
+  const failureArchetypes = summarizeArchetypes(missArchetypes);
+
   return {
     windowDays,
     totalGraded,
@@ -390,6 +470,7 @@ export async function computeWnbaCalibration(opts: { windowDays?: number } = {})
     byProbability,
     byStatType,
     byCardType,
+    failureArchetypes,
     modelVersion: WNBA_MODEL_VERSION,
   };
 }
