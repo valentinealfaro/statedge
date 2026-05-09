@@ -56,6 +56,8 @@ import {
   type MlbPlayerType,
   type MlbStatKey,
 } from '../mlb/stats.js';
+import { prizepicksProvider } from '../market/providers/prizepicks.js';
+import { writeMarketSnapshots } from '../market/snapshots.js';
 
 export const mlbRouter: Router = Router();
 
@@ -617,6 +619,25 @@ mlbRouter.post('/slate/today', async (req, res) => {
     });
     // Wipe the cache so the newly-published slate resolves fresh.
     await purgeMlbSlateCache();
+
+    // Phase 103a — Market Brain snapshot. Treat the admin paste as
+    // our first-party PrizePicks feed and persist every line to
+    // market_snapshots. Within weeks of usage, this builds proprietary
+    // line-history that no paid feed can sell us. Best-effort —
+    // snapshot failure shouldn't fail the publish.
+    if (body.text) {
+      try {
+        const props = prizepicksProvider.parse({
+          text: body.text,
+          sport: 'mlb',
+          league: 'MLB',
+          gameDate: out.date,
+        });
+        await writeMarketSnapshots(props);
+      } catch (err) {
+        console.warn('mlb/slate market snapshot failed:', (err as Error).message);
+      }
+    }
 
     // Pre-warm: synchronously resolve the slate + write the cache + record
     // history. Admin's POST takes ~30-45s for a 3000-leg slate, but every

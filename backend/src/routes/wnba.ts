@@ -32,6 +32,8 @@ import {
   recordWnbaProjections,
   type RecordableWnbaLeg,
 } from '../wnba/projectionHistory.js';
+import { prizepicksProvider } from '../market/providers/prizepicks.js';
+import { writeMarketSnapshots } from '../market/snapshots.js';
 
 export const wnbaRouter: Router = Router();
 
@@ -437,6 +439,21 @@ wnbaRouter.post('/slate/today', async (req, res) => {
     // re-projects AND the new slate creates fresh history rows.
     wnbaSlateProjectionCache = null;
     wnbaSlateSnapshotted.clear();
+
+    // Phase 103a — Market Brain snapshot. Same pattern as MLB: treat
+    // the admin paste as our first-party PrizePicks feed. Best-effort
+    // — failure shouldn't fail the publish.
+    try {
+      const props = prizepicksProvider.parse({
+        text: rawText,
+        sport: 'wnba',
+        league: 'WNBA',
+        gameDate: result.date,
+      });
+      await writeMarketSnapshots(props);
+    } catch (err) {
+      console.warn('wnba/slate market snapshot failed:', (err as Error).message);
+    }
 
     res.json({
       ok: true,
