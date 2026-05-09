@@ -15,6 +15,7 @@ import {
   type UfcMoneylineEvent,
   type UfcScoreboardResponse,
 } from './api';
+import { UfcFighterAvatar } from './Avatar';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
@@ -240,14 +241,9 @@ function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: s
       flexDirection: alignRight ? 'row-reverse' : 'row',
       textAlign: alignRight ? 'right' : 'left',
     }}>
-      {primary && f.headshot && (
+      {primary && (
         <Link to={`/mma/fighter/${f.id}`} style={{ flexShrink: 0 }}>
-          <img
-            src={f.headshot}
-            alt=""
-            loading="lazy"
-            style={{ width: 32, height: 32, borderRadius: 16, objectFit: 'cover', background: 'rgba(255,255,255,0.05)', display: 'block' }}
-          />
+          <UfcFighterAvatar athleteId={f.id} name={f.displayName} size="sm" />
         </Link>
       )}
       <div style={{ minWidth: 0, overflow: 'hidden' }}>

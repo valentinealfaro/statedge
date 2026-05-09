@@ -37,6 +37,21 @@ function wnbaTeamLogoUrl(abbr: string): string {
   return `https://a.espncdn.com/i/teamlogos/wnba/500/${abbr.toLowerCase()}.png`;
 }
 
+// MMA / UFC — ESPN's MMA athlete headshots are served at the same CDN
+// pattern as basketball/baseball but under /mma/players/. Athlete ids
+// come from ESPN's UFC scoreboard / event-summary APIs and are the same
+// ids we already store on UfcFighter.id.
+export function ufcFighterHeadshotUrl(athleteId: string | number): string {
+  return `https://a.espncdn.com/i/headshots/mma/players/full/${athleteId}.png`;
+}
+
+// UFC org logo. Use a single canonical mark for the league since UFC
+// is the only league we currently cover — more complex weight-class
+// or org branding (Bellator, PFL, ONE) lands when we add those leagues.
+export function ufcOrgLogoUrl(): string {
+  return 'https://a.espncdn.com/i/teamlogos/leagues/500/ufc.png';
+}
+
 function initials(name: string): string {
   return name
     .split(/\s+/)
@@ -175,6 +190,67 @@ export function WnbaTeamLogo({ abbr, name, size = 'md' }: TeamLogoProps) {
       className={`avatar team ${size}`}
       src={wnbaTeamLogoUrl(abbr)}
       alt={name}
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+}
+
+// ---------- MMA / UFC versions ----------
+//
+// UFC fighters don't belong to a team in the conventional sense, so
+// there's no per-team logo — we use the UFC org mark instead. The
+// fighter avatar is identical in shape to the other sports' player
+// avatars: ESPN headshot URL with onError fallback to initials.
+//
+// `athleteId` is the ESPN UFC athlete id (the same id we store on
+// UfcFighter.id from the scoreboard payload). Pass empty string to
+// skip the network fetch and go straight to initials — useful for
+// "TBD" matchups where the fighter slot isn't filled yet.
+
+type UfcFighterAvatarProps = {
+  athleteId: string | number;
+  name: string;
+  size?: 'sm' | 'md' | 'lg';
+};
+
+export function UfcFighterAvatar({ athleteId, name, size = 'md' }: UfcFighterAvatarProps) {
+  const [failed, setFailed] = useState(false);
+  if (!athleteId || failed) {
+    return (
+      <div className={`avatar avatar-fallback ${size}`} aria-label={name}>
+        {initials(name)}
+      </div>
+    );
+  }
+  return (
+    <img
+      className={`avatar player ${size}`}
+      src={ufcFighterHeadshotUrl(athleteId)}
+      alt={name}
+      onError={() => setFailed(true)}
+      loading="lazy"
+    />
+  );
+}
+
+// UFC organization logo — used in place of a team logo for UFC
+// surfaces (event headers, fight cards, etc.). Same prop shape as
+// the other TeamLogo components for drop-in consistency.
+export function UfcOrgLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className={`avatar avatar-fallback ${size}`} aria-label="UFC">
+        UFC
+      </div>
+    );
+  }
+  return (
+    <img
+      className={`avatar team ${size}`}
+      src={ufcOrgLogoUrl()}
+      alt="UFC"
       onError={() => setFailed(true)}
       loading="lazy"
     />

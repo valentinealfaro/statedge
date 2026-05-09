@@ -182,9 +182,9 @@ function passesDiversification(a: ResolvedMlbLine, b: ResolvedMlbLine, c: Resolv
 
   // Reuse the existing correlation risk function — if it returns
   // 'High' or 'Very High', the ticket is too correlated for Elite.
-  const corr = computeCorrelationRisk([
-    legAdapter(a), legAdapter(b), legAdapter(c),
-  ] as Parameters<typeof computeCorrelationRisk>[0]);
+  // Note: computeCorrelationRisk reads team.id off each leg, so pass
+  // the full ResolvedMlbLine objects rather than a thinner adapter.
+  const corr = computeCorrelationRisk([a, b, c]);
   if (corr.tier === 'High' || corr.tier === 'Very High') return false;
 
   return true;
@@ -197,12 +197,6 @@ function statFamily(key: string): string {
   if (['ks', 'pitcher_outs', 'innings_pitched'].includes(key)) return 'pitcher_volume';
   if (['earned_runs_allowed', 'hits_allowed', 'walks_allowed', 'home_runs_allowed'].includes(key)) return 'pitcher_results';
   return 'other';
-}
-
-// computeCorrelationRisk expects MlbComboLeg shape. Build a thin
-// adapter so we don't duplicate that type definition here.
-function legAdapter(l: ResolvedMlbLine): { playerId: number; statKey: string; gameKey: string | null } {
-  return { playerId: l.playerId, statKey: l.statKey, gameKey: l.gameKey };
 }
 
 // ---------- Ticket scoring ----------

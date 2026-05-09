@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getUfcMoneylines,
+  getUfcScoreboard,
   getUfcSlateToday,
   parseUfcSlateText,
   publishUfcSlate,
@@ -23,6 +24,7 @@ import {
   type UfcSlateParseResult,
   type UfcStoredLine,
 } from './api';
+import { UfcFighterAvatar } from './Avatar';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
@@ -40,6 +42,10 @@ export function MmaSlate() {
   const [todayError, setTodayError] = useState<string | null>(null);
   const [adminMode, setAdminMode] = useState(false);
   const [moneylines, setMoneylines] = useState<UfcMoneylineEvent[]>([]);
+  // Fighter-name → ESPN athlete id, sourced from the scoreboard so we
+  // can render UFC headshots on the slate where lines store names but
+  // not ids. Misses fall through to initials via the avatar's onError.
+  const [fighterIdByName, setFighterIdByName] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     setTodayError(null);
@@ -52,6 +58,24 @@ export function MmaSlate() {
     getUfcMoneylines()
       .then((r) => setMoneylines(r.events))
       .catch(() => setMoneylines([]));
+    // Pull the scoreboard so we can resolve slate fighter names to
+    // ESPN athlete ids for avatar rendering. Best-effort: if it fails,
+    // FighterCard falls through to the initials avatar.
+    getUfcScoreboard()
+      .then((r) => {
+        const map = new Map<string, string>();
+        for (const ev of r.events) {
+          for (const f of ev.fights) {
+            for (const corner of [f.fighters.red, f.fighters.blue]) {
+              if (corner?.id && corner?.displayName) {
+                map.set(normalizeName(corner.displayName), corner.id);
+              }
+            }
+          }
+        }
+        setFighterIdByName(map);
+      })
+      .catch(() => setFighterIdByName(new Map()));
   }, []);
 
   // Map fighter name (lowercased + dot-stripped) → moneyline so we
@@ -101,6 +125,7 @@ export function MmaSlate() {
             todayDate={todayDate}
             error={todayError}
             moneylineByFighter={moneylineByFighter}
+            fighterIdByName={fighterIdByName}
             loading={today === undefined}
           />
         )}
@@ -122,12 +147,14 @@ function PublicTodaySlate({
   todayDate,
   error,
   moneylineByFighter,
+  fighterIdByName,
   loading,
 }: {
   slate: UfcDailySlate | null;
   todayDate: string | null;
   error: string | null;
   moneylineByFighter: Map<string, { american: number; implied: number }>;
+  fighterIdByName: Map<string, string>;
   loading: boolean;
 }) {
   if (error) {
@@ -163,19 +190,22 @@ function PublicTodaySlate({
         {fighters.map((name) => {
           const lines = byFighter.get(name)!;
           const ml = moneylineByFighter.get(normalizeName(name));
-          return <FighterCard key={name} name={name} lines={lines} moneyline={ml} />;
+          const athleteId = fighterIdByName.get(normalizeName(name)) ?? '';
+          return <FighterCard key={name} name={name} athleteId={athleteId} lines={lines} moneyline={ml} />;
         })}
       </div>
     </div>
   );
 }
 
-function FighterCard({ name, lines, moneyline }: {
+function FighterCard({ name, athleteId, lines, moneyline }: {
   name: string;
+  athleteId: string;
   lines: UfcStoredLine[];
   moneyline?: { american: number; implied: number };
 }) {
   const grouped = groupLinesByCategory(lines);
+  const profileLink = athleteId ? `/mma/fighter/${athleteId}` : null;
 
   return (
     <div style={{
@@ -185,8 +215,23 @@ function FighterCard({ name, lines, moneyline }: {
       borderLeft: `3px solid ${MMA_ACCENT}`,
       borderRadius: 6,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          {profileLink ? (
+            <Link to={profileLink} style={{ flexShrink: 0, lineHeight: 0 }}>
+              <UfcFighterAvatar athleteId={athleteId} name={name} size="sm" />
+            </Link>
+          ) : (
+            <UfcFighterAvatar athleteId={athleteId} name={name} size="sm" />
+          )}
+          {profileLink ? (
+            <Link to={profileLink} style={{ color: 'inherit', textDecoration: 'none' }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
+            </Link>
+          ) : (
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
+          )}
+        </div>
         {moneyline && (
           <span style={{
             padding: '3px 8px',
