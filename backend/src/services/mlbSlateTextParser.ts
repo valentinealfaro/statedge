@@ -84,6 +84,29 @@ const STAT_ALIASES: Record<string, MlbStatKey> = {
   hitter_fs: 'hitter_fantasy_score',
   hitter_fantasy: 'hitter_fantasy_score',
   fantasy_score: 'hitter_fantasy_score',
+  // Short forms PrizePicks emits / users paste. Without these, every
+  // hitter total-bases and hits+runs+RBIs row on a slate is silently
+  // dropped (~600 lines per slate seen in production).
+  tb: 'total_bases',
+  hrr: 'hits_runs_rbis',
+  hrrs: 'hits_runs_rbis',
+  h_r_rbi: 'hits_runs_rbis',
+  hits_runs_rbi: 'hits_runs_rbis',
+  // Other common short forms seen in pastes
+  k: 'strikeouts',
+  hr: 'home_runs',
+  rbi: 'rbis',
+  bb: 'walks',
+  sb: 'stolen_bases',
+  // Pitcher short forms
+  pitcher_ks: 'ks',
+  pitcher_strikeouts: 'ks',
+  pitcher_walks: 'walks_allowed',
+  pitcher_hits_allowed: 'hits_allowed',
+  pitcher_earned_runs: 'earned_runs_allowed',
+  er: 'earned_runs_allowed',
+  ip: 'innings_pitched',
+  outs: 'pitcher_outs',
 };
 
 function mapStatKey(raw: string): MlbStatKey | null {

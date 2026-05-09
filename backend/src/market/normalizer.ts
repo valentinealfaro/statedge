@@ -110,6 +110,8 @@ const STAT_ALIASES: Record<string, string> = {
   'sb':                              'stolen_bases',
   'hitsrunsrbis':                    'hits_runs_rbis',
   'hrrbi':                           'hits_runs_rbis',
+  'hrr':                             'hits_runs_rbis',
+  'hrrs':                            'hits_runs_rbis',
 
   // ---- MLB pitcher ----
   'pitcherstrikeouts':               'pitcher_strikeouts',
