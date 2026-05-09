@@ -8,8 +8,25 @@
 import { Router } from 'express';
 import { fetchUfcScoreboard } from '../mma/espn.js';
 import { getUfcMoneylines } from '../mma/odds.js';
+import {
+  getLatestMmaDailySlate,
+  getMmaDailySlate,
+  setMmaDailySlate,
+  type MmaStoredLine,
+} from '../mma/slateStore.js';
+import { listUfcStats } from '../mma/stats.js';
+import { parseMmaSlateText } from '../services/mmaSlateTextParser.js';
 
 export const mmaRouter: Router = Router();
+
+// ET date helper. Mirrors the convention used by MLB slate code so
+// "today's slate" rolls over at midnight ET, not UTC.
+function todayEt(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
 
 mmaRouter.get('/scoreboard', async (req, res) => {
   try {
@@ -42,6 +59,101 @@ mmaRouter.get('/odds', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('mma/odds failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/mma/stats — list of supported UFC stat keys + display
+// metadata. Frontend uses this to render the slate paste help and
+// the published-view group headers.
+mmaRouter.get('/stats', (_req, res) => {
+  res.json({ stats: listUfcStats() });
+});
+
+// POST /api/mma/slate/parse — preview parse of a pipe-format paste.
+// No DB writes; returns parsed lines + unresolved errors so the
+// admin can preview before publishing. Public (admin auth gates
+// the publish step, not the preview).
+mmaRouter.post('/slate/parse', (req, res) => {
+  const text = (req.body?.text as string | undefined) ?? '';
+  if (!text) {
+    res.status(400).json({ error: 'text body required' });
+    return;
+  }
+  const parsed = parseMmaSlateText(text);
+  res.json(parsed);
+});
+
+// POST /api/mma/slate/publish — admin-gated. Parses + writes to
+// mma_daily_slates for the given date (default today ET).
+mmaRouter.post('/slate/publish', async (req, res) => {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured' });
+    return;
+  }
+  if (req.header('x-admin-secret') !== expected) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+
+  const text = (req.body?.text as string | undefined) ?? '';
+  const date = (req.body?.date as string | undefined) ?? todayEt();
+  if (!text) {
+    res.status(400).json({ error: 'text body required' });
+    return;
+  }
+
+  const parsed = parseMmaSlateText(text);
+  if (parsed.lines.length === 0) {
+    res.status(400).json({
+      error: 'no parseable lines',
+      unresolved: parsed.unresolved,
+    });
+    return;
+  }
+
+  // Map ParsedMmaLine → MmaStoredLine (same shape today; future-
+  // proofed in case we add resolved fighter ids).
+  const stored: MmaStoredLine[] = parsed.lines.map((l) => ({
+    fighterName: l.fighterName,
+    league: l.league,
+    statKey: l.statKey,
+    line: l.line,
+    direction: l.direction,
+  }));
+
+  try {
+    await setMmaDailySlate({ date, lines: stored, rawText: text });
+    res.json({
+      ok: true,
+      date,
+      published: stored.length,
+      unresolved: parsed.unresolved,
+      skippedComments: parsed.skippedComments,
+      skippedBlanks: parsed.skippedBlanks,
+    });
+  } catch (err) {
+    console.error('mma/slate/publish failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/mma/slate/today — public view. Returns today's published
+// slate (if any) — falls back to the most recent if today is empty
+// so users between cards still see something. Both shapes include
+// the published_date so the frontend can label "Today" vs "Most
+// recent UFC card."
+mmaRouter.get('/slate/today', async (_req, res) => {
+  try {
+    const today = todayEt();
+    const slate = (await getMmaDailySlate(today)) ?? (await getLatestMmaDailySlate());
+    res.json({
+      today,
+      slate,
+    });
+  } catch (err) {
+    console.error('mma/slate/today failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

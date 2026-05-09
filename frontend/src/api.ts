@@ -1940,6 +1940,92 @@ export async function getUfcMoneylines(): Promise<UfcMoneylinesResponse> {
   return (await res.json()) as UfcMoneylinesResponse;
 }
 
+// UFC slate (Phase 110a)
+export type UfcStoredLine = {
+  fighterName: string;
+  league: string;
+  statKey: string;
+  line: number;
+  direction: 'over' | 'under' | 'both';
+};
+export type UfcDailySlate = {
+  publishedDate: string;
+  lines: UfcStoredLine[];
+  rawText: string | null;
+  publishedAt: string;
+};
+export type UfcSlateTodayResponse = {
+  today: string;
+  slate: UfcDailySlate | null;
+};
+export type UfcStatMeta = {
+  key: string;
+  label: string;
+  shortLabel: string;
+  unit: string;
+  group: 'volume' | 'duration' | 'fantasy';
+};
+export type UfcSlateParseResult = {
+  lines: Array<{
+    fighterName: string;
+    league: string;
+    statKey: string;
+    line: number;
+    direction: 'over' | 'under' | 'both';
+  }>;
+  unresolved: Array<{ rawLine: string; reason: string }>;
+  skippedComments: number;
+  skippedBlanks: number;
+};
+
+export async function getUfcSlateToday(): Promise<UfcSlateTodayResponse> {
+  const res = await fetch(`${API_BASE}/api/mma/slate/today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcSlateTodayResponse;
+}
+
+export async function getUfcStats(): Promise<{ stats: UfcStatMeta[] }> {
+  const res = await fetch(`${API_BASE}/api/mma/stats`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { stats: UfcStatMeta[] };
+}
+
+export async function parseUfcSlateText(text: string): Promise<UfcSlateParseResult> {
+  const res = await fetch(`${API_BASE}/api/mma/slate/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcSlateParseResult;
+}
+
+export async function publishUfcSlate(opts: { text: string; date?: string; adminSecret: string }): Promise<{
+  ok: boolean;
+  date: string;
+  published: number;
+  unresolved: Array<{ rawLine: string; reason: string }>;
+}> {
+  const res = await fetch(`${API_BASE}/api/mma/slate/publish`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-secret': opts.adminSecret,
+    },
+    body: JSON.stringify({ text: opts.text, date: opts.date }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as {
+    ok: boolean;
+    date: string;
+    published: number;
+    unresolved: Array<{ rawLine: string; reason: string }>;
+  };
+}
+
 // Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
 // IPs are blocked by PrizePicks Cloudflare, so server-side fetch
 // returns 403. This helper fetches from the user's residential IP

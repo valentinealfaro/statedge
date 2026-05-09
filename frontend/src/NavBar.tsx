@@ -65,10 +65,10 @@ const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Calibration', path: '/wnba/calibration' },
 ];
 
-// MMA subnav — Phase 107 foundation. Just scoreboard for now;
-// items land here as their pages ship.
+// MMA subnav — Phase 107 foundation, Phase 110a adds slate.
 const MMA_SUBNAV: SubnavItem[] = [
   { label: 'Scoreboard', path: '/mma/scoreboard' },
+  { label: 'Slate',      path: '/mma/slate' },
 ];
 
 // Toggle the sport prefix in the current URL. /nba/slate ↔ /mlb/slate

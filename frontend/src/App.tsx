@@ -14,6 +14,7 @@ import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
 import { MmaFighter } from './MmaFighter';
 import { MmaScoreboard } from './MmaScoreboard';
+import { MmaSlate } from './MmaSlate';
 import { NbaCalibration } from './NbaCalibration';
 import { NbaSlateHistory } from './NbaSlateHistory';
 import { News } from './News';
@@ -78,6 +79,7 @@ export function App() {
               phases. Replaces WNBA as the third sport per priorities. */}
           <Route path="/mma" element={<MmaScoreboard />} />
           <Route path="/mma/scoreboard" element={<MmaScoreboard />} />
+          <Route path="/mma/slate" element={<MmaSlate />} />
           <Route path="/mma/fighter/:fighterId" element={<MmaFighter />} />
 
           {/* News — Phase 104. Auto-generated articles, public SEO. */}
