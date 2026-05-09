@@ -18,6 +18,10 @@ import { computeCorrelationRisk } from './mlbSlateBuilder.js';
 
 export type EliteLeg = {
   playerId: number;
+  // Optional ESPN athlete id — used by UFC legs (where playerId is 0
+  // because fighter names aren't numeric in our slate). Frontend
+  // checks this first, then falls back to playerId for NBA/MLB.
+  espnAthleteId?: string;
   playerName: string;
   team: string | null;
   statKey: string;

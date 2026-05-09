@@ -44,16 +44,16 @@ function detectLegSport(leg: EliteLeg): 'mlb' | 'nba' | 'mma' {
 }
 
 // Render the right avatar component for the leg's sport. UFC legs
-// have non-numeric playerIds (forced to 0 by the cross-sport
-// normalizer), so they go to the initials fallback — that's fine
-// until we plumb ESPN athlete IDs through the EliteLeg shape.
+// carry espnAthleteId (resolved from the scoreboard by fighter-name
+// match in the cross-sport endpoint); when missing, the fighter
+// gracefully falls back to initials.
 function LegAvatar({ leg }: { leg: EliteLeg }) {
   const sport = detectLegSport(leg);
   if (sport === 'mlb') {
     return <MlbPlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />;
   }
   if (sport === 'mma') {
-    return <UfcFighterAvatar athleteId={leg.playerId || ''} name={leg.playerName} size="md" />;
+    return <UfcFighterAvatar athleteId={leg.espnAthleteId ?? ''} name={leg.playerName} size="md" />;
   }
   return <PlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />;
 }

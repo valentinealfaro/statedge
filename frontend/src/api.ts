@@ -1955,6 +1955,7 @@ export type EliteEdgeReason =
   | 'historical_archetype';
 export type EliteLeg = {
   playerId: number;
+  espnAthleteId?: string;          // UFC fighters carry this for headshot rendering
   playerName: string;
   team: string | null;
   statKey: string;

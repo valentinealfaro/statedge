@@ -487,16 +487,18 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
       fairByFighter.set(fighterNorm(ev.fighterA.fighterName), ev.fighterA.fairProbability);
       fairByFighter.set(fighterNorm(ev.fighterB.fighterName), ev.fighterB.fairProbability);
     }
-    // Build name → opponent + matchup-key lookup from scoreboard.
-    const matchupByFighter = new Map<string, { opponent: string; key: string }>();
+    // Build name → opponent + matchup-key + own ESPN athlete id from
+    // scoreboard. The athlete id powers UFC headshot rendering on
+    // the Elite ticket card.
+    const matchupByFighter = new Map<string, { opponent: string; key: string; ownId: string }>();
     for (const ev of ufcScoreboard) {
       for (const f of ev.fights) {
         const red = f.fighters.red;
         const blue = f.fighters.blue;
         if (red && blue) {
           const key = [red.id, blue.id].sort().join('-');
-          matchupByFighter.set(fighterNorm(red.displayName), { opponent: blue.displayName, key });
-          matchupByFighter.set(fighterNorm(blue.displayName), { opponent: red.displayName, key });
+          matchupByFighter.set(fighterNorm(red.displayName), { opponent: blue.displayName, key, ownId: red.id });
+          matchupByFighter.set(fighterNorm(blue.displayName), { opponent: red.displayName, key, ownId: blue.id });
         }
       }
     }
@@ -511,6 +513,7 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
           fairProbability: fair,
           opponentName: matchup?.opponent ?? null,
           matchupKey: matchup?.key ?? null,
+          espnAthleteId: matchup?.ownId,
         });
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);

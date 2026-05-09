@@ -34,6 +34,10 @@ type EliteCandidate = {
   // colliding with MLB playerId 100 in the diversification check.
   ckey: string;
   playerId: string;
+  // ESPN MMA athlete id when sport === 'mma' (resolved from scoreboard
+  // by fighter-name match). Lets the frontend render real UFC
+  // headshots instead of falling back to initials.
+  espnAthleteId?: string;
   playerName: string;
   team: string | null;
   statKey: string;
@@ -155,6 +159,7 @@ export function normalizeMma(opts: {
   fairProbability: number | null;
   opponentName: string | null;
   matchupKey: string | null;       // sorted-pair fight key for diversification
+  espnAthleteId?: string;          // for UFC headshot rendering
 }): EliteCandidate | null {
   // Only the stat keys our projection engine recognizes
   const supportedStats = new Set([
@@ -178,6 +183,7 @@ export function normalizeMma(opts: {
     sport: 'mma',
     ckey: `mma:${opts.line.fighterName}`,
     playerId: opts.line.fighterName,            // no numeric id; use name as key
+    espnAthleteId: opts.espnAthleteId,
     playerName: opts.line.fighterName,
     team: null,
     statKey: opts.line.statKey,
@@ -478,6 +484,7 @@ function legToElite(c: EliteCandidate): EliteLeg {
     : Number(c.playerId);
   return {
     playerId: Number.isFinite(numericId) ? numericId : 0,
+    espnAthleteId: c.espnAthleteId,
     playerName: c.playerName,
     team: c.team,
     statKey: c.statKey,
