@@ -1393,6 +1393,31 @@ function pickModeAware<T extends ComboCandidate>(
       return true;
     });
   }
+  // At-volume / coin-flip filter (Phase 90). When |line − seasonAvg|
+  // sits within 10% of season volume, the prop is a structural coin
+  // flip — model edge is mostly noise. Insane mode hard-skips these
+  // as anchors per the 2026-05-07 live autopsy memory (Hartenstein
+  // U5.5 FGA cracked a live Power Play). Aggressive softens to a
+  // probability gate (≥58%) instead of a full skip.
+  if (eff === 'insane') {
+    filtered = filtered.filter((c) => {
+      const ctx = (c as { context?: { seasonAvg: number } }).context;
+      if (!ctx || ctx.seasonAvg <= 0) return true;
+      const dist = Math.abs(c.line - ctx.seasonAvg);
+      const atVolume = dist < ctx.seasonAvg * 0.10;
+      return !atVolume;
+    });
+  } else if (eff === 'aggressive') {
+    filtered = filtered.filter((c) => {
+      const ctx = (c as { context?: { seasonAvg: number } }).context;
+      if (!ctx || ctx.seasonAvg <= 0) return true;
+      const dist = Math.abs(c.line - ctx.seasonAvg);
+      const atVolume = dist < ctx.seasonAvg * 0.10;
+      // Aggressive lets at-volume picks through only if probability is
+      // confidently away from 50/50 — gates structural coin-flips out.
+      return !atVolume || c.probability >= 58;
+    });
+  }
   // Fallback: if filters wipe the pool below viable, relax to the
   // un-filtered pool. Better to ship a softer card than nothing.
   if (filtered.length < target) filtered = pool;
