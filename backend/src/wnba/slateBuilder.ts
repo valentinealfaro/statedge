@@ -263,11 +263,24 @@ function diversifiedScore(
 
 function eligibleLegs(lines: ProjectedWnbaLine[], mode: WnbaResolvedSlateMode): ProjectedWnbaLine[] {
   const cfg = MODE_CONFIG[mode];
-  return lines.filter((l) =>
-    l.probability >= cfg.minLegProb &&
-    l.edgePercent >= cfg.minLegEdge &&
-    l.trapScore <= cfg.maxLegTrap,
-  );
+  return lines.filter((l) => {
+    if (l.probability < cfg.minLegProb) return false;
+    if (l.edgePercent < cfg.minLegEdge) return false;
+    if (l.trapScore > cfg.maxLegTrap) return false;
+    // At-volume / coin-flip filter (Phase 96, ported from MLB Phase 90).
+    // When |line − seasonAvg| sits within 10% of season volume, the
+    // prop is structurally a coin flip — model edge is mostly noise.
+    // Insane mode hard-skips; Aggressive softens to probability ≥58%.
+    if ((mode === 'insane' || mode === 'aggressive') && l.seasonAvg > 0) {
+      const dist = Math.abs(l.line - l.seasonAvg);
+      const atVolume = dist < l.seasonAvg * 0.10;
+      if (atVolume) {
+        if (mode === 'insane') return false;
+        if (l.probability < 58) return false;
+      }
+    }
+    return true;
+  });
 }
 
 function pickTopN(
