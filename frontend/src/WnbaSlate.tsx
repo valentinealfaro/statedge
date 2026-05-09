@@ -522,11 +522,17 @@ function LineCard({ line }: { line: WnbaProjectedLine }) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <WnbaPlayerAvatar playerId={line.athleteId} name={line.playerName} size="md" />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{line.playerName}</div>
-          <div className="muted small">{line.team ?? '—'}</div>
-        </div>
+        <a
+          href={`/wnba/compare?aid=${encodeURIComponent(line.athleteId)}`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', minWidth: 0, flex: 1 }}
+          title="Open WNBA Compare for this player"
+        >
+          <WnbaPlayerAvatar playerId={line.athleteId} name={line.playerName} size="md" />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{line.playerName}</div>
+            <div className="muted small">{line.team ?? '—'}</div>
+          </div>
+        </a>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 12, fontWeight: 600 }}>
             {line.statLabel} {line.line}
