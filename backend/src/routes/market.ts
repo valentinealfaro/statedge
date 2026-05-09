@@ -15,7 +15,7 @@ import { getPool, isDbConfigured, setMlbDailySlateInDb, type MlbStoredDailyLine 
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import { getBudgetStatus } from '../market/creditBudget.js';
 import {
-  resolveMlbPlayer,
+  bulkResolveMlbPlayers,
   resolveMlbTeamFromFullName,
 } from '../market/playerResolver.js';
 import {
@@ -63,25 +63,35 @@ type EnrichedProps = {
   unresolvedPlayers: number;
 };
 
-// TOA event-odds returns home_team / away_team as full names. We need
-// them on the snapshot so opponent + gameKey can be derived. Enrich
-// per-event by passing the event's home/away once and applying to all
-// props from that event.
+// Phase 103g-quat: bulk resolution. Replaces the previous per-name
+// loop that did one query per unique player + used plain LOWER() (no
+// unaccent), which missed every accented name (Jesús/José/Jesús would
+// resolve only when the DB happened to also lack the accent).
+//
+// Now: one bulk query for all unique names using
+// regexp_replace(unaccent(lower(...))) on both sides — same matching
+// strategy services/mlbSlateTextParser.ts uses. Plus a per-event team
+// resolution pass when events are provided (TOA path); skipped on the
+// PrizePicks path because PP doesn't return event-level team data.
 async function enrichToaSnapshots(
   props: NormalizedProp[],
   events: Array<{ id: string; home_team: string; away_team: string }>,
 ): Promise<EnrichedProps> {
-  // Resolve every team in the event set ONCE — same teams play many games
-  // and the resolver hits the DB. Cache by full name.
-  const teamCache = new Map<string, { abbr: string } | null>();
+  // Step 1: bulk-resolve every unique player name in one DB query.
+  const uniqueNames = [...new Set(props.map((p) => p.rawPlayerName).filter(Boolean))];
+  const playerLookup = props.length > 0 && props[0]?.sport === 'mlb'
+    ? await bulkResolveMlbPlayers(uniqueNames)
+    : new Map();
+
+  // Step 2: resolve event teams (one DB query per unique team name —
+  // small set, ~30 MLB teams max even across full slate).
+  const teamCache = new Map<string, string | null>();
   async function resolveTeam(fullName: string): Promise<string | null> {
-    if (teamCache.has(fullName)) return teamCache.get(fullName)?.abbr ?? null;
+    if (teamCache.has(fullName)) return teamCache.get(fullName) ?? null;
     const resolved = await resolveMlbTeamFromFullName(fullName);
-    teamCache.set(fullName, resolved ? { abbr: resolved.abbreviation } : null);
+    teamCache.set(fullName, resolved?.abbreviation ?? null);
     return resolved?.abbreviation ?? null;
   }
-
-  // Build event-id → (home_abbr, away_abbr) map.
   const eventTeams = new Map<string, { home: string | null; away: string | null }>();
   for (const ev of events) {
     const [home, away] = await Promise.all([
@@ -91,15 +101,10 @@ async function enrichToaSnapshots(
     eventTeams.set(ev.id, { home, away });
   }
 
-  // Resolve players once per unique name.
-  const playerCache = new Map<string, { id: number; team: string | null } | null>();
-  async function resolvePlayer(name: string): Promise<{ id: number; team: string | null } | null> {
-    if (playerCache.has(name)) return playerCache.get(name) ?? null;
-    const resolved = await resolveMlbPlayer(name);
-    const cached = resolved ? { id: resolved.internalId as number, team: resolved.team } : null;
-    playerCache.set(name, cached);
-    return cached;
-  }
+  // Step 3: stitch each prop. Same unaccent fold the bulk resolver
+  // produces — names match by canonical-folded form, not raw.
+  const folded = (s: string): string =>
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
   let resolvedPlayers = 0;
   let resolvedTeams = 0;
@@ -108,26 +113,21 @@ async function enrichToaSnapshots(
 
   for (const p of props) {
     const eventTeam = p.providerGameId ? eventTeams.get(p.providerGameId) : null;
-    const player = p.sport === 'mlb' ? await resolvePlayer(p.rawPlayerName) : null;
+    const player = playerLookup.get(folded(p.rawPlayerName));
 
-    // Derive player team — prefer player's stored team, fall back to
-    // matching against this event's home/away if the player resolver
-    // doesn't know.
-    const playerTeam = player?.team
-      ?? (eventTeam ? null : null);  // can't derive from event alone
+    const playerTeam = player?.team ?? p.team ?? null;
 
-    // Derive opponent — when we know the player's team and the event's
-    // teams, the opponent is "the other one."
     let opponent: string | null = null;
     if (playerTeam && eventTeam?.home && eventTeam?.away) {
       if (playerTeam === eventTeam.home) opponent = eventTeam.away;
       else if (playerTeam === eventTeam.away) opponent = eventTeam.home;
     }
 
-    // gameKey — alphabetized abbrev tuple. Same shape we use elsewhere.
     let gameKey: string | null = null;
     if (eventTeam?.home && eventTeam?.away) {
       gameKey = [eventTeam.home, eventTeam.away].sort().join('-');
+    } else if (playerTeam && opponent) {
+      gameKey = [playerTeam, opponent].sort().join('-');
     }
 
     if (player) resolvedPlayers += 1;
@@ -136,7 +136,7 @@ async function enrichToaSnapshots(
 
     enriched.push({
       ...p,
-      internalPlayerId: player?.id ?? null,
+      internalPlayerId: player?.internalId ?? null,
       team: playerTeam,
       opponent,
       gameKey,

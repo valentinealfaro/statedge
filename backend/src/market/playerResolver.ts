@@ -74,6 +74,80 @@ export async function resolveNbaPlayer(
   return null;
 }
 
+// Bulk MLB player resolution — Phase 103g-quat. Mirrors the matching
+// strategy used by services/mlbSlateTextParser.ts so the same names
+// that resolve in admin paste also resolve in PrizePicks API ingest.
+//
+// Two-axis match:
+//   1. unaccent + lower + collapse-whitespace on both sides — handles
+//      "Jesús Luzardo" / "Jesus Luzardo" / "Jesús  Luzardo" all
+//      collapsing to one form. Without unaccent, every Latino-named
+//      player misses (the original bug — 0 of 3228 resolved).
+//   2. team abbreviation when available — disambiguates Smith / Smith
+//      across teams. When team is null, falls back to name-only.
+//
+// Uses regexp_replace(unaccent(lower(...)), '\s+', ' ', 'g') on both
+// sides — must mirror the JS unaccentLower helper exactly.
+//
+// Returns Map keyed by `${unaccentLower(rawName)}` (no team component
+// for the no-team-known case) so callers don't need to know the
+// canonical name shape.
+
+export type BulkResolvedPlayer = {
+  internalId: number;
+  fullName: string;
+  team: string | null;
+};
+
+function unaccentLower(s: string): string {
+  return s
+    .normalize('NFD')
+    // Strip combining diacritics (U+0300-U+036F).
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export async function bulkResolveMlbPlayers(
+  rawNames: string[],
+): Promise<Map<string, BulkResolvedPlayer>> {
+  const out = new Map<string, BulkResolvedPlayer>();
+  if (rawNames.length === 0) return out;
+
+  const folded = [...new Set(rawNames.map(unaccentLower).filter(Boolean))];
+  if (folded.length === 0) return out;
+
+  const { rows } = await getPool().query<{
+    id: number;
+    full_name: string;
+    team_abbr: string | null;
+  }>(
+    `SELECT p.id, p.full_name, t.abbreviation AS team_abbr
+       FROM mlb_players p
+  LEFT JOIN mlb_teams t ON t.id = p.team_id
+      WHERE regexp_replace(unaccent(lower(p.full_name)), '\\s+', ' ', 'g') = ANY($1::text[])`,
+    [folded],
+  );
+
+  // Multi-match resolution: when two players share the same folded
+  // name (rare in MLB but real — there have been multiple Chris Sale-
+  // adjacent collisions historically), we keep whichever has a
+  // non-null team_abbr. If both have teams, keep the first; the
+  // caller can pass team context for higher-precision matching in
+  // a follow-up phase.
+  for (const r of rows) {
+    const key = unaccentLower(r.full_name);
+    const existing = out.get(key);
+    if (!existing) {
+      out.set(key, { internalId: r.id, fullName: r.full_name, team: r.team_abbr });
+    } else if (!existing.team && r.team_abbr) {
+      out.set(key, { internalId: r.id, fullName: r.full_name, team: r.team_abbr });
+    }
+  }
+  return out;
+}
+
 // Team resolution — full team name → { abbreviation, id }. Used by
 // providers that emit full names like "Toronto Blue Jays" instead of
 // "TOR". The Odds API returns home_team / away_team as full names.
