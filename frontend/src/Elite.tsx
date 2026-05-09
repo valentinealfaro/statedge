@@ -143,10 +143,10 @@ export function Elite() {
               }} />
               Computing today's institutional ticket
             </div>
-            <p className="muted small" style={{ marginTop: 10, marginBottom: 0, fontSize: 12, lineHeight: 1.5, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-              Resolving today's slate, projecting every leg, scoring every 3-leg
-              combination against the institutional filter. First load can take 10–20s
-              on a cold backend; subsequent loads are instant.
+            <p className="muted small" style={{ marginTop: 10, marginBottom: 0, fontSize: 12, lineHeight: 1.5, maxWidth: 480, marginLeft: 'auto', marginRight: 'auto' }}>
+              {view === 'cross'
+                ? 'Resolving NBA + MLB slates, projecting every leg, scoring every cross-sport combination through the tier ladder. Cross-sport pulls both slates in parallel — first load can take 15–25s on a cold backend.'
+                : 'Resolving today\'s slate, projecting every leg, scoring combinations against the institutional filter. First load can take 10–20s on a cold backend.'}
             </p>
             <Skeleton width="100%" height={140} style={{ marginTop: 16 }} />
             <style>{`@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.4; transform: scale(0.85) } }`}</style>

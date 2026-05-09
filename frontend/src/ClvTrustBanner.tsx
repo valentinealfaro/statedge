@@ -96,7 +96,16 @@ export function ClvTrustBanner({ sport }: Props = {}) {
             )}
           </h2>
         </div>
-        <div style={{ display: 'flex', gap: 14, fontSize: 12, fontWeight: 700 }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 12, fontWeight: 700, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link to="/elite" style={{
+            color: '#0d1117',
+            textDecoration: 'none',
+            background: 'linear-gradient(135deg, #ffd54f 0%, #f9a825 100%)',
+            padding: '4px 10px',
+            borderRadius: 4,
+          }}>
+            ★ Today's play →
+          </Link>
           <Link to="/clv" style={{ color: '#7aa2ff', textDecoration: 'none' }}>
             CLV report →
           </Link>
