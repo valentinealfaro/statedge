@@ -19,12 +19,14 @@
 import type { ResolvedLine as NbaResolvedLine } from './slatePipeline.js';
 import type { ResolvedMlbLine } from './mlbSlatePipeline.js';
 import type { EliteLeg, EliteTicket, EdgeReason } from './mlbEliteBuilder.js';
+import type { MmaStoredLine } from '../mma/slateStore.js';
+import { projectUfcProp, type UfcProjectionInput } from '../mma/projectionEngine.js';
 
 export type { EliteTicket, EliteLeg } from './mlbEliteBuilder.js';
 
 // ---------- Common candidate shape ----------
 
-type Sport = 'mlb' | 'nba';
+type Sport = 'mlb' | 'nba' | 'mma';
 
 type EliteCandidate = {
   sport: Sport;
@@ -135,6 +137,67 @@ function classifyNbaEdge(p: NbaResolvedLine['projection']): EdgeReason {
   return 'model_disagreement';
 }
 
+// UFC stat-label map for display.
+const UFC_STAT_LABEL: Record<string, string> = {
+  sig_strikes: 'Sig Strikes',
+  rd1_sig_strikes: 'R1 Sig Strikes',
+  takedowns: 'Takedowns',
+  rd1_takedowns: 'R1 Takedowns',
+  knockdowns: 'Knockdowns',
+  rounds: 'Rounds',
+  fight_time: 'Fight Time',
+  fantasy_score: 'Fantasy Score',
+  control_time: 'Control Time',
+};
+
+export function normalizeMma(opts: {
+  line: MmaStoredLine;
+  fairProbability: number | null;
+  opponentName: string | null;
+  matchupKey: string | null;       // sorted-pair fight key for diversification
+}): EliteCandidate | null {
+  // Only the stat keys our projection engine recognizes
+  const supportedStats = new Set([
+    'sig_strikes', 'rd1_sig_strikes',
+    'takedowns', 'rd1_takedowns',
+    'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time',
+  ]);
+  if (!supportedStats.has(opts.line.statKey)) return null;
+
+  const projInput: UfcProjectionInput = {
+    fighterName: opts.line.fighterName,
+    opponentName: opts.opponentName ?? 'TBD',
+    fairProbability: opts.fairProbability,
+    statKey: opts.line.statKey as UfcProjectionInput['statKey'],
+    line: opts.line.line,
+    direction: opts.line.direction,
+  };
+  const proj = projectUfcProp(projInput);
+
+  return {
+    sport: 'mma',
+    ckey: `mma:${opts.line.fighterName}`,
+    playerId: opts.line.fighterName,            // no numeric id; use name as key
+    playerName: opts.line.fighterName,
+    team: null,
+    statKey: opts.line.statKey,
+    statLabel: UFC_STAT_LABEL[opts.line.statKey] ?? opts.line.statKey,
+    line: opts.line.line,
+    direction: proj.modelDirection,
+    probability: proj.probability,
+    edgeScore: proj.edgePercent,
+    trapScore: proj.trapScore,
+    fragilityScore: proj.fragilityScore,
+    marketImpliedProb: opts.fairProbability !== null ? opts.fairProbability * 100 : null,
+    publicBiasTags: [],
+    sharpnessScore: null,
+    edgeDurability: null,
+    momentumScore: null,
+    gameKey: opts.matchupKey,
+    qualifyingEdge: 'model_disagreement',
+  };
+}
+
 // ---------- Tier definitions ----------
 
 type Tier = {
@@ -171,6 +234,9 @@ export type CrossSportTicket = EliteTicket & {
 export function buildCrossSportElite(opts: {
   mlb: ResolvedMlbLine[];
   nba: NbaResolvedLine[];
+  // Pre-normalized MMA candidates — the route layer hydrates these
+  // because UFC needs moneyline + matchup data from separate sources.
+  mma?: EliteCandidate[];
 }): CrossSportTicket | null {
   const candidates: EliteCandidate[] = [];
   for (const l of opts.mlb) {
@@ -189,6 +255,7 @@ export function buildCrossSportElite(opts: {
       console.warn('cross-sport elite nba normalize failed', (err as Error).message);
     }
   }
+  for (const c of opts.mma ?? []) candidates.push(c);
   if (candidates.length < 2) return null;
 
   for (const tier of TIERS) {
@@ -459,14 +526,15 @@ function buildRationale(rawLegs: EliteCandidate[], legs: EliteLeg[], s: { combin
 }
 
 function collectSports(ticket: { legs: EliteLeg[] }): Sport[] {
-  // The EliteLeg type doesn't carry sport directly. We detect via the
-  // leg's `team` belonging to an MLB / NBA team set, OR via the
-  // statKey vocabulary. Simplest: check statKey against known MLB
-  // stat keys; everything else is NBA.
+  // The EliteLeg type doesn't carry sport directly. Detect via the
+  // statKey vocabulary — each sport has a distinct set of stat keys.
   const MLB_STATS = new Set(['home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis', 'walks', 'stolen_bases', 'strikeouts', 'doubles', 'triples', 'ks', 'pitcher_outs', 'innings_pitched', 'earned_runs_allowed', 'hits_allowed', 'walks_allowed', 'home_runs_allowed']);
+  const MMA_STATS = new Set(['sig_strikes', 'rd1_sig_strikes', 'takedowns', 'rd1_takedowns', 'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time']);
   const sports = new Set<Sport>();
   for (const leg of ticket.legs) {
-    sports.add(MLB_STATS.has(leg.statKey) ? 'mlb' : 'nba');
+    if (MMA_STATS.has(leg.statKey)) sports.add('mma');
+    else if (MLB_STATS.has(leg.statKey)) sports.add('mlb');
+    else sports.add('nba');
   }
   return [...sports];
 }

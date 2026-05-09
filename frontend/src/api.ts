@@ -1989,12 +1989,12 @@ export type EliteResponse = {
 };
 export type CrossSportEliteTicket = EliteTicket & {
   tierName: string;
-  sportsCovered: ('mlb' | 'nba')[];
+  sportsCovered: ('mlb' | 'nba' | 'mma')[];
 };
 export type CrossSportEliteResponse = {
   ticket: CrossSportEliteTicket | null;
   reason: string | null;
-  candidatesScanned?: { nba: number; mlb: number; total: number };
+  candidatesScanned?: { nba: number; mlb: number; mma?: number; total: number };
 };
 
 export async function getMlbEliteToday(): Promise<EliteResponse> {

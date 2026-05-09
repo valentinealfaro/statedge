@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
-import { buildCrossSportElite } from '../services/crossSportEliteBuilder.js';
+import { buildCrossSportElite, normalizeMma } from '../services/crossSportEliteBuilder.js';
 import { buildNbaElite } from '../services/nbaEliteBuilder.js';
 import { getMlbDailySlateFromDb } from '../db.js';
 import { resolveMlbSlate } from '../services/mlbSlatePipeline.js';
 import type { MlbStatKey } from '../mlb/stats.js';
+import { getLatestMmaDailySlate } from '../mma/slateStore.js';
+import { getUfcMoneylines } from '../mma/odds.js';
+import { fetchUfcScoreboard } from '../mma/espn.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -466,21 +469,65 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
         })).slice(0, 200))).lines    // cap MLB lines to keep cold-start fast
       : [];
 
-    const totalCandidates = nbaResolved.length + mlbResolved.length;
+    // Pull UFC slate + moneylines + scoreboard (for opponent +
+    // matchup-key resolution). All three are best-effort; failures
+    // mean MMA simply doesn't contribute legs to today's ticket.
+    const [mmaSlate, ufcMoneylinesResp, ufcScoreboard] = await Promise.all([
+      getLatestMmaDailySlate().catch(() => null),
+      getUfcMoneylines().catch(() => ({ events: [] })),
+      fetchUfcScoreboard().catch(() => []),
+    ]);
+
+    // Build name → fair-prob lookup (lowercased + diacritic-stripped).
+    const fighterNorm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
+    const fairByFighter = new Map<string, number>();
+    for (const ev of ufcMoneylinesResp.events) {
+      fairByFighter.set(fighterNorm(ev.fighterA.fighterName), ev.fighterA.fairProbability);
+      fairByFighter.set(fighterNorm(ev.fighterB.fighterName), ev.fighterB.fairProbability);
+    }
+    // Build name → opponent + matchup-key lookup from scoreboard.
+    const matchupByFighter = new Map<string, { opponent: string; key: string }>();
+    for (const ev of ufcScoreboard) {
+      for (const f of ev.fights) {
+        const red = f.fighters.red;
+        const blue = f.fighters.blue;
+        if (red && blue) {
+          const key = [red.id, blue.id].sort().join('-');
+          matchupByFighter.set(fighterNorm(red.displayName), { opponent: blue.displayName, key });
+          matchupByFighter.set(fighterNorm(blue.displayName), { opponent: red.displayName, key });
+        }
+      }
+    }
+
+    const mmaCandidates = (mmaSlate?.lines ?? [])
+      .map((line) => {
+        const norm = fighterNorm(line.fighterName);
+        const matchup = matchupByFighter.get(norm) ?? null;
+        const fair = fairByFighter.get(norm) ?? null;
+        return normalizeMma({
+          line,
+          fairProbability: fair,
+          opponentName: matchup?.opponent ?? null,
+          matchupKey: matchup?.key ?? null,
+        });
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
+    const totalCandidates = nbaResolved.length + mlbResolved.length + mmaCandidates.length;
     if (totalCandidates < 2) {
       res.json({
         ticket: null,
-        reason: 'no candidates from either NBA or MLB slate today',
-        candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, total: totalCandidates },
+        reason: 'no candidates from any sport slate today',
+        candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, mma: mmaCandidates.length, total: totalCandidates },
       });
       return;
     }
 
-    const ticket = buildCrossSportElite({ mlb: mlbResolved, nba: nbaResolved });
+    const ticket = buildCrossSportElite({ mlb: mlbResolved, nba: nbaResolved, mma: mmaCandidates });
     const payload = {
       ticket,
       reason: ticket === null ? 'no qualifying combination found across all fallback tiers' : null,
-      candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, total: totalCandidates },
+      candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, mma: mmaCandidates.length, total: totalCandidates },
     };
     // Cache the response. TTL is generous (10 min) since the
     // invalidation is keyed off slate updatedAt timestamps — a
