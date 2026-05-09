@@ -15,6 +15,7 @@ import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
+import { WnbaCalibration } from './WnbaCalibration';
 import { WnbaCompare } from './WnbaCompare';
 import { WnbaGameDetail } from './WnbaGameDetail';
 import { WnbaSlate } from './WnbaSlate';
@@ -56,6 +57,7 @@ export function App() {
           <Route path="/wnba/standings" element={<WnbaStandings />} />
           <Route path="/wnba/compare" element={<WnbaCompare />} />
           <Route path="/wnba/slate" element={<WnbaSlate />} />
+          <Route path="/wnba/calibration" element={<WnbaCalibration />} />
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />
 

@@ -2426,6 +2426,43 @@ export async function getWnbaSlateStats(): Promise<WnbaStatMeta[]> {
   return data.stats;
 }
 
+// =============================================================
+// WNBA Calibration (Phase 78)
+// =============================================================
+
+export type WnbaCalibrationBucket = {
+  label: string;
+  graded: number;
+  hits: number;
+  predictedAverage: number;
+  observedHitRate: number;
+  smoothedHitRate: number;
+  sampleTier: 'thin' | 'moderate' | 'strong';
+};
+
+export type WnbaCalibrationReport = {
+  windowDays: number;
+  totalGraded: number;
+  totalHits: number;
+  totalMisses: number;
+  overallHitRate: number;
+  smoothedHitRate: number;
+  averagePredicted: number;
+  calibrationGap: number;
+  byProbability: WnbaCalibrationBucket[];
+  byStatType: WnbaCalibrationBucket[];
+  byCardType: WnbaCalibrationBucket[];
+  modelVersion: string;
+  gradedThisRequest: { scanned: number; graded: number; unmatched: number } | null;
+  disclaimer: string;
+};
+
+export async function getWnbaCalibration(windowDays: 30 | 90 = 30): Promise<WnbaCalibrationReport> {
+  const res = await fetch(`${API_BASE}/api/wnba/calibration?windowDays=${windowDays}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaCalibrationReport;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {

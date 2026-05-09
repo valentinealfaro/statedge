@@ -25,6 +25,12 @@ import {
   type ProjectedWnbaLine,
 } from '../wnba/projection.js';
 import { buildWnbaSlate, type WnbaSlateMode } from '../wnba/slateBuilder.js';
+import {
+  computeWnbaCalibration,
+  gradeWnbaProjections,
+  recordWnbaProjections,
+  type RecordableWnbaLeg,
+} from '../wnba/projectionHistory.js';
 
 export const wnbaRouter: Router = Router();
 
@@ -245,6 +251,11 @@ type WnbaSlateProjectionCache = { fetchedAt: number; data: unknown };
 let wnbaSlateProjectionCache: WnbaSlateProjectionCache | null = null;
 const WNBA_SLATE_TTL = 5 * 60_000;
 
+// Tracks which slate-publish keys have already been snapshotted.
+// One snapshot per (date × updatedAt) so republishing creates a
+// fresh row set. Cleared when the slate cache is invalidated.
+const wnbaSlateSnapshotted = new Set<string>();
+
 wnbaRouter.get('/slate/today', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });
@@ -321,6 +332,36 @@ wnbaRouter.get('/slate/today', async (req, res) => {
       },
     };
     wnbaSlateProjectionCache = { fetchedAt: Date.now(), data: payload };
+
+    // Snapshot every projected line into wnba_projection_history once
+    // per (date, updatedAt). The grader fills in actuals later. Card-
+    // type marks legs that made it onto Best 2-6; everything else is
+    // tagged 'top-edges' so calibration can segment by card type. Best-
+    // effort — snapshot failure must not break the slate response.
+    const snapshotKey = `${stored.date}::${stored.updatedAt}`;
+    if (!wnbaSlateSnapshotted.has(snapshotKey)) {
+      try {
+        const cardLineKey = (l: ProjectedWnbaLine): string =>
+          `${l.athleteId}::${l.statKey}::${l.line}::${l.direction}`;
+        const cardTypeByLine = new Map<string, string>();
+        for (const slot of built.combos) {
+          if (!slot.combo) continue;
+          for (const leg of slot.combo.legs) {
+            const k = cardLineKey(leg);
+            if (!cardTypeByLine.has(k)) cardTypeByLine.set(k, slot.combo.label);
+          }
+        }
+        const recordable: RecordableWnbaLeg[] = projected.map((l) => ({
+          line: l,
+          cardType: cardTypeByLine.get(cardLineKey(l)) ?? 'top-edges',
+        }));
+        await recordWnbaProjections({ legs: recordable, gameDate: stored.date });
+        wnbaSlateSnapshotted.add(snapshotKey);
+      } catch (snapErr) {
+        console.warn('wnba snapshot failed:', (snapErr as Error).message);
+      }
+    }
+
     res.json(payload);
   } catch (err) {
     console.error('wnba/slate/today GET failed', err);
@@ -391,8 +432,10 @@ wnbaRouter.post('/slate/today', async (req, res) => {
       rawText,
     });
 
-    // Invalidate projection cache so the next GET re-projects.
+    // Invalidate projection cache + snapshot dedup so the next GET
+    // re-projects AND the new slate creates fresh history rows.
     wnbaSlateProjectionCache = null;
+    wnbaSlateSnapshotted.clear();
 
     res.json({
       ok: true,
@@ -418,6 +461,7 @@ wnbaRouter.delete('/slate/today', async (req, res) => {
   try {
     await clearWnbaDailySlateFromDb();
     wnbaSlateProjectionCache = null;
+    wnbaSlateSnapshotted.clear();
     res.json({ ok: true });
   } catch (err) {
     console.error('wnba/slate/today DELETE failed', err);
@@ -428,6 +472,41 @@ wnbaRouter.delete('/slate/today', async (req, res) => {
 // Public stat catalog so the frontend admin form can show valid keys.
 wnbaRouter.get('/slate/stats', (_req, res) => {
   res.json({ stats: listWnbaStatKeys() });
+});
+
+// GET /api/wnba/calibration?windowDays=30
+//
+// Predicted-vs-observed accuracy. Lazy-grades any ungraded rows
+// whose game_date is in the past before aggregating. Same shape
+// MLB calibration ships — Bayesian-smoothed hit rates so thin
+// samples don't fake-claim accuracy.
+wnbaRouter.get('/calibration', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'WNBA requires DB' });
+    return;
+  }
+  const windowRaw = req.query.windowDays as string | undefined;
+  const windowDays =
+    windowRaw !== undefined && Number.isFinite(Number(windowRaw))
+      ? Math.max(7, Math.min(365, Math.round(Number(windowRaw))))
+      : 30;
+  try {
+    let gradeResult: Awaited<ReturnType<typeof gradeWnbaProjections>> | null = null;
+    try {
+      gradeResult = await gradeWnbaProjections({ windowDays });
+    } catch (err) {
+      console.warn('wnba/calibration grade failed:', (err as Error).message);
+    }
+    const report = await computeWnbaCalibration({ windowDays });
+    res.json({
+      ...report,
+      gradedThisRequest: gradeResult,
+      disclaimer: WNBA_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('wnba/calibration failed', err);
+    res.status(500).json({ error: 'wnba calibration fetch failed' });
+  }
 });
 
 wnbaRouter.get('/today', async (req, res) => {
