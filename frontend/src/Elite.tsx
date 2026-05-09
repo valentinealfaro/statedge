@@ -337,13 +337,32 @@ function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
   const dirColor = leg.direction === 'OVER' ? '#66bb6a' : '#ef5350';
   const sport = detectLegSport(leg);
   const sportColor = sport === 'mlb' ? '#66bb6a' : sport === 'mma' ? '#ef5350' : '#7aa2ff';
+
+  // Click-through to the right player/fighter profile per sport.
+  // NBA + MLB use numeric playerId; UFC uses ESPN athlete id.
+  const profileLink = sport === 'mlb' ? `/mlb/player/${leg.playerId}`
+    : sport === 'nba' ? `/nba/player/${leg.playerId}`
+    : sport === 'mma' && leg.espnAthleteId ? `/mma/fighter/${leg.espnAthleteId}`
+    : null;
+
+  const Wrapper = profileLink
+    ? ({ children }: { children: React.ReactNode }) => (
+        <Link to={profileLink} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+          {children}
+        </Link>
+      )
+    : ({ children }: { children: React.ReactNode }) => <>{children}</>;
+
   return (
+    <Wrapper>
     <div style={{
       padding: 12,
       background: 'rgba(0,0,0,0.25)',
       border: '1px solid rgba(255,255,255,0.08)',
       borderLeft: `3px solid ${dirColor}`,
       borderRadius: 6,
+      cursor: profileLink ? 'pointer' : 'default',
+      transition: 'background 120ms, border-color 120ms',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flexShrink: 0 }}>
@@ -402,6 +421,7 @@ function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
         </div>
       </div>
     </div>
+    </Wrapper>
   );
 }
 
