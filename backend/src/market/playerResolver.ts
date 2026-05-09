@@ -74,30 +74,100 @@ export async function resolveNbaPlayer(
   return null;
 }
 
-// MLB player resolver. Same pattern as NBA but against mlb_players.
-export async function resolveMlbPlayer(
+// Team resolution — full team name → { abbreviation, id }. Used by
+// providers that emit full names like "Toronto Blue Jays" instead of
+// "TOR". The Odds API returns home_team / away_team as full names.
+export type ResolvedTeam = {
+  id: number;
+  abbreviation: string;
+  fullName: string;
+};
+
+export async function resolveMlbTeamFromFullName(
   rawName: string,
-): Promise<ResolvedPlayer | null> {
+): Promise<ResolvedTeam | null> {
   const target = fold(rawName);
   if (!target) return null;
   const { rows } = await getPool().query<{
     id: number;
+    abbreviation: string;
     full_name: string;
-    team_id: number | null;
   }>(
-    `SELECT p.id, p.full_name, p.team_id FROM mlb_players p`,
+    `SELECT id, abbreviation, full_name FROM mlb_teams`,
   );
   for (const r of rows) {
     if (fold(r.full_name) === target) {
-      return { internalId: r.id, fullName: r.full_name, team: null };
+      return { id: r.id, abbreviation: r.abbreviation, fullName: r.full_name };
     }
   }
-  // Last-name unique match
-  const targetLast = target;       // for MLB the target is already folded full
-  const matches = rows.filter((r) => fold(r.full_name).endsWith(targetLast.slice(-Math.max(4, Math.floor(targetLast.length / 2)))));
-  if (matches.length === 1) {
-    const m = matches[0]!;
-    return { internalId: m.id, fullName: m.full_name, team: null };
+  return null;
+}
+
+// MLB player resolver. Three-stage match:
+//   1. Exact case-insensitive (DB-side LOWER) match.
+//   2. Folded match (strips suffixes Jr/Sr/II/III + non-alphanumerics).
+//   3. Last-name unique match — only when one player has that surname.
+// Uses the indexed lower(full_name) for stage 1 so the hot path stays
+// fast even with thousands of players. Stages 2-3 only fire on misses.
+export async function resolveMlbPlayer(
+  rawName: string,
+): Promise<ResolvedPlayer | null> {
+  const trimmed = rawName.trim();
+  if (!trimmed) return null;
+  const pool = getPool();
+
+  // Stage 1 — exact case-insensitive (uses mlb_players_full_name_idx).
+  const { rows: exact } = await pool.query<{
+    id: number;
+    full_name: string;
+    team_abbr: string | null;
+  }>(
+    `SELECT p.id, p.full_name, t.abbreviation AS team_abbr
+       FROM mlb_players p
+  LEFT JOIN mlb_teams t ON t.id = p.team_id
+      WHERE LOWER(p.full_name) = LOWER($1)
+      LIMIT 1`,
+    [trimmed],
+  );
+  if (exact[0]) {
+    return { internalId: exact[0].id, fullName: exact[0].full_name, team: exact[0].team_abbr };
+  }
+
+  // Stage 2 — folded full-name match. Catches "Lebron James Jr." vs
+  // "LeBron James" and similar punctuation/suffix variants. Only fires
+  // when stage 1 missed.
+  const target = fold(trimmed);
+  if (!target) return null;
+  const { rows: candidates } = await pool.query<{
+    id: number;
+    full_name: string;
+    team_abbr: string | null;
+  }>(
+    `SELECT p.id, p.full_name, t.abbreviation AS team_abbr
+       FROM mlb_players p
+  LEFT JOIN mlb_teams t ON t.id = p.team_id`,
+  );
+  for (const r of candidates) {
+    if (fold(r.full_name) === target) {
+      return { internalId: r.id, fullName: r.full_name, team: r.team_abbr };
+    }
+  }
+
+  // Stage 3 — last-name unique match. Splits both target + candidate
+  // by space, takes the trailing token. Only commits when exactly one
+  // candidate's last name matches — avoids "Smith" returning the
+  // wrong Smith out of 12.
+  const targetParts = trimmed.toLowerCase().split(/\s+/);
+  const targetLast = targetParts[targetParts.length - 1];
+  if (!targetLast || targetLast.length < 3) return null;
+  const surnameMatches = candidates.filter((r) => {
+    const parts = r.full_name.toLowerCase().split(/\s+/);
+    const last = parts[parts.length - 1];
+    return last === targetLast;
+  });
+  if (surnameMatches.length === 1) {
+    const m = surnameMatches[0]!;
+    return { internalId: m.id, fullName: m.full_name, team: m.team_abbr };
   }
   return null;
 }

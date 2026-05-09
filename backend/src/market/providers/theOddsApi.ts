@@ -309,6 +309,86 @@ export async function fetchToaEventOdds(opts: {
   return { data, quota };
 }
 
+// ---------- Historical odds (Phase 103f) ----------
+//
+// CRITICAL: historical odds cost 10× live. Cost = 10 × markets × regions.
+// The free tier likely doesn't include historical (paid plans only).
+// The same budget guard applies — assertBudgetAvailable fires before
+// the network request with the inflated estimate.
+
+export type ToaHistoricalEventOdds = ToaEventOdds & {
+  // Historical responses include the snapshot timestamp. Live responses
+  // don't (they implicitly mean "now").
+  timestamp?: string;
+};
+
+// Fetch historical event odds at a specific timestamp.
+//
+// Endpoint: /v4/historical/sports/{key}/events/{eventId}/odds
+// Cost: 10 × markets × regions per request.
+//
+// `date` is an ISO 8601 timestamp. The Odds API returns the snapshot
+// closest to that timestamp (rounded down to nearest 5-min interval).
+export async function fetchToaHistoricalEventOdds(opts: {
+  sport: MarketSport;
+  eventId: string;
+  date: string;             // ISO timestamp
+  markets: string[];
+  regions?: string;
+  oddsFormat?: 'american' | 'decimal';
+}): Promise<ToaFetchResult<ToaHistoricalEventOdds>> {
+  const sportKey = TOA_SPORT_KEY[opts.sport];
+  if (!sportKey) throw new Error(`Sport ${opts.sport} has no Odds API key mapping`);
+  const key = requireKey();
+  const regionCount = (opts.regions ?? 'us').split(',').filter(Boolean).length;
+  const estimatedCost = 10 * opts.markets.length * regionCount;
+  await assertBudgetAvailable('the_odds_api', 'ODDS_API_MONTHLY_CREDITS', estimatedCost);
+
+  const params = new URLSearchParams({
+    apiKey: key,
+    regions: opts.regions ?? 'us',
+    markets: opts.markets.join(','),
+    oddsFormat: opts.oddsFormat ?? 'american',
+    date: opts.date,
+  });
+  const url = `${BASE}/historical/sports/${encodeURIComponent(sportKey)}/events/${encodeURIComponent(opts.eventId)}/odds?${params.toString()}`;
+  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  const quota = readQuota(res.headers);
+  if (!res.ok) {
+    throw new Error(`The Odds API historical event-odds fetch failed: ${res.status} ${await res.text().catch(() => '')}`);
+  }
+  // Historical wraps the event in a `data` envelope with timestamp.
+  const json = (await res.json()) as { timestamp: string; data: ToaEventOdds };
+  await recordSpend('the_odds_api', quota.costThisRequest ?? estimatedCost);
+  return {
+    data: { ...json.data, timestamp: json.timestamp },
+    quota,
+  };
+}
+
+// List historical events for a sport on a specific date. Used to discover
+// event IDs for backfill. Cost: 1 credit per request (returns events
+// snapshot at the given date).
+export async function fetchToaHistoricalEvents(opts: {
+  sport: MarketSport;
+  date: string;             // ISO timestamp
+}): Promise<ToaFetchResult<ToaEventStub[]>> {
+  const sportKey = TOA_SPORT_KEY[opts.sport];
+  if (!sportKey) throw new Error(`Sport ${opts.sport} has no Odds API key mapping`);
+  const key = requireKey();
+  await assertBudgetAvailable('the_odds_api', 'ODDS_API_MONTHLY_CREDITS', 1);
+
+  const url = `${BASE}/historical/sports/${encodeURIComponent(sportKey)}/events?apiKey=${encodeURIComponent(key)}&date=${encodeURIComponent(opts.date)}`;
+  const res = await fetch(url, { headers: { 'accept': 'application/json' } });
+  const quota = readQuota(res.headers);
+  if (!res.ok) {
+    throw new Error(`The Odds API historical events fetch failed: ${res.status} ${await res.text().catch(() => '')}`);
+  }
+  const json = (await res.json()) as { timestamp: string; data: ToaEventStub[] };
+  await recordSpend('the_odds_api', quota.costThisRequest ?? 1);
+  return { data: json.data, quota };
+}
+
 // Re-export the americanFromDecimal converter for callers that want
 // to compute prices without re-importing from normalizer.ts.
 export { americanFromDecimal };

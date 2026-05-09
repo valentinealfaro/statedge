@@ -11,11 +11,18 @@
 //   POST /provider/:source/ingest — webhook for paid feeds
 
 import { Router } from 'express';
+import { getPool } from '../db.js';
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import { getBudgetStatus } from '../market/creditBudget.js';
 import {
+  resolveMlbPlayer,
+  resolveMlbTeamFromFullName,
+} from '../market/playerResolver.js';
+import {
   fetchToaEventOdds,
   fetchToaEvents,
+  fetchToaHistoricalEventOdds,
+  fetchToaHistoricalEvents,
   theOddsApiProvider,
 } from '../market/providers/theOddsApi.js';
 import {
@@ -23,9 +30,118 @@ import {
   listRecentSnapshots,
   writeMarketSnapshots,
 } from '../market/snapshots.js';
-import type { Bookmaker, MarketSport, ProviderSource } from '../market/types.js';
+import type {
+  Bookmaker,
+  MarketSport,
+  NormalizedProp,
+  ProviderSource,
+} from '../market/types.js';
 
 export const marketRouter: Router = Router();
+
+// ---------- Phase 103e-bis — TOA snapshot enrichment ----------
+//
+// The Odds API emits player props with full team names ("Toronto Blue
+// Jays") and player display names ("Jack Kochanowicz"), with no
+// internal IDs. Our market_snapshots table needs internal_player_id
+// + team abbreviation + game_key populated for CLV to JOIN against
+// projection_history cleanly.
+//
+// This enricher resolves what it can via the existing playerResolver
+// + new team resolver. Best-effort: when resolution fails (unknown
+// player / sport not yet wired), we still persist the row with raw
+// name preserved so the resolver can re-resolve later as it improves.
+// Same forgiveness model the PrizePicks paste pipeline uses.
+
+type EnrichedProps = {
+  props: NormalizedProp[];
+  resolvedPlayers: number;
+  resolvedTeams: number;
+  unresolvedPlayers: number;
+};
+
+// TOA event-odds returns home_team / away_team as full names. We need
+// them on the snapshot so opponent + gameKey can be derived. Enrich
+// per-event by passing the event's home/away once and applying to all
+// props from that event.
+async function enrichToaSnapshots(
+  props: NormalizedProp[],
+  events: Array<{ id: string; home_team: string; away_team: string }>,
+): Promise<EnrichedProps> {
+  // Resolve every team in the event set ONCE — same teams play many games
+  // and the resolver hits the DB. Cache by full name.
+  const teamCache = new Map<string, { abbr: string } | null>();
+  async function resolveTeam(fullName: string): Promise<string | null> {
+    if (teamCache.has(fullName)) return teamCache.get(fullName)?.abbr ?? null;
+    const resolved = await resolveMlbTeamFromFullName(fullName);
+    teamCache.set(fullName, resolved ? { abbr: resolved.abbreviation } : null);
+    return resolved?.abbreviation ?? null;
+  }
+
+  // Build event-id → (home_abbr, away_abbr) map.
+  const eventTeams = new Map<string, { home: string | null; away: string | null }>();
+  for (const ev of events) {
+    const [home, away] = await Promise.all([
+      resolveTeam(ev.home_team),
+      resolveTeam(ev.away_team),
+    ]);
+    eventTeams.set(ev.id, { home, away });
+  }
+
+  // Resolve players once per unique name.
+  const playerCache = new Map<string, { id: number; team: string | null } | null>();
+  async function resolvePlayer(name: string): Promise<{ id: number; team: string | null } | null> {
+    if (playerCache.has(name)) return playerCache.get(name) ?? null;
+    const resolved = await resolveMlbPlayer(name);
+    const cached = resolved ? { id: resolved.internalId as number, team: resolved.team } : null;
+    playerCache.set(name, cached);
+    return cached;
+  }
+
+  let resolvedPlayers = 0;
+  let resolvedTeams = 0;
+  let unresolvedPlayers = 0;
+  const enriched: NormalizedProp[] = [];
+
+  for (const p of props) {
+    const eventTeam = p.providerGameId ? eventTeams.get(p.providerGameId) : null;
+    const player = p.sport === 'mlb' ? await resolvePlayer(p.rawPlayerName) : null;
+
+    // Derive player team — prefer player's stored team, fall back to
+    // matching against this event's home/away if the player resolver
+    // doesn't know.
+    const playerTeam = player?.team
+      ?? (eventTeam ? null : null);  // can't derive from event alone
+
+    // Derive opponent — when we know the player's team and the event's
+    // teams, the opponent is "the other one."
+    let opponent: string | null = null;
+    if (playerTeam && eventTeam?.home && eventTeam?.away) {
+      if (playerTeam === eventTeam.home) opponent = eventTeam.away;
+      else if (playerTeam === eventTeam.away) opponent = eventTeam.home;
+    }
+
+    // gameKey — alphabetized abbrev tuple. Same shape we use elsewhere.
+    let gameKey: string | null = null;
+    if (eventTeam?.home && eventTeam?.away) {
+      gameKey = [eventTeam.home, eventTeam.away].sort().join('-');
+    }
+
+    if (player) resolvedPlayers += 1;
+    else unresolvedPlayers += 1;
+    if (playerTeam) resolvedTeams += 1;
+
+    enriched.push({
+      ...p,
+      internalPlayerId: player?.id ?? null,
+      team: playerTeam,
+      opponent,
+      gameKey,
+    });
+  }
+
+  return { props: enriched, resolvedPlayers, resolvedTeams, unresolvedPlayers };
+}
 
 // GET /api/market/health
 //
@@ -158,9 +274,14 @@ marketRouter.post('/odds-api/test', async (req, res) => {
       regions: 'us',
     });
 
-    // Step 3: parse + persist.
+    // Step 3: parse + enrich + persist. Phase 103e-bis: resolution
+    // enricher populates internalPlayerId / team / opponent / gameKey
+    // before write so CLV can JOIN cleanly against projection_history.
     const props = theOddsApiProvider.parse(oddsRes.data);
-    const writeRes = await writeMarketSnapshots(props);
+    const enriched = sport === 'mlb'
+      ? await enrichToaSnapshots(props, [firstEvent])
+      : { props, resolvedPlayers: 0, resolvedTeams: 0, unresolvedPlayers: props.length };
+    const writeRes = await writeMarketSnapshots(enriched.props);
 
     res.json({
       ok: true,
@@ -177,8 +298,13 @@ marketRouter.post('/odds-api/test', async (req, res) => {
       requestsRemaining: oddsRes.quota.requestsRemaining,
       requestsUsed: oddsRes.quota.requestsUsed,
       snapshotsInserted: writeRes.inserted,
+      resolution: {
+        playersResolved: enriched.resolvedPlayers,
+        teamsResolved: enriched.resolvedTeams,
+        playersUnresolved: enriched.unresolvedPlayers,
+      },
       // First 3 props for visual confirmation. Don't dump everything.
-      sample: props.slice(0, 3),
+      sample: enriched.props.slice(0, 3),
       budgetAfter: await getBudgetStatus('the_odds_api', 'ODDS_API_MONTHLY_CREDITS'),
     });
   } catch (err) {
@@ -186,6 +312,331 @@ marketRouter.post('/odds-api/test', async (req, res) => {
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+// POST /api/market/odds-api/backfill (admin only)
+//
+// Phase 103f historical backfill. Pulls historical odds for the
+// requested sport over a date range and writes them through the same
+// snapshot pipeline. EXPENSIVE — 10 credits per market per region per
+// event-snapshot. Conservative defaults to keep the $30 / 20K plan
+// envelope viable:
+//   - 1 market default (caller can request more, gets warned)
+//   - 1 region (us)
+//   - 1 snapshot per game-day (closing line — typically the most
+//     informative single timestamp)
+//
+// Body: {
+//   sport: 'mlb' | 'nba' | 'wnba' | 'mma',
+//   days: number,                     // 1-30
+//   markets?: string[],               // default ['pitcher_strikeouts'] for mlb, ['player_points'] for nba/wnba, ['h2h'] for mma
+//   maxCreditsPerSport?: number,      // soft cap on this run
+//   dryRun?: boolean,                 // estimate cost without firing
+// }
+//
+// Returns: { totalCredits, totalSnapshots, byDay, byEvent, dryRun }
+marketRouter.post('/odds-api/backfill', async (req, res) => {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured' });
+    return;
+  }
+  if (req.header('x-admin-secret') !== expected) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    sport?: MarketSport;
+    days?: number;
+    markets?: string[];
+    maxCreditsPerSport?: number;
+    dryRun?: boolean;
+  };
+  const sport = (body.sport ?? 'mlb') as MarketSport;
+  const days = Math.max(1, Math.min(30, Math.round(Number(body.days ?? 7))));
+  const dryRun = body.dryRun ?? false;
+  const maxCredits = body.maxCreditsPerSport ?? 6000;
+  const markets = body.markets ?? defaultBackfillMarket(sport);
+
+  // Pre-flight budget check (rough estimate). Each historical event
+  // costs 10 × markets × 1 region. Plus 1 credit per day to list
+  // events. We assume ~10 events/day average (MLB heavier, NBA
+  // playoffs lighter, MMA much lower).
+  const eventsPerDay = sport === 'mlb' ? 15 : sport === 'mma' ? 1 : 4;
+  const estimatedCost = days * (1 + eventsPerDay * 10 * markets.length);
+  if (estimatedCost > maxCredits) {
+    res.status(400).json({
+      error: `Estimated cost ${estimatedCost} exceeds maxCreditsPerSport ${maxCredits}.`,
+      hint: 'Reduce days, reduce markets, or raise maxCreditsPerSport (after confirming budget).',
+      estimatedCost,
+      days,
+      markets,
+    });
+    return;
+  }
+  if (dryRun) {
+    const budget = await getBudgetStatus('the_odds_api', 'ODDS_API_MONTHLY_CREDITS');
+    res.json({
+      dryRun: true,
+      sport,
+      days,
+      markets,
+      estimatedCost,
+      assumptions: { eventsPerDay, costPerEvent: 10 * markets.length },
+      budgetBefore: budget,
+    });
+    return;
+  }
+
+  // Walk back N days. For each day, list events (1 credit), then for
+  // each event fetch closing-time historical odds (10×markets credits).
+  let totalCredits = 0;
+  let totalSnapshots = 0;
+  const byDay: Array<{ date: string; events: number; snapshots: number; credits: number }> = [];
+  try {
+    for (let dayOffset = 1; dayOffset <= days; dayOffset += 1) {
+      const targetDate = new Date();
+      targetDate.setUTCDate(targetDate.getUTCDate() - dayOffset);
+      // Use a "post-game" timestamp so we capture the closing line —
+      // ~1 hour after typical game commence times. 03:00 UTC on the
+      // day after the game-day catches MLB games (which start ET
+      // afternoon/evening) at their closing snapshot.
+      const dayIso = targetDate.toISOString().slice(0, 10);
+      const queryTimestamp = `${dayIso}T23:00:00Z`;
+
+      const eventsRes = await fetchToaHistoricalEvents({ sport, date: queryTimestamp });
+      totalCredits += eventsRes.quota.costThisRequest ?? 1;
+      const events = eventsRes.data.filter((e) => e.commence_time.startsWith(dayIso));
+
+      let daySnapshots = 0;
+      let dayCredits = eventsRes.quota.costThisRequest ?? 1;
+      for (const ev of events) {
+        try {
+          const oddsRes = await fetchToaHistoricalEventOdds({
+            sport,
+            eventId: ev.id,
+            date: queryTimestamp,
+            markets,
+            regions: 'us',
+          });
+          const cost = oddsRes.quota.costThisRequest ?? (10 * markets.length);
+          totalCredits += cost;
+          dayCredits += cost;
+          const props = theOddsApiProvider.parse(oddsRes.data);
+          const enriched = sport === 'mlb'
+            ? await enrichToaSnapshots(props, [ev])
+            : { props, resolvedPlayers: 0, resolvedTeams: 0, unresolvedPlayers: props.length };
+          // Override capturedAt to reflect HISTORICAL timestamp, not now.
+          // Otherwise CLV would think these were captured today.
+          const historicalTimestamp = oddsRes.data.timestamp ?? queryTimestamp;
+          for (const p of enriched.props) {
+            p.capturedAt = historicalTimestamp;
+          }
+          const writeRes = await writeMarketSnapshots(enriched.props);
+          totalSnapshots += writeRes.inserted;
+          daySnapshots += writeRes.inserted;
+        } catch (err) {
+          console.warn(`backfill ${sport} ${dayIso} ${ev.id}: ${(err as Error).message}`);
+        }
+
+        // Hard stop if we'd exceed maxCredits — protect against
+        // estimate undershooting reality.
+        if (totalCredits >= maxCredits) {
+          break;
+        }
+      }
+      byDay.push({ date: dayIso, events: events.length, snapshots: daySnapshots, credits: dayCredits });
+      if (totalCredits >= maxCredits) break;
+    }
+
+    res.json({
+      ok: true,
+      sport,
+      days,
+      markets,
+      totalCredits,
+      totalSnapshots,
+      byDay,
+      budgetAfter: await getBudgetStatus('the_odds_api', 'ODDS_API_MONTHLY_CREDITS'),
+    });
+  } catch (err) {
+    console.error('odds-api/backfill failed', err);
+    res.status(500).json({
+      error: (err as Error).message,
+      partial: { totalCredits, totalSnapshots, byDay },
+    });
+  }
+});
+
+// POST /api/market/odds-api/snapshot-edges (admin only)
+//
+// Phase 103f edge-driven daily snapshot. Reads the highest-edge legs
+// from the published slate, groups them by event, fetches LIVE odds
+// for only those events × the markets needed. Way cheaper than a
+// slate-wide snapshot — typical day burns ~30-50 credits on MLB
+// instead of ~165.
+//
+// Body: { sport, topN?, marketsPerLeg? }
+// Returns: { eventsFetched, totalCredits, snapshotsInserted, budgetAfter }
+marketRouter.post('/odds-api/snapshot-edges', async (req, res) => {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured' });
+    return;
+  }
+  if (req.header('x-admin-secret') !== expected) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    sport?: MarketSport;
+    topN?: number;
+    marketsPerLeg?: number;     // unused for now; kept for forward compat
+  };
+  const sport = (body.sport ?? 'mlb') as MarketSport;
+  const topN = Math.max(1, Math.min(50, Math.round(Number(body.topN ?? 10))));
+  void body.marketsPerLeg;
+
+  if (sport !== 'mlb') {
+    // Other sports' published slates haven't standardized statKey →
+    // TOA market mapping yet. MLB-first; NBA + MMA layer on later.
+    res.status(400).json({
+      error: `snapshot-edges currently MLB-only. Sport ${sport} support pending statKey→TOA market mapping.`,
+    });
+    return;
+  }
+
+  try {
+    // Pull today's published MLB slate from DB. Already has resolved
+    // playerIds, statKeys, and edgePercents from the projection engine.
+    const { rows } = await getPool().query<{
+      player_id: number;
+      selected_stat: string;
+      direction: string;
+      line_value: string;
+      edge_percent: string | null;
+    }>(
+      `SELECT player_id, selected_stat, direction, line_value, edge_percent
+         FROM mlb_projection_history
+        WHERE game_date = CURRENT_DATE
+          AND edge_percent IS NOT NULL
+        ORDER BY ABS(edge_percent) DESC
+        LIMIT $1`,
+      [topN],
+    );
+
+    if (rows.length === 0) {
+      res.json({
+        ok: true,
+        sport,
+        message: 'No published projections for today yet — nothing to snapshot.',
+        eventsFetched: 0,
+        totalCredits: 0,
+        snapshotsInserted: 0,
+        budgetAfter: await getBudgetStatus('the_odds_api', 'ODDS_API_MONTHLY_CREDITS'),
+      });
+      return;
+    }
+
+    // Group needed markets by player. Then list TOA events to find
+    // which event each player belongs to, then dedupe.
+    const marketsByPlayerId = new Map<number, Set<string>>();
+    for (const r of rows) {
+      const set = marketsByPlayerId.get(r.player_id) ?? new Set<string>();
+      const market = mlbStatKeyToToaMarket(r.selected_stat);
+      if (market) set.add(market);
+      marketsByPlayerId.set(r.player_id, set);
+    }
+
+    // List today's events (free). Use TOA events to discover ids.
+    const eventsRes = await fetchToaEvents(sport);
+    const today = new Date().toISOString().slice(0, 10);
+    const todaysEvents = eventsRes.data.filter((e) => e.commence_time.startsWith(today));
+
+    // For each event, fetch the union of markets across all top-edge
+    // players in that event. Match player → event by team-name. We
+    // don't have team-by-player yet from the slate (snapshot-edges is
+    // MLB-only, so resolveMlbPlayer.team gives us the abbr).
+    //
+    // Simpler approach for v1: just hit the top events in chronological
+    // order with the union of all needed markets. Caps cost.
+    const allMarkets = new Set<string>();
+    for (const set of marketsByPlayerId.values()) {
+      for (const m of set) allMarkets.add(m);
+    }
+    const marketList = [...allMarkets].slice(0, 5);  // cap at 5 markets per event call
+    const maxEvents = Math.min(todaysEvents.length, 5);    // cap at 5 events per snapshot
+
+    let totalCredits = 0;
+    let totalSnapshots = 0;
+    const eventsHit: string[] = [];
+    for (let i = 0; i < maxEvents; i += 1) {
+      const ev = todaysEvents[i]!;
+      try {
+        const oddsRes = await fetchToaEventOdds({
+          sport,
+          eventId: ev.id,
+          markets: marketList,
+          regions: 'us',
+        });
+        totalCredits += oddsRes.quota.costThisRequest ?? marketList.length;
+        const props = theOddsApiProvider.parse(oddsRes.data);
+        const enriched = await enrichToaSnapshots(props, [ev]);
+        const writeRes = await writeMarketSnapshots(enriched.props);
+        totalSnapshots += writeRes.inserted;
+        eventsHit.push(ev.id);
+      } catch (err) {
+        console.warn(`snapshot-edges ${ev.id}: ${(err as Error).message}`);
+      }
+    }
+
+    res.json({
+      ok: true,
+      sport,
+      legsConsidered: rows.length,
+      uniquePlayers: marketsByPlayerId.size,
+      marketsRequested: marketList,
+      eventsFetched: eventsHit.length,
+      totalCredits,
+      snapshotsInserted: totalSnapshots,
+      budgetAfter: await getBudgetStatus('the_odds_api', 'ODDS_API_MONTHLY_CREDITS'),
+    });
+  } catch (err) {
+    console.error('odds-api/snapshot-edges failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Sport → default backfill market. Cheapest-but-meaningful single
+// market that captures the most institutional signal.
+function defaultBackfillMarket(sport: MarketSport): string[] {
+  if (sport === 'mlb')  return ['pitcher_strikeouts'];
+  if (sport === 'nba')  return ['player_points'];
+  if (sport === 'wnba') return ['player_points'];
+  if (sport === 'mma')  return ['h2h'];
+  return ['h2h'];
+}
+
+// MLB statKey (our canonical) → The Odds API market key. Returns null
+// when there's no mapping (TOA doesn't carry that market).
+function mlbStatKeyToToaMarket(statKey: string): string | null {
+  const map: Record<string, string> = {
+    pitcher_strikeouts: 'pitcher_strikeouts',
+    hits:               'batter_hits',
+    total_bases:        'batter_total_bases',
+    runs:               'batter_runs',
+    rbis:               'batter_rbis',
+    walks:              'batter_walks',
+    home_runs:          'batter_home_runs',
+    strikeouts:         'batter_strikeouts',
+    outs_recorded:      'pitcher_outs',
+    hits_allowed:       'pitcher_hits',
+    walks_allowed:      'pitcher_walks',
+    earned_runs_allowed: 'pitcher_earned_runs',
+  };
+  return map[statKey] ?? null;
+}
 
 marketRouter.get('/snapshots/recent', async (req, res) => {
   try {
