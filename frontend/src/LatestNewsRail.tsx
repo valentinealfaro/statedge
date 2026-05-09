@@ -34,17 +34,21 @@ const KIND_LABEL: Record<string, string> = {
 
 type Props = {
   sport?: 'mlb' | 'nba' | 'wnba' | 'mma';
+  // Sorted team-pair like "BOS-NYY" — matches articles.related_game_key
+  // shape produced by templates.gameKeyFromGame. Game-detail pages
+  // pass this so the rail shows only articles about that matchup.
+  gameKey?: string;
   limit?: number;
   heading?: string;
 };
 
-export function LatestNewsRail({ sport, limit = 4, heading }: Props) {
+export function LatestNewsRail({ sport, gameKey, limit = 4, heading }: Props) {
   const [articles, setArticles] = useState<Article[] | null>(null);
   useEffect(() => {
-    listArticles({ sport, limit })
+    listArticles({ sport, gameKey, limit })
       .then((r) => setArticles(r.articles))
       .catch(() => setArticles([]));
-  }, [sport, limit]);
+  }, [sport, gameKey, limit]);
 
   // Silent until loaded; silent forever if nothing to show.
   if (!articles || articles.length === 0) return null;

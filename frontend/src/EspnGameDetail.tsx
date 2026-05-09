@@ -16,9 +16,15 @@ import {
   type SlateResponse,
 } from './api';
 import { FreshnessBanner } from './FreshnessBanner';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { teamIdFromAbbr } from './teams';
 import { useTitle } from './useTitle';
+
+function buildGameKey(awayAbbr: string | undefined, homeAbbr: string | undefined): string | undefined {
+  if (!awayAbbr || !homeAbbr) return undefined;
+  return [awayAbbr, homeAbbr].sort().join('-');
+}
 
 // ESPN-driven game detail: status / venue → starters → bench → leaders →
 // injuries. Works for pre-game (lineups blank, injuries shown), live (in
@@ -86,6 +92,13 @@ export function EspnGameDetail() {
           )}
 
           <LastFiveGames data={data} />
+
+          <LatestNewsRail
+            sport="nba"
+            gameKey={buildGameKey(data.away.abbreviation, data.home.abbreviation)}
+            limit={4}
+            heading={`${data.away.abbreviation} @ ${data.home.abbreviation} · Coverage`}
+          />
         </>
       )}
     </div>

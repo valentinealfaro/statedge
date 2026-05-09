@@ -113,6 +113,7 @@ export async function listArticles(opts?: {
   kind?: ArticleKind;
   limit?: number;
   playerId?: string;
+  gameKey?: string;
 }): Promise<Article[]> {
   if (!isDbConfigured()) return [];
   await ensureArticlesTable();
@@ -130,6 +131,10 @@ export async function listArticles(opts?: {
   if (opts?.playerId) {
     where.push(`related_player_id = $${args.length + 1}`);
     args.push(opts.playerId);
+  }
+  if (opts?.gameKey) {
+    where.push(`related_game_key = $${args.length + 1}`);
+    args.push(opts.gameKey);
   }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   args.push(limit);

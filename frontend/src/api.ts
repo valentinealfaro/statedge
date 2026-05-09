@@ -1789,12 +1789,14 @@ export async function listArticles(opts?: {
   sport?: string;
   kind?: string;
   playerId?: string;
+  gameKey?: string;
   limit?: number;
 }): Promise<{ articles: Article[]; count: number }> {
   const p = new URLSearchParams();
   if (opts?.sport) p.set('sport', opts.sport);
   if (opts?.kind) p.set('kind', opts.kind);
   if (opts?.playerId) p.set('playerId', opts.playerId);
+  if (opts?.gameKey) p.set('gameKey', opts.gameKey);
   if (opts?.limit) p.set('limit', String(opts.limit));
   const res = await fetch(`${API_BASE}/api/news?${p.toString()}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

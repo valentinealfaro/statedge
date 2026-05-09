@@ -28,9 +28,18 @@ import {
   type MlbTeamLast5,
   type MlbTodayGame,
 } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
+
+// Build the sorted team-pair key the news templates use as
+// articles.related_game_key, so a game page can filter to its
+// own coverage. Mirrors templates.gameKeyFromGame on the backend.
+function buildGameKey(awayAbbr: string | undefined, homeAbbr: string | undefined): string | undefined {
+  if (!awayAbbr || !homeAbbr) return undefined;
+  return [awayAbbr, homeAbbr].sort().join('-');
+}
 
 export function MlbGameDetail() {
   const { gamePk: gamePkStr } = useParams<{ gamePk: string }>();
@@ -80,6 +89,18 @@ export function MlbGameDetail() {
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
         {!game && !error && <Skeleton width="100%" height={400} />}
         {game && <GameView game={game} />}
+
+        {/* Coverage rail — articles tagged with this matchup's
+            game key. Hidden silently when nothing's been written
+            about this game yet. */}
+        {game && (
+          <LatestNewsRail
+            sport="mlb"
+            gameKey={buildGameKey(game.away.abbreviation, game.home.abbreviation)}
+            limit={4}
+            heading={`${game.away.abbreviation} @ ${game.home.abbreviation} · Coverage`}
+          />
+        )}
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ import type { ArticleKind, ArticleSport } from '../news/types.js';
 
 export const newsRouter: Router = Router();
 
-// GET /api/news?sport=mlb&kind=top_mispricings&limit=20&playerId=12345
+// GET /api/news?sport=mlb&kind=top_mispricings&limit=20&playerId=12345&gameKey=BOS-NYY
 //
 // List recent articles. All filters optional. Default 30 most recent
 // across all sports + kinds.
@@ -39,7 +39,8 @@ newsRouter.get('/', async (req, res) => {
     const kind = req.query.kind as ArticleKind | undefined;
     const limit = req.query.limit ? Math.max(1, Math.min(200, Number(req.query.limit))) : 30;
     const playerId = req.query.playerId as string | undefined;
-    const articles = await listArticles({ sport, kind, limit, playerId });
+    const gameKey = req.query.gameKey as string | undefined;
+    const articles = await listArticles({ sport, kind, limit, playerId, gameKey });
     res.json({ articles, count: articles.length });
   } catch (err) {
     console.error('news/list failed', err);
