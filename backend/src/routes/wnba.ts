@@ -28,6 +28,7 @@ import { buildWnbaSlate, type WnbaSlateMode } from '../wnba/slateBuilder.js';
 import {
   computeWnbaCalibration,
   gradeWnbaProjections,
+  listWnbaProjections,
   recordWnbaProjections,
   type RecordableWnbaLeg,
 } from '../wnba/projectionHistory.js';
@@ -644,6 +645,124 @@ wnbaRouter.get('/calibration', async (req, res) => {
   } catch (err) {
     console.error('wnba/calibration failed', err);
     res.status(500).json({ error: 'wnba calibration fetch failed' });
+  }
+});
+
+// GET /api/wnba/slate/history?windowDays=30
+//
+// Past published slates with hit-rate aggregates per day. Same shape
+// MLB ships — date-grouped buckets + per-card-type rollup + per-stat-
+// type rollup. Public endpoint; accountability is the whole point.
+wnbaRouter.get('/slate/history', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ days: [] });
+    return;
+  }
+  const windowDays = Math.max(1, Math.min(365, Number(req.query.windowDays ?? 30)));
+  try {
+    // Lazy-grade before reading so the response reflects fresh outcomes.
+    try { await gradeWnbaProjections({ windowDays }); } catch (err) {
+      console.warn('wnba/slate/history grade failed:', (err as Error).message);
+    }
+    const all = await listWnbaProjections({ windowDays });
+
+    type CardBucket = {
+      cardType: string;
+      legs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+      cleared: boolean | null;
+    };
+    type DayBucket = {
+      date: string;
+      totalLegs: number;
+      gradedLegs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+      byCardType: Record<string, CardBucket>;
+    };
+
+    const byDate = new Map<string, DayBucket>();
+    for (const r of all) {
+      let day = byDate.get(r.gameDate);
+      if (!day) {
+        day = { date: r.gameDate, totalLegs: 0, gradedLegs: 0, hits: 0, misses: 0, pending: 0, byCardType: {} };
+        byDate.set(r.gameDate, day);
+      }
+      day.totalLegs += 1;
+      if (r.hitOrMiss === true)       { day.hits += 1; day.gradedLegs += 1; }
+      else if (r.hitOrMiss === false) { day.misses += 1; day.gradedLegs += 1; }
+      else                             { day.pending += 1; }
+
+      const ct = r.cardType ?? 'Other';
+      let card = day.byCardType[ct];
+      if (!card) {
+        card = { cardType: ct, legs: 0, hits: 0, misses: 0, pending: 0, cleared: null };
+        day.byCardType[ct] = card;
+      }
+      card.legs += 1;
+      if (r.hitOrMiss === true)       card.hits += 1;
+      else if (r.hitOrMiss === false) card.misses += 1;
+      else                             card.pending += 1;
+    }
+
+    for (const day of byDate.values()) {
+      for (const card of Object.values(day.byCardType)) {
+        if (card.pending > 0) card.cleared = null;
+        else card.cleared = card.misses === 0;
+      }
+    }
+
+    const days = [...byDate.values()]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((d) => ({
+        ...d,
+        hitRate: d.gradedLegs > 0 ? Math.round((d.hits / d.gradedLegs) * 1000) / 10 : null,
+      }));
+
+    // Per-stat-type rollup (stat + direction).
+    const byStatTypeMap = new Map<string, {
+      stat: string;
+      direction: 'OVER' | 'UNDER';
+      legs: number;
+      hits: number;
+      misses: number;
+      pending: number;
+    }>();
+    for (const r of all) {
+      const key = `${r.statKey}::${r.direction}`;
+      let bucket = byStatTypeMap.get(key);
+      if (!bucket) {
+        bucket = { stat: r.statKey, direction: r.direction, legs: 0, hits: 0, misses: 0, pending: 0 };
+        byStatTypeMap.set(key, bucket);
+      }
+      bucket.legs += 1;
+      if (r.hitOrMiss === true)       bucket.hits += 1;
+      else if (r.hitOrMiss === false) bucket.misses += 1;
+      else                             bucket.pending += 1;
+    }
+    const byStatType = [...byStatTypeMap.values()]
+      .map((b) => {
+        const settled = b.hits + b.misses;
+        return {
+          ...b,
+          hitRate: settled > 0 ? Math.round((b.hits / settled) * 1000) / 10 : null,
+        };
+      })
+      .sort((a, b) => {
+        const aSettled = a.hits + a.misses;
+        const bSettled = b.hits + b.misses;
+        if (aSettled < 5 && bSettled >= 5) return 1;
+        if (bSettled < 5 && aSettled >= 5) return -1;
+        return (b.hitRate ?? 0) - (a.hitRate ?? 0);
+      });
+
+    res.json({ windowDays, days, byStatType, disclaimer: WNBA_DISCLAIMER });
+  } catch (err) {
+    console.error('wnba/slate/history failed', err);
+    res.status(500).json({ error: 'wnba slate history failed' });
   }
 });
 

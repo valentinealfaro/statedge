@@ -21,6 +21,7 @@ import { WnbaCalibration } from './WnbaCalibration';
 import { WnbaCompare } from './WnbaCompare';
 import { WnbaGameDetail } from './WnbaGameDetail';
 import { WnbaSlate } from './WnbaSlate';
+import { WnbaSlateHistory } from './WnbaSlateHistory';
 import { WnbaStandings } from './WnbaStandings';
 
 // Routes are sport-grouped per the UX spec: /nba/* and /mlb/*. Old
@@ -61,6 +62,7 @@ export function App() {
           <Route path="/wnba/standings" element={<WnbaStandings />} />
           <Route path="/wnba/compare" element={<WnbaCompare />} />
           <Route path="/wnba/slate" element={<WnbaSlate />} />
+          <Route path="/wnba/slate/history" element={<WnbaSlateHistory />} />
           <Route path="/wnba/calibration" element={<WnbaCalibration />} />
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />

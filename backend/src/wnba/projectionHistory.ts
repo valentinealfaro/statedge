@@ -236,6 +236,56 @@ function tierFromN(n: number): 'thin' | 'moderate' | 'strong' {
   return 'strong';
 }
 
+// ---------- History listing (Phase 93) ----------
+//
+// Used by /api/wnba/slate/history to render date-by-date track record.
+// Returns ALL rows in window — graded + ungraded — so the UI can show
+// pending counts honestly.
+
+export type WnbaHistoryRow = {
+  gameDate: string;          // YYYY-MM-DD
+  athleteId: string;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  cardType: string | null;
+  hitOrMiss: boolean | null; // null = ungraded
+};
+
+export async function listWnbaProjections(opts: { windowDays?: number } = {}): Promise<WnbaHistoryRow[]> {
+  await ensureWnbaProjectionHistoryTable();
+  const windowDays = opts.windowDays ?? 30;
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    game_date: Date;
+    athlete_id: string;
+    player_name: string;
+    team: string | null;
+    stat_key: string;
+    direction: string;
+    card_type: string | null;
+    hit_or_miss: boolean | null;
+  }>(
+    `SELECT game_date, athlete_id, player_name, team,
+            stat_key, direction, card_type, hit_or_miss
+       FROM wnba_projection_history
+      WHERE game_date >= (CURRENT_DATE - $1::int)
+      ORDER BY game_date DESC`,
+    [windowDays],
+  );
+  return rows.map((r) => ({
+    gameDate: `${r.game_date.getUTCFullYear()}-${String(r.game_date.getUTCMonth() + 1).padStart(2, '0')}-${String(r.game_date.getUTCDate()).padStart(2, '0')}`,
+    athleteId: r.athlete_id,
+    playerName: r.player_name,
+    team: r.team,
+    statKey: r.stat_key,
+    direction: (r.direction === 'OVER' ? 'OVER' : 'UNDER'),
+    cardType: r.card_type,
+    hitOrMiss: r.hit_or_miss,
+  }));
+}
+
 export async function computeWnbaCalibration(opts: { windowDays?: number } = {}): Promise<WnbaCalibrationReport> {
   await ensureWnbaProjectionHistoryTable();
   const windowDays = opts.windowDays ?? 30;
