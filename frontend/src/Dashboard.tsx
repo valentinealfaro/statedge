@@ -24,6 +24,7 @@ import {
   type WnbaCalibrationReport,
   type WnbaSlateResponse,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -169,6 +170,10 @@ export function Dashboard() {
           Live quantitative war room. We rank by market dislocation, not hit rate. Every leg
           surfaces why it's mispriced, what could break it, and where the market disagrees.
         </p>
+
+        {/* Truth metric pinned above the war room — institutional users
+            check the scoreboard before they trust the war plan. */}
+        <ClvTrustBanner />
 
         {/* AI Analyst Summary — 1-2 sentence narrative across the
             entire slate. Phase 100 spec directive #1. */}

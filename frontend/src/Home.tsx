@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
@@ -40,6 +41,11 @@ export function Home() {
           We provide statistics and analysis only. No betting advice.
         </p>
       </header>
+
+      {/* CLV truth metric — the institutional credential. Pinned high
+          so the data-first promise is visible, not buried. Banner
+          silently hides when no projection has graded yet. */}
+      <ClvTrustBanner />
 
       {/* Live deck — only renders when at least one NBA or MLB game is
           actually in progress. Bloomberg-Terminal framing: when markets

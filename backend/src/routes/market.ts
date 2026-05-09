@@ -12,7 +12,7 @@
 
 import { Router } from 'express';
 import { getPool, isDbConfigured, setMlbDailySlateInDb, type MlbStoredDailyLine } from '../db.js';
-import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
+import { computeMlbClv, computeTrustScore, computeWnbaClv } from '../market/clv.js';
 import { getBudgetStatus } from '../market/creditBudget.js';
 import {
   bulkResolveMlbPlayers,
@@ -201,6 +201,26 @@ marketRouter.get('/clv', async (req, res) => {
   } catch (err) {
     console.error('market/clv failed', err);
     res.status(500).json({ error: 'market clv failed' });
+  }
+});
+
+// GET /api/market/clv/trust-score
+//
+// Aggregate CLV beat-rate across sports for the home-page Trust
+// Banner. Returns three windows side-by-side (7d / 30d / season-to-
+// date) plus per-sport breakdown for the expand panel. Public read —
+// the institutional credential needs to be visible without auth.
+marketRouter.get('/clv/trust-score', async (_req, res) => {
+  try {
+    const [w7, w30, season] = await Promise.all([
+      computeTrustScore({ windowDays: 7 }),
+      computeTrustScore({ windowDays: 30 }),
+      computeTrustScore({ windowDays: 365 }),
+    ]);
+    res.json({ window7d: w7, window30d: w30, seasonToDate: season });
+  } catch (err) {
+    console.error('market/clv/trust-score failed', err);
+    res.status(500).json({ error: 'trust-score failed' });
   }
 });
 

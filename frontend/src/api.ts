@@ -1940,6 +1940,32 @@ export async function getUfcMoneylines(): Promise<UfcMoneylinesResponse> {
   return (await res.json()) as UfcMoneylinesResponse;
 }
 
+// CLV Trust Score (Phase 111)
+export type ClvTrustWindow = {
+  windowDays: number;
+  withClosing: number;
+  beatMarket: number;
+  lostToMarket: number;
+  beatRate: number | null;
+  bySport: Array<{
+    sport: string;
+    withClosing: number;
+    beatMarket: number;
+    beatRate: number | null;
+  }>;
+};
+export type ClvTrustScoreResponse = {
+  window7d: ClvTrustWindow;
+  window30d: ClvTrustWindow;
+  seasonToDate: ClvTrustWindow;
+};
+
+export async function getClvTrustScore(): Promise<ClvTrustScoreResponse> {
+  const res = await fetch(`${API_BASE}/api/market/clv/trust-score`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as ClvTrustScoreResponse;
+}
+
 // UFC slate (Phase 110a)
 export type UfcStoredLine = {
   fighterName: string;

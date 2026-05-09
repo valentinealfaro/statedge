@@ -85,6 +85,70 @@ export type ClvSummary = {
   rows: ClvRow[];
 };
 
+// Aggregate CLV across all sports — Phase 111.
+//
+// The institutional truth metric. "Did our published lines beat the
+// market's eventual close?" is the cleanest rebuttal to "anyone can
+// pick games" because it's process-pure: independent of game-outcome
+// variance, you either got a better number than the market did or
+// you didn't. We surface this prominently on the home page so the
+// data-first promise is visible, not buried.
+//
+// Sums across MLB + WNBA (NBA + UFC light up when their projection
+// histories accumulate enough). Recomputes beatRate from the summed
+// counts so a sport with more rows weights proportionally.
+export type ClvTrustScore = {
+  windowDays: number;
+  withClosing: number;
+  beatMarket: number;
+  lostToMarket: number;
+  beatRate: number | null;
+  bySport: Array<{
+    sport: string;
+    withClosing: number;
+    beatMarket: number;
+    beatRate: number | null;
+  }>;
+};
+
+export async function computeTrustScore(opts: { windowDays: number }): Promise<ClvTrustScore> {
+  const [mlb, wnba] = await Promise.all([
+    computeMlbClv({ windowDays: opts.windowDays }),
+    computeWnbaClv({ windowDays: opts.windowDays }),
+  ]);
+
+  const summaries = [mlb, wnba];
+  let withClosing = 0;
+  let beatMarket = 0;
+  let lostToMarket = 0;
+  const bySport: ClvTrustScore['bySport'] = [];
+  for (const s of summaries) {
+    withClosing += s.withClosing;
+    beatMarket  += s.beatMarket;
+    lostToMarket += s.lostToMarket;
+    if (s.withClosing > 0) {
+      bySport.push({
+        sport: s.sport,
+        withClosing: s.withClosing,
+        beatMarket: s.beatMarket,
+        beatRate: s.beatRate,
+      });
+    }
+  }
+  const beatRate = withClosing === 0
+    ? null
+    : Math.round((beatMarket / withClosing) * 1000) / 10;
+
+  return {
+    windowDays: opts.windowDays,
+    withClosing,
+    beatMarket,
+    lostToMarket,
+    beatRate,
+    bySport,
+  };
+}
+
 // MLB CLV. Query-time join: mlb_projection_history × market_snapshots.
 export async function computeMlbClv(opts: { windowDays?: number; limit?: number }): Promise<ClvSummary> {
   const windowDays = opts.windowDays ?? 30;
