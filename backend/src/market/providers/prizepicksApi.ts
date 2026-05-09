@@ -33,15 +33,18 @@ import type {
   NormalizedProp,
 } from '../types.js';
 
-// PrizePicks league_id map. IDs are stable across seasons but
-// occasionally shift between regular season + playoffs (NBA in
-// particular). When in doubt, hit /v1/leagues against the API and
-// re-derive.
+// PrizePicks league_id map. DEPRECATED for fetch use after Phase
+// 103g-quat-ter — we now fetch the unfiltered /projections endpoint
+// and route by league name from the response. IDs shifted seasonally
+// (e.g. MLB was 7 in early 2026, then became 2 mid-season; NFL bounced
+// between values). Kept here for any caller that wants to verify a
+// specific league_id against current production. When in doubt, hit
+// the unfiltered endpoint and inspect `included.league` entities.
 export const PP_LEAGUE_ID: Record<MarketSport, number> = {
   nba:  9,
-  mlb:  7,
+  mlb:  2,
   wnba: 5,
-  mma:  16,    // UFC + PFL combined under MMA bucket
+  mma:  16,
   nfl:  2,
   nhl:  3,
 };
@@ -87,7 +90,9 @@ type PpProjection = {
   attributes: {
     line_score: number;
     stat_type?: string;             // sometimes present alongside relationships
-    description?: string;           // often the player name
+    stat_display_name?: string;     // current PP responses use this
+    description?: string;           // current PP responses: TEAM abbreviation (NOT player name as the legacy parser assumed)
+    event_type?: string;            // 'player' | 'team' | other — we only want 'player'
     is_promo: boolean;
     odds_type: 'standard' | 'demon' | 'goblin';
     start_time: string;             // ISO
@@ -122,7 +127,24 @@ type PpIncludedStatType = {
   };
 };
 
-type PpIncluded = PpIncludedPlayer | PpIncludedStatType | { type: string; id: string; attributes: unknown };
+// Phase 103g-quat-quat — also build a league lookup. Earlier we read
+// the league string off the player's attributes, but in current PP
+// responses the league lives only on the relationship → included
+// `league` entity. Looking it up via relationship is more reliable
+// across PP's API revisions.
+type PpIncludedLeague = {
+  type: 'league';
+  id: string;
+  attributes: {
+    name: string;                   // 'MLB', 'NBA', 'WNBA', 'UFC', etc.
+  };
+};
+
+type PpIncluded =
+  | PpIncludedPlayer
+  | PpIncludedStatType
+  | PpIncludedLeague
+  | { type: string; id: string; attributes: unknown };
 
 type PpResponse = {
   data: PpProjection[];
@@ -143,12 +165,17 @@ export const prizepicksApiProvider: MarketProvider = {
     const json = input as PpResponse;
     if (!json?.data || !Array.isArray(json.data)) return [];
 
-    // Build lookup tables from `included`.
+    // Build lookup tables from `included`. Phase 103g-quat-quat:
+    // also build the league lookup since current PP responses put
+    // the league name on the league entity, not on the player's
+    // attributes.
     const players = new Map<string, PpIncludedPlayer>();
     const statTypes = new Map<string, PpIncludedStatType>();
+    const leagues = new Map<string, PpIncludedLeague>();
     for (const item of json.included ?? []) {
       if (item.type === 'new_player') players.set(item.id, item as PpIncludedPlayer);
-      if (item.type === 'stat_type')  statTypes.set(item.id, item as PpIncludedStatType);
+      else if (item.type === 'stat_type')  statTypes.set(item.id, item as PpIncludedStatType);
+      else if (item.type === 'league')     leagues.set(item.id, item as PpIncludedLeague);
     }
 
     const captured = new Date().toISOString();
@@ -158,19 +185,37 @@ export const prizepicksApiProvider: MarketProvider = {
       const a = p.attributes;
       if (!a || typeof a.line_score !== 'number') continue;
 
+      // Phase 103g-quat-quat: skip non-player projections. PP returns
+      // team-level stats with event_type='team' (e.g. team-aggregated
+      // Hits+Runs+RBIs). Those have no useful player resolution and
+      // shouldn't enter our market_snapshots as "player props."
+      if (a.event_type && a.event_type !== 'player') continue;
+
       const playerRel = p.relationships?.new_player?.data?.id;
       const statRel = p.relationships?.stat_type?.data?.id;
+      const leagueRel = p.relationships?.league?.data?.id;
       const player = playerRel ? players.get(playerRel) : null;
       const statType = statRel ? statTypes.get(statRel) : null;
+      const league = leagueRel ? leagues.get(leagueRel) : null;
 
-      const playerName = player?.attributes.name ?? a.description ?? '';
-      const statLabel = statType?.attributes.name ?? a.stat_type ?? '';
+      const playerName = player?.attributes.name ?? '';
+      const statLabel =
+        statType?.attributes.name ?? a.stat_display_name ?? a.stat_type ?? '';
       if (!playerName || !statLabel) continue;
 
-      const sport = leagueAttrToSport(player?.attributes.league);
+      // League now resolved via relationship → included. Falls back
+      // to the player attribute for backwards compat.
+      const sport = leagueAttrToSport(
+        league?.attributes.name ?? player?.attributes.league,
+      );
       if (!sport) continue;
 
-      const team = normalizeTeamAbbr(player?.attributes.team ?? null);
+      // Team — current PP responses put it on the projection's
+      // `description` field. Older responses had it on the player.
+      // Try projection first, then player attribute.
+      const team = normalizeTeamAbbr(
+        a.description ?? player?.attributes.team ?? null,
+      );
       const gameDate = a.start_time.slice(0, 10);
 
       // PrizePicks side restrictions:
