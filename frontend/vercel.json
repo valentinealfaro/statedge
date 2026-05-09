@@ -4,6 +4,17 @@
     { "source": "/sitemap.xml", "destination": "https://statedge-backend.vercel.app/sitemap.xml" },
     { "source": "/rss.xml", "destination": "https://statedge-backend.vercel.app/rss.xml" },
     { "source": "/robots.txt", "destination": "https://statedge-backend.vercel.app/robots.txt" },
+    {
+      "source": "/news/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(Twitterbot|facebookexternalhit|Facebot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|Googlebot|Bingbot|DuckDuckBot|Applebot|redditbot|Pinterest|vkShare|Embedly|Iframely).*"
+        }
+      ],
+      "destination": "https://statedge-backend.vercel.app/news/:slug"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

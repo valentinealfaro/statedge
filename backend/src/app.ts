@@ -16,6 +16,7 @@ import { marketRouter } from './routes/market.js';
 import { mlbRouter } from './routes/mlb.js';
 import { newsRouter } from './routes/news.js';
 import { seoRouter } from './routes/seo.js';
+import { seoStubRouter } from './routes/seoStub.js';
 import { wnbaRouter } from './routes/wnba.js';
 
 export function createApp(): Express {
@@ -127,6 +128,12 @@ export function createApp(): Express {
   // under /api. Frontend's vercel.json rewrites these paths over
   // here so crawlers see them at the public domain.
   app.use('/', seoRouter);
+
+  // SEO crawler stub for /news/:slug — serves per-article OG/Twitter
+  // meta tags when a known bot UA hits the URL. Humans get a 302 to
+  // the SPA. Frontend vercel.json rewrites /news/* over here so the
+  // stub runs on the public domain.
+  app.use('/', seoStubRouter);
 
   // Explicit JSON 404 — avoids Express's default HTML response, which
   // can trip the Vercel serverless adapter on unmatched paths.
