@@ -7,6 +7,7 @@
 
 import { Router } from 'express';
 import { fetchUfcScoreboard } from '../mma/espn.js';
+import { getUfcMoneylines } from '../mma/odds.js';
 
 export const mmaRouter: Router = Router();
 
@@ -26,6 +27,21 @@ mmaRouter.get('/scoreboard', async (req, res) => {
     });
   } catch (err) {
     console.error('mma/scoreboard failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/mma/odds — UFC moneylines from The Odds API. 12h cache so
+// we don't burn through the 500-credit free tier. ?force=1 bypasses
+// cache (admin-style toggle; doesn't require auth since the cost is
+// 1 credit per upcoming-event market).
+mmaRouter.get('/odds', async (req, res) => {
+  try {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const result = await getUfcMoneylines({ force });
+    res.json(result);
+  } catch (err) {
+    console.error('mma/odds failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

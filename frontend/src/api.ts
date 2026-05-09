@@ -1912,6 +1912,30 @@ export async function getUfcScoreboard(): Promise<UfcScoreboardResponse> {
   return (await res.json()) as UfcScoreboardResponse;
 }
 
+export type UfcMoneylineFighter = {
+  fighterName: string;
+  americanOdds: number;
+  decimalOdds: number;
+  impliedProbability: number;
+};
+export type UfcMoneylineEvent = {
+  toaEventId: string;
+  commenceTime: string;
+  fighterA: UfcMoneylineFighter;
+  fighterB: UfcMoneylineFighter;
+  bookmaker: string | null;
+};
+export type UfcMoneylinesResponse = {
+  events: UfcMoneylineEvent[];
+  fetchedAt: string;
+  fromCache: boolean;
+};
+export async function getUfcMoneylines(): Promise<UfcMoneylinesResponse> {
+  const res = await fetch(`${API_BASE}/api/mma/odds`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcMoneylinesResponse;
+}
+
 // Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
 // IPs are blocked by PrizePicks Cloudflare, so server-side fetch
 // returns 403. This helper fetches from the user's residential IP

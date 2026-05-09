@@ -6,7 +6,14 @@
 // phases.
 
 import { useEffect, useMemo, useState } from 'react';
-import { getUfcScoreboard, type UfcEvent, type UfcFight, type UfcScoreboardResponse } from './api';
+import {
+  getUfcMoneylines,
+  getUfcScoreboard,
+  type UfcEvent,
+  type UfcFight,
+  type UfcMoneylineEvent,
+  type UfcScoreboardResponse,
+} from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -18,6 +25,7 @@ export function MmaScoreboard() {
   const [data, setData] = useState<UfcScoreboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'upcoming' | 'completed'>('upcoming');
+  const [moneylines, setMoneylines] = useState<UfcMoneylineEvent[]>([]);
 
   useEffect(() => {
     setData(null);
@@ -25,7 +33,31 @@ export function MmaScoreboard() {
     getUfcScoreboard()
       .then(setData)
       .catch((err: Error) => setError(err.message));
+    // Moneylines are fetched in parallel — they're cached server-side
+    // for 12h so this is cheap on every page load. Failure here is
+    // non-fatal; the scoreboard renders without odds.
+    getUfcMoneylines()
+      .then((r) => setMoneylines(r.events))
+      .catch(() => setMoneylines([]));
   }, []);
+
+  // Build a fast lookup: fighter name (lowercased, normalized) →
+  // moneyline outcome for that fighter. We index by individual fighter
+  // since each Odds API event has both, and ESPN cards may slot
+  // them differently in red/blue.
+  const moneylineByFighter = useMemo(() => {
+    const out = new Map<string, { american: number; implied: number; bookmaker: string | null }>();
+    for (const ev of moneylines) {
+      for (const f of [ev.fighterA, ev.fighterB]) {
+        out.set(normalizeName(f.fighterName), {
+          american: f.americanOdds,
+          implied: f.impliedProbability,
+          bookmaker: ev.bookmaker,
+        });
+      }
+    }
+    return out;
+  }, [moneylines]);
 
   const events = useMemo(() => {
     if (!data) return [];
@@ -72,11 +104,17 @@ export function MmaScoreboard() {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {events.map((e) => <EventCard key={e.id} event={e} />)}
+          {events.map((e) => <EventCard key={e.id} event={e} moneylineByFighter={moneylineByFighter} />)}
         </div>
       </div>
     </div>
   );
+}
+
+type MoneylineLookup = Map<string, { american: number; implied: number; bookmaker: string | null }>;
+
+function normalizeName(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -104,7 +142,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function EventCard({ event }: { event: UfcEvent }) {
+function EventCard({ event, moneylineByFighter }: { event: UfcEvent; moneylineByFighter: MoneylineLookup }) {
   const main = event.fights.find((f) => f.isMain) ?? event.fights[0];
   const dateLabel = new Date(event.date).toLocaleString([], {
     weekday: 'short', month: 'short', day: 'numeric',
@@ -134,7 +172,7 @@ function EventCard({ event }: { event: UfcEvent }) {
         </div>
       )}
 
-      {main && <FightRow fight={main} primary />}
+      {main && <FightRow fight={main} primary moneylineByFighter={moneylineByFighter} />}
 
       {event.fights.length > 1 && (
         <details style={{ marginTop: 10 }}>
@@ -142,7 +180,7 @@ function EventCard({ event }: { event: UfcEvent }) {
             Full card · {event.fights.length} fights
           </summary>
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {event.fights.filter((f) => f !== main).map((f) => <FightRow key={f.id} fight={f} primary={false} />)}
+            {event.fights.filter((f) => f !== main).map((f) => <FightRow key={f.id} fight={f} primary={false} moneylineByFighter={moneylineByFighter} />)}
           </div>
         </details>
       )}
@@ -150,16 +188,18 @@ function EventCard({ event }: { event: UfcEvent }) {
   );
 }
 
-function FightRow({ fight, primary }: { fight: UfcFight; primary: boolean }) {
+function FightRow({ fight, primary, moneylineByFighter }: { fight: UfcFight; primary: boolean; moneylineByFighter: MoneylineLookup }) {
   const red = fight.fighters.red;
   const blue = fight.fighters.blue;
+  const redMl = red ? moneylineByFighter.get(normalizeName(red.displayName)) : undefined;
+  const blueMl = blue ? moneylineByFighter.get(normalizeName(blue.displayName)) : undefined;
   const fontSize = primary ? 14 : 12;
   return (
     <div style={{ marginTop: primary ? 10 : 0, padding: primary ? '10px 12px' : '6px 8px', background: primary ? 'rgba(239,83,80,0.05)' : 'transparent', borderRadius: 4 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize }}>
-        <FighterCell f={red} winner={fight.result?.winnerId === red?.id} primary={primary} />
+        <FighterCell f={red} winner={fight.result?.winnerId === red?.id} primary={primary} moneyline={redMl} />
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.45)' }}>VS</span>
-        <FighterCell f={blue} winner={fight.result?.winnerId === blue?.id} primary={primary} alignRight />
+        <FighterCell f={blue} winner={fight.result?.winnerId === blue?.id} primary={primary} alignRight moneyline={blueMl} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase' }}>
         <span>
@@ -178,7 +218,7 @@ function FightRow({ fight, primary }: { fight: UfcFight; primary: boolean }) {
   );
 }
 
-function FighterCell({ f, winner, primary, alignRight }: { f: { displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean }) {
+function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean; moneyline?: { american: number; implied: number; bookmaker: string | null } }) {
   if (!f) return <span style={{ flex: 1, color: 'rgba(255,255,255,0.4)' }}>TBD</span>;
   return (
     <div style={{
@@ -201,7 +241,20 @@ function FighterCell({ f, winner, primary, alignRight }: { f: { displayName: str
         <div style={{ fontWeight: winner ? 800 : 600, color: winner ? '#66bb6a' : 'rgba(255,255,255,0.92)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {f.displayName}
         </div>
-        {f.record && <div className="muted small" style={{ fontSize: 10 }}>{f.record}</div>}
+        <div className="muted small" style={{ fontSize: 10, display: 'flex', gap: 6, justifyContent: alignRight ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
+          {f.record && <span>{f.record}</span>}
+          {moneyline && (
+            <span style={{
+              fontWeight: 700,
+              color: moneyline.american < 0 ? '#7aa2ff' : '#ffd54f',
+              padding: '1px 4px',
+              borderRadius: 3,
+              background: 'rgba(255,255,255,0.06)',
+            }}>
+              {moneyline.american > 0 ? `+${moneyline.american}` : moneyline.american} · {Math.round(moneyline.implied * 100)}%
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
