@@ -1090,6 +1090,47 @@ marketRouter.get('/debug/mlb-players', async (req, res) => {
   }
 });
 
+// GET /api/market/debug/recent-pulls
+//
+// Phase 103g-quat-bis: tells us what sport(s) the recent
+// PrizePicks pulls actually persisted. The 0/3234 resolution mystery
+// might be that league_id=7 returned a different sport than expected,
+// in which case the snapshots are stored with the wrong sport tag and
+// our MLB-resolver wouldn't match against an NHL player table anyway.
+marketRouter.get('/debug/recent-pulls', async (_req, res) => {
+  try {
+    const pool = getPool();
+    const sportRollup = await pool.query<{ sport: string; c: string }>(
+      `SELECT sport, COUNT(*)::text AS c
+         FROM market_snapshots
+        WHERE captured_at >= NOW() - INTERVAL '6 hours'
+        GROUP BY sport
+        ORDER BY COUNT(*) DESC`,
+    );
+    const sample = await pool.query<{
+      sport: string; raw_player_name: string; raw_stat_type: string; team: string | null;
+    }>(
+      `SELECT sport, raw_player_name, raw_stat_type, team
+         FROM market_snapshots
+        WHERE captured_at >= NOW() - INTERVAL '6 hours'
+        ORDER BY captured_at DESC
+        LIMIT 10`,
+    );
+    res.json({
+      bySport: sportRollup.rows.map((r) => ({ sport: r.sport, count: Number(r.c) })),
+      recentSamples: sample.rows.map((r) => ({
+        sport: r.sport,
+        player: r.raw_player_name,
+        stat: r.raw_stat_type,
+        team: r.team,
+      })),
+    });
+  } catch (err) {
+    console.error('debug/recent-pulls failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 marketRouter.get('/snapshots/recent', async (req, res) => {
   try {
     const hours = req.query.hours ? Math.max(1, Math.min(168, Number(req.query.hours))) : 24;

@@ -221,32 +221,41 @@ export type PrizepicksFetchResult = {
 
 // Fetch + parse in one call. Returns both the raw response (for audit /
 // future re-parse with smarter resolution) and the normalized props.
+//
+// Phase 103g-quat-ter: fetches the UNFILTERED /projections endpoint.
+// Earlier per-sport league_id filtering hit 0 MLB props because PP
+// shifts league_ids seasonally and our hard-coded map was stale.
+// The unfiltered endpoint returns every active league in one
+// response; the parser auto-routes each prop to its sport via the
+// included `new_player.attributes.league` string. Caller passes
+// `sport` only to filter the parser output — the raw fetch is always
+// the same URL regardless of sport.
 export async function fetchPrizepicksProjections(opts: {
-  sport: MarketSport;
-  perPage?: number;        // default 500 (their max)
-  timeout?: number;        // ms, default 8000
+  sport?: MarketSport;     // optional — when present, output filtered to this sport
+  perPage?: number;        // default 1000 (PP's effective cap; large slates need it)
+  timeout?: number;        // ms, default 12000
 }): Promise<PrizepicksFetchResult> {
-  const leagueId = PP_LEAGUE_ID[opts.sport];
-  if (!leagueId) throw new Error(`No PrizePicks league_id mapping for sport: ${opts.sport}`);
-  const perPage = opts.perPage ?? 500;
-  const url = `${PP_BASE}/projections?league_id=${leagueId}&per_page=${perPage}`;
+  const perPage = opts.perPage ?? 1000;
+  const url = `${PP_BASE}/projections?per_page=${perPage}`;
 
   const ctrl = new AbortController();
-  const timeoutId = setTimeout(() => ctrl.abort(), opts.timeout ?? 8000);
+  const timeoutId = setTimeout(() => ctrl.abort(), opts.timeout ?? 12000);
   try {
     const res = await fetch(url, {
       headers: BROWSER_HEADERS,
       signal: ctrl.signal,
     });
     if (!res.ok) {
-      // 403 = Cloudflare block. 429 = rate limit. Both mean fall back
-      // to admin paste. Caller decides what to do.
       throw new Error(
         `PrizePicks projections fetch failed: ${res.status} ${res.statusText}`,
       );
     }
     const raw = (await res.json()) as PpResponse;
-    const props = prizepicksApiProvider.parse(raw);
+    const allProps = prizepicksApiProvider.parse(raw);
+    // Filter to requested sport if specified; else return everything.
+    const props = opts.sport
+      ? allProps.filter((p) => p.sport === opts.sport)
+      : allProps;
     return { raw, props, fetchedAt: new Date().toISOString() };
   } finally {
     clearTimeout(timeoutId);
