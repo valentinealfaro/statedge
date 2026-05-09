@@ -1,33 +1,44 @@
-// PastElitePlays — Phase 141.
+// PastElitePlays — Phase 141 + 142.
 //
-// Historical track record on /elite. Pulls the last N elite_play
-// articles from the news store (auto-generated whenever the cross-
-// sport endpoint produces a ticket) and renders a compact list:
-// date, grade, headline (title), and a link to the full breakdown.
+// Historical track record on /elite. Reads from the structured
+// elite_tickets ledger (Phase 142) so it can show ✓ HIT / ✗ MISS
+// verdicts when game outcomes have settled, plus the legs-hit count
+// for partial-credit visibility.
 //
-// Builds institutional credibility — users see the engine has been
-// publishing picks day after day, not just "look at today." Self-
-// hides until at least one historical pick exists.
+// Builds institutional credibility — users see a track record with
+// real verdicts, not marketing claims.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listArticles, type Article } from './api';
+import { getEliteHistory, type StoredEliteTicket } from './api';
 
 export function PastElitePlays() {
-  const [articles, setArticles] = useState<Article[] | null>(null);
+  const [tickets, setTickets] = useState<StoredEliteTicket[] | null>(null);
 
   useEffect(() => {
-    listArticles({ kind: 'elite_play', limit: 14 })
-      .then((r) => setArticles(r.articles))
-      .catch(() => setArticles([]));
+    getEliteHistory({ limit: 20 })
+      .then((r) => setTickets(r.tickets))
+      .catch(() => setTickets([]));
   }, []);
 
-  if (!articles || articles.length === 0) return null;
+  if (!tickets || tickets.length === 0) return null;
 
-  // The current (most-recent) play is rendered above this section
-  // by the main Elite page, so skip it in the history list.
-  const past = articles.slice(1);
+  // Today's ticket is rendered above this section by the main /elite
+  // page; skip the most recent if it matches today (ET).
+  const todayEt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const past = tickets[0]?.ticketDate === todayEt
+    ? tickets.slice(1)
+    : tickets;
   if (past.length === 0) return null;
+
+  // Compute aggregate hit rate over GRADED tickets (HONEST: ungraded
+  // tickets don't pollute the ratio).
+  const graded = past.filter((t) => t.hitOrMiss !== null);
+  const hits = graded.filter((t) => t.hitOrMiss === true).length;
+  const hitRate = graded.length > 0 ? (hits / graded.length) * 100 : null;
 
   return (
     <section style={{
@@ -40,80 +51,100 @@ export function PastElitePlays() {
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
           Past Elite plays
         </h2>
-        <Link to="/news?kind=elite_play" style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none' }}>
-          All Elite articles →
-        </Link>
+        {hitRate !== null && graded.length >= 3 && (
+          <span style={{
+            fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+            padding: '3px 9px',
+            color: hitRate >= 60 ? '#66bb6a' : hitRate >= 40 ? '#ffd54f' : '#ef5350',
+            background: hitRate >= 60 ? 'rgba(102,187,106,0.12)' : hitRate >= 40 ? 'rgba(255,213,79,0.12)' : 'rgba(239,83,80,0.12)',
+            border: `1px solid ${hitRate >= 60 ? 'rgba(102,187,106,0.4)' : hitRate >= 40 ? 'rgba(255,213,79,0.4)' : 'rgba(239,83,80,0.4)'}`,
+            borderRadius: 3,
+            textTransform: 'uppercase',
+          }}>
+            {hitRate.toFixed(1)}% hit · {hits}/{graded.length}
+          </span>
+        )}
       </div>
 
       <p className="muted small" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.5 }}>
-        Every Elite ticket the engine has produced. Each article carries the full leg
-        breakdown + tier label + grade as it was published. Track-record context for
-        users evaluating whether to trust today's play.
+        Every Elite ticket the engine has produced. Verdict (✓ HIT / ✗ MISS) populates
+        as game outcomes settle. Partial-grade rows show "{'{'}n of m legs hit{'}'}" so
+        you can see how close near-miss tickets came.
       </p>
 
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {past.map((a) => <PastPlayItem key={a.id} article={a} />)}
+        {past.map((t) => <PastTicketItem key={t.id} ticket={t} />)}
       </ul>
     </section>
   );
 }
 
-function PastPlayItem({ article }: { article: Article }) {
-  // Title comes through as: "Today's Elite Play · A · 8.2× MLB + NBA"
-  // Best-effort split for the compact list.
-  const segments = article.title.split('·').map((s) => s.trim());
-  const grade = segments[1] ?? '';
-  const detail = segments.slice(2).join(' · ');
+function PastTicketItem({ ticket }: { ticket: StoredEliteTicket }) {
+  const gradeColor = ticket.grade === 'A+' ? '#66bb6a'
+    : ticket.grade === 'A' ? '#7aa2ff'
+    : '#ffd54f';
 
-  const gradeColor = grade.startsWith('A+') ? '#66bb6a'
-    : grade.startsWith('A')  ? '#7aa2ff'
-    : grade.startsWith('B')  ? '#ffd54f'
-    : 'rgba(255,255,255,0.65)';
-
-  const date = new Date(article.publishedAt).toLocaleDateString([], {
+  const date = new Date(ticket.ticketDate + 'T12:00:00').toLocaleDateString([], {
     month: 'short', day: 'numeric',
   });
 
+  const sportsLabel = ticket.sportsCovered.length === 1
+    ? ticket.sportsCovered[0]!.toUpperCase()
+    : ticket.sportsCovered.map((s) => s.toUpperCase()).join('+');
+
+  // Verdict badge — only shown when graded
+  let verdictBadge: React.ReactNode = null;
+  if (ticket.hitOrMiss === true) {
+    verdictBadge = <span style={{ fontSize: 11, fontWeight: 800, color: '#66bb6a' }}>✓ HIT</span>;
+  } else if (ticket.hitOrMiss === false) {
+    const partial = ticket.legsHit !== null && ticket.legsHit > 0;
+    verdictBadge = (
+      <span style={{ fontSize: 11, fontWeight: 800, color: '#ef5350' }}>
+        ✗ MISS{partial ? ` (${ticket.legsHit}/${ticket.legsTotal})` : ''}
+      </span>
+    );
+  } else {
+    verdictBadge = <span className="muted small" style={{ fontSize: 10, fontStyle: 'italic' }}>pending grade</span>;
+  }
+
   return (
-    <li>
-      <Link
-        to={`/news/${article.slug}`}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 14,
-          padding: '10px 12px',
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.06)',
-          borderLeft: `3px solid ${gradeColor}`,
-          borderRadius: 5,
-          color: 'inherit', textDecoration: 'none',
-        }}
-      >
-        <div style={{
-          fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
-          color: 'rgba(255,255,255,0.55)',
-          minWidth: 56, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        }}>
-          {date}
+    <li style={{
+      display: 'flex', alignItems: 'center', gap: 14,
+      padding: '10px 12px',
+      background: 'rgba(255,255,255,0.02)',
+      border: '1px solid rgba(255,255,255,0.06)',
+      borderLeft: `3px solid ${gradeColor}`,
+      borderRadius: 5,
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
+        color: 'rgba(255,255,255,0.55)',
+        minWidth: 56, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      }}>
+        {date}
+      </div>
+      <div style={{
+        fontSize: 18, fontWeight: 900, color: gradeColor,
+        minWidth: 36,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      }}>
+        {ticket.grade}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          {ticket.combinedFairPayout.toFixed(1)}× · {ticket.tier} · {sportsLabel}
         </div>
-        <div style={{
-          fontSize: 18, fontWeight: 900, color: gradeColor,
-          minWidth: 36,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        }}>
-          {grade.replace(/^Today's Elite Play · /, '') || '—'}
+        <div className="muted small" style={{ fontSize: 11, marginTop: 2 }}>
+          {ticket.tierName}
+          {' · '}
+          {ticket.combinedProbability.toFixed(1)}% combined hit
+          {' · '}
+          {ticket.combinedEdgePercent.toFixed(1)}pp edge
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {detail || article.summary}
-          </div>
-          <div className="muted small" style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {article.summary}
-          </div>
-        </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', whiteSpace: 'nowrap' }}>
-          View →
-        </div>
-      </Link>
+      </div>
+      <div style={{ whiteSpace: 'nowrap' }}>
+        {verdictBadge}
+      </div>
     </li>
   );
 }

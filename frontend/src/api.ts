@@ -2007,6 +2007,32 @@ export async function getNbaEliteToday(): Promise<EliteResponse> {
   return getEliteToday('nba');
 }
 
+export type StoredEliteTicket = {
+  id: number;
+  ticketDate: string;
+  grade: 'A+' | 'A' | 'B';
+  tier: '3-leg' | '2-leg';
+  tierName: string;
+  combinedFairPayout: number;
+  combinedProbability: number;
+  combinedEdgePercent: number;
+  dislocationScore: number;
+  sportsCovered: ('mlb' | 'nba' | 'mma')[];
+  legsJson: { legs: EliteLeg[]; rationale: string[] };
+  hitOrMiss: boolean | null;
+  legsHit: number | null;
+  legsTotal: number;
+  gradedAt: string | null;
+  createdAt: string;
+};
+export async function getEliteHistory(opts?: { limit?: number }): Promise<{ tickets: StoredEliteTicket[]; count: number }> {
+  const p = new URLSearchParams();
+  if (opts?.limit) p.set('limit', String(opts.limit));
+  const res = await fetch(`${API_BASE}/api/slate/elite/history?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { tickets: StoredEliteTicket[]; count: number };
+}
+
 export async function getCrossSportEliteToday(): Promise<CrossSportEliteResponse> {
   const res = await fetch(`${API_BASE}/api/slate/elite/cross-sport/today`);
   if (!res.ok) {

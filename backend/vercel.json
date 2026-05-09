@@ -29,6 +29,10 @@
     {
       "path": "/api/news/cron/power-rankings",
       "schedule": "0 14 * * 0"
+    },
+    {
+      "path": "/api/slate/elite/grade",
+      "schedule": "0 12 * * *"
     }
   ]
 }

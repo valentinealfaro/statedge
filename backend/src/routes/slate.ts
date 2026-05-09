@@ -11,6 +11,7 @@ import { getUfcMoneylines } from '../mma/odds.js';
 import { fetchUfcScoreboard } from '../mma/espn.js';
 import { generateElitePlay, type ElitePlayLeg } from '../news/templates.js';
 import { upsertArticle } from '../news/store.js';
+import { gradeEliteTickets, listEliteTickets, upsertEliteTicket } from '../services/eliteTicketStore.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -409,6 +410,40 @@ async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
 // visitors see tonight's lines without anyone having to publish.
 // We auto-resolve on GET so the response carries fully populated
 // cards (with model probabilities) ready to render.
+// GET /api/slate/elite/history
+//
+// Past Elite tickets with grading verdicts when available. Used by
+// the PastElitePlays component on /elite to show the ledger.
+slateRouter.get('/elite/history', async (req, res) => {
+  try {
+    const limit = req.query.limit ? Math.max(1, Math.min(100, Number(req.query.limit))) : 30;
+    const tickets = await listEliteTickets({ limit });
+    res.json({ tickets, count: tickets.length });
+  } catch (err) {
+    console.error('slate/elite/history failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET / POST /api/slate/elite/grade
+//
+// Walk ungraded historical tickets, attempt to grade each leg from
+// the per-sport projection_history rows, mark tickets HIT/MISS when
+// every leg is decided. Idempotent — re-runs do nothing on already-
+// graded tickets. GET shape so Vercel Cron can fire it daily after
+// the per-sport graders run.
+async function handleGradeElite(_req: Parameters<Parameters<typeof slateRouter.get>[1]>[0], res: Parameters<Parameters<typeof slateRouter.get>[1]>[1]) {
+  try {
+    const result = await gradeEliteTickets();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('slate/elite/grade failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+slateRouter.get('/elite/grade', handleGradeElite);
+slateRouter.post('/elite/grade', handleGradeElite);
+
 // GET /api/slate/elite/cross-sport/today
 //
 // Cross-sport Elite — combines NBA + MLB legs into ONE ticket and
@@ -535,14 +570,23 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
       candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, mma: mmaCandidates.length, total: totalCandidates },
     };
 
-    // Auto-publish "Today's Elite Play" article when a ticket lands.
-    // Idempotent via slug — re-running on the same date upserts.
+    // Auto-publish "Today's Elite Play" article + persist the ticket
+    // to elite_tickets for the structured ledger / future grading.
+    // Both are idempotent via their respective unique keys.
     if (ticket) {
       try {
         const today = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'America/New_York',
           year: 'numeric', month: '2-digit', day: '2-digit',
         }).format(new Date());
+
+        // Persist the structured ticket first — failure on this path
+        // shouldn't block the article generation below.
+        try {
+          await upsertEliteTicket({ ticketDate: today, ticket });
+        } catch (err) {
+          console.warn('elite ticket persistence failed:', (err as Error).message);
+        }
         const MMA_STATS = new Set(['sig_strikes', 'rd1_sig_strikes', 'takedowns', 'rd1_takedowns', 'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time']);
         const MLB_STATS = new Set(['home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis', 'walks', 'stolen_bases', 'strikeouts', 'doubles', 'triples', 'ks', 'pitcher_outs', 'innings_pitched', 'earned_runs_allowed', 'hits_allowed', 'walks_allowed', 'home_runs_allowed']);
         const articleLegs: ElitePlayLeg[] = ticket.legs.map((leg) => ({
