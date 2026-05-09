@@ -21,6 +21,7 @@ import {
   getWnbaSlate,
   getWnbaSlateStats,
   publishWnbaSlate,
+  type WnbaCombo,
   type WnbaProjectedLine,
   type WnbaSlateResponse,
   type WnbaStatMeta,
@@ -218,6 +219,15 @@ export function WnbaSlate() {
         {data?.resolved && data.resolved.lines.length > 0 && (
           <>
             {topEdges.length > 0 && <TopEdges entries={topEdges} />}
+
+            {/* Best 2-6 institutional cards. Phase 77b — full Phase-58
+                exposure-control engine ported to WNBA. Renders only
+                when there's at least one built combo; failed slots
+                render with their explanatory reason so users see
+                what blocked card construction. */}
+            {data.resolved.combos.length > 0 && (
+              <ComboRail combos={data.resolved.combos} resolvedMode={data.resolved.resolvedMode} />
+            )}
 
             <div className="mlb-context-heading" style={{ marginTop: 24, marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
               <span>All projected lines</span>
@@ -558,6 +568,157 @@ function Stat({ label, value, color, hint }: { label: string; value: string; col
       <div className="muted small" style={{ marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 700, color }}>{value}</div>
       {hint && <div className="muted small" style={{ fontSize: 10 }}>{hint}</div>}
+    </div>
+  );
+}
+
+// ---------- Best 2-6 institutional combo cards (Phase 77b) ----------
+
+const FLEX_PAYOUTS: Record<number, number> = { 2: 3, 3: 5, 4: 10, 5: 7, 6: 25 };
+
+function ComboRail({
+  combos,
+  resolvedMode,
+}: {
+  combos: Array<{ size: number; label: WnbaCombo['label']; combo: WnbaCombo | null; reason: string }>;
+  resolvedMode: string;
+}) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div className="mlb-context-heading" style={{ marginBottom: 12, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span>Pre-built parlays</span>
+        <span className="muted small">
+          mode: <strong>{resolvedMode}</strong> · diversified portfolio across cards (no player on more than 4 of 6)
+        </span>
+      </div>
+      <div className="best-picks-rail">
+        {combos.map((slot) => (
+          <ComboCard key={slot.size} slot={slot} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComboCard({
+  slot,
+}: {
+  slot: { size: number; label: WnbaCombo['label']; combo: WnbaCombo | null; reason: string };
+}) {
+  if (!slot.combo) {
+    return (
+      <div className="best-pick-card empty">
+        <div className="best-pick-head">
+          <div className="best-pick-titles">
+            <span className="best-pick-label">{slot.label}</span>
+            <span className="best-pick-subtitle">No card</span>
+          </div>
+        </div>
+        <p className="muted small" style={{ padding: '12px 16px' }}>{slot.reason}</p>
+      </div>
+    );
+  }
+  const c = slot.combo;
+  const payout = FLEX_PAYOUTS[c.size] ?? 1;
+  const winProb = c.adjustedCombinedHit / 100;
+  const ev = winProb * payout - 1;
+  const evVerdict = ev >= 0.05 ? 'Positive EV' : ev <= -0.05 ? 'Negative EV' : 'Neutral EV';
+  const evClass = ev >= 0.05 ? 'positive-ev' : ev <= -0.05 ? 'negative-ev' : 'neutral-ev';
+
+  return (
+    <div className="best-pick-card">
+      <div className="best-pick-head">
+        <div className="best-pick-titles">
+          <span className="best-pick-label">{c.label}</span>
+          <span className="best-pick-subtitle">{c.subtitle}</span>
+        </div>
+        <span className="best-pick-size">{c.size}-LEG</span>
+      </div>
+      <div
+        className="best-pick-pct"
+        title={`Adjusted combined hit %. Multiplies each leg's probability and applies a correlation penalty (${c.correlationRisk} risk).`}
+      >
+        {c.adjustedCombinedHit.toFixed(1)}%
+      </div>
+      <div className="best-pick-pct-label">
+        adjusted hit · {c.correlationRisk} correlation
+      </div>
+      <div
+        className={`best-pick-ev ${evClass}`}
+        title={`Win prob ${c.adjustedCombinedHit.toFixed(1)}% × payout ${payout}× − $1 = ${ev >= 0 ? '+' : ''}${ev.toFixed(2)}.`}
+      >
+        {evVerdict} · {ev >= 0 ? '+' : ''}{ev.toFixed(2)} EV
+        <span className="best-pick-ev-payout"> · {payout}× payout</span>
+      </div>
+      <div className="best-pick-signals">
+        <div className="best-pick-signal">
+          <span className="muted small">Avg Edge</span>
+          <strong className={c.averageEdge >= 10 ? 'pos' : c.averageEdge <= -5 ? 'neg' : ''}>
+            {c.averageEdge >= 0 ? '+' : ''}{c.averageEdge.toFixed(1)}%
+          </strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Trap</span>
+          <strong className={c.averageTrap >= 50 ? 'neg' : c.averageTrap >= 25 ? '' : 'pos'}>
+            {c.averageTrap.toFixed(0)}
+          </strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Fragility</span>
+          <strong className={c.averageFragility >= 60 ? 'neg' : c.averageFragility <= 30 ? 'pos' : ''}>
+            {c.averageFragility.toFixed(0)}
+          </strong>
+        </div>
+        <div className="best-pick-signal">
+          <span className="muted small">Players</span>
+          <strong>{c.constructionNotes.uniquePlayers}</strong>
+        </div>
+      </div>
+      <div className="best-pick-legs">
+        {c.legs.map((l, i) => {
+          const isOver = l.direction === 'OVER';
+          const probColor = l.probability >= 70 ? '#66bb6a'
+            : l.probability >= 55 ? '#7aa2ff'
+            : '#ef5350';
+          return (
+            <div key={i} className="best-pick-leg-block">
+              <div className="best-pick-leg">
+                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-stat">
+                  {l.statLabel} {l.line}
+                </span>
+                <span className={`best-pick-leg-dir ${isOver ? 'over' : 'under'}`} style={{ color: probColor }}>
+                  {isOver ? '↑' : '↓'} {Math.round(l.probability)}%
+                </span>
+              </div>
+              <div className="best-pick-leg-evbar">
+                <span
+                  className={`best-pick-leg-edge ${l.edgePercent >= 5 ? 'pos' : l.edgePercent <= -5 ? 'neg' : 'flat'}`}
+                  title={EDGE_TOOLTIP}
+                >
+                  {l.edgePercent >= 0 ? '+' : ''}{l.edgePercent.toFixed(0)}% edge
+                </span>
+                {l.team && <span className="best-pick-leg-cat">{l.team}</span>}
+                {l.trapScore >= 60 && (
+                  <span className="best-pick-leg-trap">⚠ TRAP RISK</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        className="best-pick-warnings"
+        title="Construction notes — what the engine actually built."
+        style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 8, padding: '8px 16px', fontSize: 11, color: 'rgba(255,255,255,0.6)' }}
+      >
+        {c.constructionNotes.summary}
+        {c.weakestLegName && (
+          <span style={{ marginLeft: 8 }}>
+            · weakest: <strong>{c.weakestLegName}</strong>
+          </span>
+        )}
+      </div>
     </div>
   );
 }

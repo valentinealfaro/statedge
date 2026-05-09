@@ -24,6 +24,7 @@ import {
   projectWnbaLine,
   type ProjectedWnbaLine,
 } from '../wnba/projection.js';
+import { buildWnbaSlate, type WnbaSlateMode } from '../wnba/slateBuilder.js';
 
 export const wnbaRouter: Router = Router();
 
@@ -244,7 +245,7 @@ type WnbaSlateProjectionCache = { fetchedAt: number; data: unknown };
 let wnbaSlateProjectionCache: WnbaSlateProjectionCache | null = null;
 const WNBA_SLATE_TTL = 5 * 60_000;
 
-wnbaRouter.get('/slate/today', async (_req, res) => {
+wnbaRouter.get('/slate/today', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });
     return;
@@ -285,8 +286,22 @@ wnbaRouter.get('/slate/today', async (_req, res) => {
       }
     }
 
-    // Sort by edge desc — top edges first.
+    // Sort by edge desc — top edges first (pre-sort lets the slate
+    // builder rely on stable input ordering for tiebreaks).
     projected.sort((a, b) => b.edgePercent - a.edgePercent);
+
+    // Run the Phase 77b institutional slate builder — Best 2-6 cards
+    // with full Phase-58 exposure controls, family caps, hard slate
+    // caps. Mode pulled from query string (?mode=balanced) or
+    // defaults to auto.
+    const requestedMode = (req.query.mode as WnbaSlateMode | undefined) ?? 'auto';
+    const validMode: WnbaSlateMode =
+      requestedMode === 'safe' || requestedMode === 'balanced' ||
+      requestedMode === 'aggressive' || requestedMode === 'insane' ||
+      requestedMode === 'auto'
+        ? requestedMode
+        : 'balanced';
+    const built = buildWnbaSlate(projected, validMode);
 
     const payload = {
       slate: {
@@ -297,6 +312,9 @@ wnbaRouter.get('/slate/today', async (_req, res) => {
       },
       resolved: {
         lines: projected,
+        combos: built.combos,
+        resolvedMode: built.resolvedMode,
+        requestedMode: validMode,
         unresolved,
         lineCount: projected.length,
         disclaimer: WNBA_DISCLAIMER,

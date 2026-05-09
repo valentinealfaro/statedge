@@ -2340,6 +2340,28 @@ export type WnbaProjectedLine = {
   reasonCodes: string[];
 };
 
+export type WnbaCombo = {
+  label: 'Best 2' | 'Best 3' | 'Best 4' | 'Best 5' | 'Best 6';
+  size: number;
+  subtitle: string;
+  legs: WnbaProjectedLine[];
+  rawCombinedHit: number;
+  adjustedCombinedHit: number;
+  correlationRisk: 'None' | 'Low' | 'Medium' | 'High' | 'Very High';
+  correlationPairs: number;
+  averageEdge: number;
+  averageTrap: number;
+  averageFragility: number;
+  weakestLegName: string;
+  weakestLegReason: string;
+  constructionNotes: {
+    uniquePlayers: number;
+    uniqueStats: number;
+    uniqueTeams: number;
+    summary: string;
+  };
+};
+
 export type WnbaSlateResponse = {
   slate: {
     date: string;
@@ -2349,6 +2371,14 @@ export type WnbaSlateResponse = {
   } | null;
   resolved: {
     lines: WnbaProjectedLine[];
+    combos: Array<{
+      size: number;
+      label: WnbaCombo['label'];
+      combo: WnbaCombo | null;
+      reason: string;
+    }>;
+    resolvedMode: 'safe' | 'balanced' | 'aggressive' | 'insane';
+    requestedMode: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto';
     unresolved: Array<{ raw: { playerName: string; statKey: string }; reason: string }>;
     lineCount: number;
     disclaimer: string;
