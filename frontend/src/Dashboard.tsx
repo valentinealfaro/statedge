@@ -62,16 +62,19 @@ export function Dashboard() {
   const [mlbCal, setMlbCal] = useState<MlbCalibrationReport | null>(null);
   const [wnbaCal, setWnbaCal] = useState<WnbaCalibrationReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      getTodaySlate('balanced'),
-      getMlbDailySlate(),
-      getWnbaSlate(),
-      getMlbCalibration(7),
-      getWnbaCalibration(30),
-    ]).then((results) => {
+
+    async function refresh() {
+      const results = await Promise.allSettled([
+        getTodaySlate('balanced'),
+        getMlbDailySlate(),
+        getWnbaSlate(),
+        getMlbCalibration(7),
+        getWnbaCalibration(30),
+      ]);
       if (cancelled) return;
       const [nbaR, mlbR, wnbaR, mlbCalR, wnbaCalR] = results;
       if (nbaR.status === 'fulfilled')   setNba(nbaR.value.resolved);
@@ -80,8 +83,22 @@ export function Dashboard() {
       if (mlbCalR.status === 'fulfilled') setMlbCal(mlbCalR.value);
       if (wnbaCalR.status === 'fulfilled') setWnbaCal(wnbaCalR.value);
       setLoading(false);
-    });
-    return () => { cancelled = true; };
+      setLastUpdated(new Date());
+    }
+
+    refresh();
+    // Auto-refresh every 90s. Server-side caches absorb the load
+    // (12-25s slate cache, 5min cal cache) so multiple users tabbing
+    // the dashboard don't multiply backend pressure.
+    const interval = setInterval(refresh, 90_000);
+    // Refresh on tab-focus too — Bloomberg vibe: always-fresh data.
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const edges = collectEdges(nba, mlb, wnba);
@@ -101,7 +118,18 @@ export function Dashboard() {
       <NavBar />
 
       <div className="mlb-compare-shell">
-        <h1>Command Center</h1>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ marginBottom: 4 }}>Command Center</h1>
+          {lastUpdated && (
+            <span
+              className="muted small"
+              style={{ fontSize: 11 }}
+              title={`Last refresh: ${lastUpdated.toISOString()}. Auto-refreshes every 90s + on tab focus.`}
+            >
+              ● live · updated {lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+        </div>
         <p className="muted small" style={{ marginTop: 0, marginBottom: 24 }}>
           Cross-sport quantitative intelligence. Tonight's strongest edges,
           trap radar, slate strength, and model health — one screen.
