@@ -204,6 +204,111 @@ marketRouter.get('/clv', async (req, res) => {
   }
 });
 
+// GET /api/market/clv/trend?weeks=12
+//
+// Week-over-week beat rate for the truth-metric time series. Each row
+// is one ISO week with cross-sport (MLB + WNBA) counts: graded props,
+// market beats, beat rate. Powers the trend chart on /clv showing
+// "is the model getting sharper or drifting?"
+//
+// Single SQL pass per sport: groups projection_history × market_snapshots
+// by week-start. Buckets with zero graded props are emitted as null
+// so the chart can show gaps honestly without inferring data.
+marketRouter.get('/clv/trend', async (req, res) => {
+  try {
+    const weeks = req.query.weeks
+      ? Math.max(1, Math.min(52, Number(req.query.weeks)))
+      : 12;
+    if (!isDbConfigured()) {
+      res.json({ weeks: [], requestedWeeks: weeks });
+      return;
+    }
+    const pool = getPool();
+
+    // Per-sport weekly aggregation. The closing-line direction-aware
+    // beat math mirrors computeMlbClv / computeWnbaClv so trend numbers
+    // line up with the headline beat rate when summed across weeks.
+    const buildWeeklySql = (table: 'mlb_projection_history' | 'wnba_projection_history', sport: 'mlb' | 'wnba') => `
+      WITH later AS (
+        SELECT
+          h.id, h.game_date, h.direction, h.line_value::numeric AS publish_line,
+          h.created_at,
+          (
+            SELECT s.line_value::numeric
+              FROM market_snapshots s
+             WHERE s.sport = $3
+               AND s.game_date = h.game_date
+               AND s.stat_key = h.selected_stat
+               AND s.captured_at > h.created_at
+             ORDER BY s.captured_at DESC
+             LIMIT 1
+          ) AS closing_line
+        FROM ${table} h
+        WHERE h.game_date >= (CURRENT_DATE - ($1::int * 7))
+      )
+      SELECT
+        date_trunc('week', game_date)::date AS week_start,
+        COUNT(*) FILTER (WHERE closing_line IS NOT NULL)::int                                                          AS with_closing,
+        COUNT(*) FILTER (WHERE closing_line IS NOT NULL AND
+          ((direction = 'OVER'  AND closing_line > publish_line) OR
+           (direction = 'UNDER' AND closing_line < publish_line)))::int                                                AS beat_market
+      FROM later
+      WHERE game_date >= (CURRENT_DATE - ($1::int * 7))
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT $2
+    `;
+
+    const [mlb, wnba] = await Promise.all([
+      pool.query<{ week_start: Date; with_closing: number; beat_market: number }>(
+        buildWeeklySql('mlb_projection_history', 'mlb'),
+        [weeks, weeks, 'mlb'],
+      ).catch(() => ({ rows: [] })),
+      pool.query<{ week_start: Date; with_closing: number; beat_market: number }>(
+        buildWeeklySql('wnba_projection_history', 'wnba'),
+        [weeks, weeks, 'wnba'],
+      ).catch(() => ({ rows: [] })),
+    ]);
+
+    // Merge by week_start. We sum across sports per week so the
+    // trend reflects cross-sport process accuracy.
+    type WeekBucket = { weekStart: string; beatMarket: number; withClosing: number; beatRate: number | null };
+    const merged = new Map<string, WeekBucket>();
+    for (const r of [...mlb.rows, ...wnba.rows]) {
+      const key = r.week_start.toISOString().slice(0, 10);
+      const cur = merged.get(key) ?? { weekStart: key, beatMarket: 0, withClosing: 0, beatRate: null };
+      cur.beatMarket  += Number(r.beat_market);
+      cur.withClosing += Number(r.with_closing);
+      merged.set(key, cur);
+    }
+    for (const b of merged.values()) {
+      b.beatRate = b.withClosing === 0
+        ? null
+        : Math.round((b.beatMarket / b.withClosing) * 1000) / 10;
+    }
+
+    // Build the full week range (oldest → newest) so empty weeks render
+    // as gaps in the chart rather than collapsing the timeline.
+    const today = new Date();
+    const result: WeekBucket[] = [];
+    for (let i = weeks - 1; i >= 0; i -= 1) {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - i * 7);
+      // Snap to start of ISO week (Monday)
+      const day = d.getUTCDay();
+      const offset = (day === 0 ? -6 : 1 - day);
+      d.setUTCDate(d.getUTCDate() + offset);
+      const key = d.toISOString().slice(0, 10);
+      result.push(merged.get(key) ?? { weekStart: key, beatMarket: 0, withClosing: 0, beatRate: null });
+    }
+
+    res.json({ weeks: result, requestedWeeks: weeks });
+  } catch (err) {
+    console.error('market/clv/trend failed', err);
+    res.status(500).json({ error: 'trend failed' });
+  }
+});
+
 // GET /api/market/clv/recent-props
 //
 // Last N graded props across all sports — the concrete trail behind

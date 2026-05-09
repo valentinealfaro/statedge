@@ -25,6 +25,7 @@ import {
   type WnbaSlateResponse,
 } from './api';
 import { ClvTrustBanner } from './ClvTrustBanner';
+import { EnginePulseStrip } from './EnginePulseStrip';
 import { EngineStatus } from './EngineStatus';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
@@ -171,6 +172,10 @@ export function Dashboard() {
           Live quantitative war room. We rank by market dislocation, not hit rate. Every leg
           surfaces why it's mispriced, what could break it, and where the market disagrees.
         </p>
+
+        {/* Compact engine pulse — Bloomberg-feel ticker pinned high
+            so command-center users see live activity at a glance. */}
+        <EnginePulseStrip />
 
         {/* Truth metric pinned above the war room — institutional users
             check the scoreboard before they trust the war plan. */}

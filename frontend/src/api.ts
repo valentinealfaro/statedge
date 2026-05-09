@@ -2000,6 +2000,20 @@ export type ClvRecentRow = {
   hoursToClosing: number | null;
 };
 
+export type ClvWeekBucket = {
+  weekStart: string;
+  beatMarket: number;
+  withClosing: number;
+  beatRate: number | null;
+};
+export async function getClvTrend(opts?: { weeks?: number }): Promise<{ weeks: ClvWeekBucket[]; requestedWeeks: number }> {
+  const p = new URLSearchParams();
+  if (opts?.weeks) p.set('weeks', String(opts.weeks));
+  const res = await fetch(`${API_BASE}/api/market/clv/trend?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { weeks: ClvWeekBucket[]; requestedWeeks: number };
+}
+
 export async function getClvRecentProps(opts?: { limit?: number; windowDays?: number }): Promise<{ rows: ClvRecentRow[]; count: number; windowDays: number }> {
   const p = new URLSearchParams();
   if (opts?.limit) p.set('limit', String(opts.limit));
