@@ -7,14 +7,24 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMlbEliteToday, getNbaEliteToday, type EliteEdgeReason, type EliteLeg, type EliteResponse, type EliteTicket } from './api';
+import {
+  getCrossSportEliteToday,
+  getMlbEliteToday,
+  getNbaEliteToday,
+  type CrossSportEliteResponse,
+  type CrossSportEliteTicket,
+  type EliteEdgeReason,
+  type EliteLeg,
+  type EliteResponse,
+  type EliteTicket,
+} from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
-type EliteSport = 'mlb' | 'nba';
+type EliteView = 'cross' | 'mlb' | 'nba';
 
-const SPORT_COLOR: Record<EliteSport, string> = {
+const SPORT_COLOR: Record<'mlb' | 'nba', string> = {
   mlb: '#66bb6a',
   nba: '#7aa2ff',
 };
@@ -49,18 +59,32 @@ const STAT_LABEL: Record<string, string> = {
 
 export function Elite() {
   useTitle(['Elite', '3-Leg Service']);
-  const [sport, setSport] = useState<EliteSport>('mlb');
-  const [data, setData] = useState<EliteResponse | null>(null);
+  const [view, setView] = useState<EliteView>('cross');
+  const [data, setData] = useState<EliteResponse | CrossSportEliteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setData(null);
     setError(null);
-    const fetcher = sport === 'nba' ? getNbaEliteToday : getMlbEliteToday;
+    const fetcher = view === 'cross'
+      ? getCrossSportEliteToday
+      : view === 'nba'
+        ? getNbaEliteToday
+        : getMlbEliteToday;
     fetcher()
-      .then(setData)
+      .then((r) => setData(r))
       .catch((e: Error) => setError(e.message));
-  }, [sport]);
+  }, [view]);
+
+  // CrossSportTicket extends EliteTicket with tierName + sportsCovered.
+  // The render path treats them uniformly; tier-specific labeling is
+  // additive and only shown when present.
+  const ticket = data?.ticket ?? null;
+  const candidatesScanned = data && 'candidatesScanned' in data
+    ? typeof data.candidatesScanned === 'object'
+      ? data.candidatesScanned.total
+      : data.candidatesScanned ?? 0
+    : 0;
 
   return (
     <div className="app">
@@ -75,43 +99,27 @@ export function Elite() {
           </div>
           <h1 style={{ margin: '4px 0 8px', fontSize: 28 }}>Institutional 3-Leg Service</h1>
           <p className="muted small" style={{ margin: 0, fontSize: 13, lineHeight: 1.6, maxWidth: 720 }}>
-            Low-volume, high-conviction. Spec target is a 3-leg ticket at 6× minimum
-            payout. When no 3-leg combination clears the bar, the engine falls back to
-            the strongest 2-leg pair at 3× payout rather than publish nothing — but
-            only if a pair clears the same per-leg quality gate (60%+ probability,
-            8pp+ edge, sub-35 trap, sub-45 fragility, mandatory edge category).
+            Cross-sport ticket combining the day's strongest legs from MLB and NBA into
+            ONE play. Target: 3-leg at 6× payout, full institutional filter. Fallbacks:
+            2-leg at 3×, then progressively-relaxed tiers — there's always a play.
+            The grade and tier label tell you which tier produced the ticket so you
+            can size accordingly. MMA joins when its projection engine ships.
           </p>
         </header>
 
-        {/* Sport selector — same Elite engine, different slate */}
-        <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-          {(['mlb', 'nba'] as const).map((s) => {
-            const active = sport === s;
-            const color = SPORT_COLOR[s];
-            return (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setSport(s)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 4,
-                  border: `1px solid ${active ? color : 'rgba(255,255,255,0.12)'}`,
-                  background: active ? `${color}1a` : 'transparent',
-                  color: active ? color : 'rgba(255,255,255,0.65)',
-                  fontWeight: 800,
-                  fontSize: 11,
-                  letterSpacing: '0.06em',
-                  cursor: 'pointer',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {s.toUpperCase()}
-              </button>
-            );
-          })}
+        {/* View selector — Cross-Sport is the default and primary view;
+            sport-specific tabs are still available for users who want
+            to drill into one league. */}
+        <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+          <ViewTab active={view === 'cross'} onClick={() => setView('cross')} accent="#ffd54f">
+            ★ Cross-Sport
+          </ViewTab>
+          <ViewTab active={view === 'mlb'} onClick={() => setView('mlb')} accent={SPORT_COLOR.mlb}>
+            MLB only
+          </ViewTab>
+          <ViewTab active={view === 'nba'} onClick={() => setView('nba')} accent={SPORT_COLOR.nba}>
+            NBA only
+          </ViewTab>
         </div>
 
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
@@ -145,9 +153,9 @@ export function Elite() {
           </div>
         )}
 
-        {data && data.ticket && <TicketCard ticket={data.ticket} date={data.date} />}
-        {data && !data.ticket && (
-          <NoTicketCard reason={data.reason ?? 'no qualifying edge today'} candidates={data.candidatesScanned ?? 0} />
+        {data && ticket && <TicketCard ticket={ticket} date={'date' in data ? data.date : undefined} />}
+        {data && !ticket && (
+          <NoTicketCard reason={data.reason ?? 'no qualifying edge today'} candidates={candidatesScanned} />
         )}
 
         <section style={{
@@ -182,7 +190,32 @@ export function Elite() {
   );
 }
 
-function TicketCard({ ticket, date }: { ticket: EliteTicket; date?: string }) {
+function ViewTab({ active, onClick, children, accent }: { active: boolean; onClick: () => void; children: React.ReactNode; accent: string }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        padding: '6px 14px',
+        borderRadius: 4,
+        border: `1px solid ${active ? accent : 'rgba(255,255,255,0.12)'}`,
+        background: active ? `${accent}1a` : 'transparent',
+        color: active ? accent : 'rgba(255,255,255,0.65)',
+        fontWeight: 800,
+        fontSize: 11,
+        letterSpacing: '0.06em',
+        cursor: 'pointer',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTicket; date?: string }) {
   const gradeColor = ticket.grade === 'A+' ? '#66bb6a' : ticket.grade === 'A' ? '#7aa2ff' : '#ffd54f';
   return (
     <section style={{
@@ -205,6 +238,30 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket; date?: string }) {
             }}>
               {ticket.tier === '3-leg' ? '3-LEG' : '2-LEG · FALLBACK'}
             </span>
+            {'sportsCovered' in ticket && ticket.sportsCovered.length > 1 && (
+              <span style={{
+                padding: '2px 7px',
+                fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                color: '#66bb6a',
+                background: 'rgba(102,187,106,0.12)',
+                border: '1px solid rgba(102,187,106,0.4)',
+                borderRadius: 3,
+              }}>
+                CROSS-SPORT · {ticket.sportsCovered.map((s) => s.toUpperCase()).join(' + ')}
+              </span>
+            )}
+            {'tierName' in ticket && ticket.tierName && (
+              <span style={{
+                padding: '2px 7px',
+                fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                color: 'rgba(255,255,255,0.6)',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 3,
+              }}>
+                {ticket.tierName}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 6 }}>
             <span style={{ fontSize: 42, fontWeight: 900, color: gradeColor, lineHeight: 1 }}>

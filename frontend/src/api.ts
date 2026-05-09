@@ -1987,12 +1987,35 @@ export type EliteResponse = {
   reason: string | null;
   disclaimer?: string;
 };
+export type CrossSportEliteTicket = EliteTicket & {
+  tierName: string;
+  sportsCovered: ('mlb' | 'nba')[];
+};
+export type CrossSportEliteResponse = {
+  ticket: CrossSportEliteTicket | null;
+  reason: string | null;
+  candidatesScanned?: { nba: number; mlb: number; total: number };
+};
+
 export async function getMlbEliteToday(): Promise<EliteResponse> {
   return getEliteToday('mlb');
 }
 
 export async function getNbaEliteToday(): Promise<EliteResponse> {
   return getEliteToday('nba');
+}
+
+export async function getCrossSportEliteToday(): Promise<CrossSportEliteResponse> {
+  const res = await fetch(`${API_BASE}/api/slate/elite/cross-sport/today`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json() as { error?: string };
+      if (body?.error) detail = `${detail} — ${body.error}`;
+    } catch { /* body wasn't JSON */ }
+    throw new Error(detail);
+  }
+  return (await res.json()) as CrossSportEliteResponse;
 }
 
 async function getEliteToday(sport: 'mlb' | 'nba'): Promise<EliteResponse> {

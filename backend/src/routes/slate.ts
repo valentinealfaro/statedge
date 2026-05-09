@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
+import { buildCrossSportElite } from '../services/crossSportEliteBuilder.js';
 import { buildNbaElite } from '../services/nbaEliteBuilder.js';
+import { getMlbDailySlateFromDb } from '../db.js';
+import { resolveMlbSlate } from '../services/mlbSlatePipeline.js';
+import type { MlbStatKey } from '../mlb/stats.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -398,6 +402,74 @@ async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
 // visitors see tonight's lines without anyone having to publish.
 // We auto-resolve on GET so the response carries fully populated
 // cards (with model probabilities) ready to render.
+// GET /api/slate/elite/cross-sport/today
+//
+// Cross-sport Elite — combines NBA + MLB legs into ONE ticket and
+// always produces a play. Progressive fallback through quality tiers
+// ensures users get a 3-leg / 2-leg / "best of the day" ticket even
+// when no institutional combination qualifies. Tier name is in the
+// response so the UI shows whether it's an institutional play or a
+// relaxed-fallback "best available."
+slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ ticket: null, reason: 'database not configured' });
+    return;
+  }
+  try {
+    // Pull both slates in parallel + resolve each. Each leg passes
+    // through the sport's own projection engine before being handed
+    // to the cross-sport builder, which normalizes both into a
+    // shared candidate shape.
+    const [nbaResolved, mlbStored] = await Promise.all([
+      (async () => {
+        const stored = await getDailySlateFromDb();
+        if (!stored || stored.lines.length === 0) return [];
+        const raw: RawLine[] = stored.lines.map((l) => ({
+          playerName: l.playerName, statLabel: l.statLabel, line: l.line,
+          team: l.team, opponentAbbr: l.opponentAbbr ?? null,
+          direction: l.direction ?? 'both',
+        }));
+        const r = await resolveSlate(raw, 'manual');
+        return r.lines;
+      })().catch((err) => { console.warn('cross-sport elite nba resolve failed', err); return []; }),
+      getMlbDailySlateFromDb().catch(() => null),
+    ]);
+
+    const mlbResolved = mlbStored && mlbStored.lines.length > 0
+      ? (await resolveMlbSlate(mlbStored.lines.map((l) => ({
+          playerId: l.playerId,
+          statKey: l.statKey as MlbStatKey,
+          line: l.line,
+          direction: l.direction,
+          gamePk: l.gamePk,
+          opponentTeamId: l.opponentTeamId,
+          isHome: l.isHome,
+          opposingPitcherId: l.opposingPitcherId,
+        })).slice(0, 200))).lines    // cap MLB lines to keep cold-start fast
+      : [];
+
+    const totalCandidates = nbaResolved.length + mlbResolved.length;
+    if (totalCandidates < 2) {
+      res.json({
+        ticket: null,
+        reason: 'no candidates from either NBA or MLB slate today',
+        candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, total: totalCandidates },
+      });
+      return;
+    }
+
+    const ticket = buildCrossSportElite({ mlb: mlbResolved, nba: nbaResolved });
+    res.json({
+      ticket,
+      reason: ticket === null ? 'no qualifying combination found across all fallback tiers' : null,
+      candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, total: totalCandidates },
+    });
+  } catch (err) {
+    console.error('slate/elite/cross-sport/today failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /api/slate/elite/today
 //
 // NBA Elite — institutional 3-leg ticket (or 2-leg fallback) for the
