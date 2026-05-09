@@ -14,6 +14,7 @@ import {
   generateSlatePublishArticles,
 } from '../news/generator.js';
 import { fetchMlbBigGameInputs } from '../news/mlbBigGameFetcher.js';
+import { fetchNbaBigGameInputs } from '../news/nbaBigGameFetcher.js';
 import {
   getArticleBySlug,
   listArticles,
@@ -207,9 +208,14 @@ function yesterdayEt(): string {
   }).format(d);
 }
 
-// GET /api/news/cron/big-game — fires several times during evening ET.
-// Pulls today's completed MLB games, runs detector, persists articles.
-// NBA + WNBA detection added when their boxscore fetchers are wired.
+// GET /api/news/cron/big-game — fires once at end-of-night ET. Pulls
+// today's completed MLB + NBA games, runs the detector across both
+// leagues, persists articles. Sport-aggregate response shows what
+// scanned in each league for diagnostics.
+//
+// MLB + NBA wired today; WNBA deprioritized (existing code remains
+// but no new fetcher per the sport-priorities decision); MMA wires
+// in alongside its full provider work.
 newsRouter.get('/cron/big-game', async (req, res) => {
   const authErr = requireCronAuth(req);
   if (authErr) {
@@ -218,14 +224,25 @@ newsRouter.get('/cron/big-game', async (req, res) => {
   }
   try {
     const date = (req.query.date as string | undefined) ?? todayEt();
-    const inputs = await fetchMlbBigGameInputs(date);
+    // Run both fetchers in parallel — they hit different upstreams
+    // (MLB Stats API vs ESPN), so no shared rate-limit pressure.
+    const [mlbInputs, nbaInputs] = await Promise.all([
+      fetchMlbBigGameInputs(date),
+      fetchNbaBigGameInputs(date),
+    ]);
+    const inputs = [...mlbInputs, ...nbaInputs];
     const articles = await generateBigGameArticles({ inputs });
     res.json({
       ok: true,
       date,
-      sport: 'mlb',
-      gamesScanned: new Set(inputs.map((i) => i.game.eventId)).size,
-      playersScanned: inputs.length,
+      mlb: {
+        gamesScanned: new Set(mlbInputs.map((i) => i.game.eventId)).size,
+        playersScanned: mlbInputs.length,
+      },
+      nba: {
+        gamesScanned: new Set(nbaInputs.map((i) => i.game.eventId)).size,
+        playersScanned: nbaInputs.length,
+      },
       articlesGenerated: articles.length,
       articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
     });
