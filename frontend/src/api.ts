@@ -1921,7 +1921,8 @@ export type UfcMoneylineFighter = {
   fighterName: string;
   americanOdds: number;
   decimalOdds: number;
-  impliedProbability: number;
+  impliedProbability: number;     // raw book line including juice, 0-1
+  fairProbability: number;        // de-vigged (proportional method), 0-1
 };
 export type UfcMoneylineEvent = {
   toaEventId: string;
@@ -1929,6 +1930,7 @@ export type UfcMoneylineEvent = {
   fighterA: UfcMoneylineFighter;
   fighterB: UfcMoneylineFighter;
   bookmaker: string | null;
+  vigPct: number;                 // book hold across the 2-way market, in pp
 };
 export type UfcMoneylinesResponse = {
   events: UfcMoneylineEvent[];
@@ -1986,7 +1988,16 @@ export type EliteResponse = {
 };
 export async function getMlbEliteToday(): Promise<EliteResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/elite/today`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    // Surface the backend error body so users (and devs in prod) can
+    // see WHY the endpoint failed instead of a generic "HTTP 500".
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json() as { error?: string };
+      if (body?.error) detail = `${detail} — ${body.error}`;
+    } catch { /* body wasn't JSON */ }
+    throw new Error(detail);
+  }
   return (await res.json()) as EliteResponse;
 }
 

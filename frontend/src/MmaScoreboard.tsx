@@ -50,12 +50,13 @@ export function MmaScoreboard() {
   // since each Odds API event has both, and ESPN cards may slot
   // them differently in red/blue.
   const moneylineByFighter = useMemo(() => {
-    const out = new Map<string, { american: number; implied: number; bookmaker: string | null }>();
+    const out = new Map<string, { american: number; implied: number; fair: number; bookmaker: string | null }>();
     for (const ev of moneylines) {
       for (const f of [ev.fighterA, ev.fighterB]) {
         out.set(normalizeName(f.fighterName), {
           american: f.americanOdds,
           implied: f.impliedProbability,
+          fair: f.fairProbability,
           bookmaker: ev.bookmaker,
         });
       }
@@ -122,7 +123,7 @@ export function MmaScoreboard() {
   );
 }
 
-type MoneylineLookup = Map<string, { american: number; implied: number; bookmaker: string | null }>;
+type MoneylineLookup = Map<string, { american: number; implied: number; fair: number; bookmaker: string | null }>;
 
 function normalizeName(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
@@ -229,7 +230,7 @@ function FightRow({ fight, primary, moneylineByFighter }: { fight: UfcFight; pri
   );
 }
 
-function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: string; displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean; moneyline?: { american: number; implied: number; bookmaker: string | null } }) {
+function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: string; displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean; moneyline?: { american: number; implied: number; fair: number; bookmaker: string | null } }) {
   if (!f) return <span style={{ flex: 1, color: 'rgba(255,255,255,0.4)' }}>TBD</span>;
   const nameColor = winner ? '#66bb6a' : 'rgba(255,255,255,0.92)';
   return (
@@ -256,14 +257,16 @@ function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: s
         <div className="muted small" style={{ fontSize: 10, display: 'flex', gap: 6, justifyContent: alignRight ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
           {f.record && <span>{f.record}</span>}
           {moneyline && (
-            <span style={{
-              fontWeight: 700,
-              color: moneyline.american < 0 ? '#7aa2ff' : '#ffd54f',
-              padding: '1px 4px',
-              borderRadius: 3,
-              background: 'rgba(255,255,255,0.06)',
-            }}>
-              {moneyline.american > 0 ? `+${moneyline.american}` : moneyline.american} · {Math.round(moneyline.implied * 100)}%
+            <span
+              title={`Book: ${Math.round(moneyline.implied * 100)}% · Fair (de-vigged): ${Math.round(moneyline.fair * 100)}%`}
+              style={{
+                fontWeight: 700,
+                color: moneyline.american < 0 ? '#7aa2ff' : '#ffd54f',
+                padding: '1px 4px',
+                borderRadius: 3,
+                background: 'rgba(255,255,255,0.06)',
+              }}>
+              {moneyline.american > 0 ? `+${moneyline.american}` : moneyline.american} · <strong>{Math.round(moneyline.fair * 100)}%</strong> fair
             </span>
           )}
         </div>

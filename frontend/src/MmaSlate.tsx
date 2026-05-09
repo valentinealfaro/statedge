@@ -78,16 +78,20 @@ export function MmaSlate() {
       .catch(() => setFighterIdByName(new Map()));
   }, []);
 
-  // Map fighter name (lowercased + dot-stripped) → moneyline so we
-  // can show implied probability next to each fighter group.
+  // Map fighter name → moneyline. Carries both raw and fair (de-vigged)
+  // probabilities so the card can show the bookmaker-honest number.
   const moneylineByFighter = useMemo(() => {
-    const out = new Map<string, { american: number; implied: number }>();
+    const out = new Map<string, { american: number; implied: number; fair: number }>();
     for (const ev of moneylines) {
       out.set(normalizeName(ev.fighterA.fighterName), {
-        american: ev.fighterA.americanOdds, implied: ev.fighterA.impliedProbability,
+        american: ev.fighterA.americanOdds,
+        implied: ev.fighterA.impliedProbability,
+        fair: ev.fighterA.fairProbability,
       });
       out.set(normalizeName(ev.fighterB.fighterName), {
-        american: ev.fighterB.americanOdds, implied: ev.fighterB.impliedProbability,
+        american: ev.fighterB.americanOdds,
+        implied: ev.fighterB.impliedProbability,
+        fair: ev.fighterB.fairProbability,
       });
     }
     return out;
@@ -153,7 +157,7 @@ function PublicTodaySlate({
   slate: UfcDailySlate | null;
   todayDate: string | null;
   error: string | null;
-  moneylineByFighter: Map<string, { american: number; implied: number }>;
+  moneylineByFighter: Map<string, { american: number; implied: number; fair: number }>;
   fighterIdByName: Map<string, string>;
   loading: boolean;
 }) {
@@ -202,7 +206,7 @@ function FighterCard({ name, athleteId, lines, moneyline }: {
   name: string;
   athleteId: string;
   lines: UfcStoredLine[];
-  moneyline?: { american: number; implied: number };
+  moneyline?: { american: number; implied: number; fair: number };
 }) {
   const grouped = groupLinesByCategory(lines);
   const profileLink = athleteId ? `/mma/fighter/${athleteId}` : null;
@@ -233,15 +237,17 @@ function FighterCard({ name, athleteId, lines, moneyline }: {
           )}
         </div>
         {moneyline && (
-          <span style={{
-            padding: '3px 8px',
-            background: 'rgba(255,255,255,0.06)',
-            borderRadius: 4,
-            fontSize: 11,
-            fontWeight: 700,
-            color: moneyline.american < 0 ? '#7aa2ff' : '#ffd54f',
-          }}>
-            ML {moneyline.american > 0 ? `+${moneyline.american}` : moneyline.american} · {Math.round(moneyline.implied * 100)}%
+          <span
+            title={`Book: ${Math.round(moneyline.implied * 100)}% · Fair (de-vigged): ${Math.round(moneyline.fair * 100)}%`}
+            style={{
+              padding: '3px 8px',
+              background: 'rgba(255,255,255,0.06)',
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 700,
+              color: moneyline.american < 0 ? '#7aa2ff' : '#ffd54f',
+            }}>
+            ML {moneyline.american > 0 ? `+${moneyline.american}` : moneyline.american} · <strong>{Math.round(moneyline.fair * 100)}%</strong> fair
           </span>
         )}
       </div>

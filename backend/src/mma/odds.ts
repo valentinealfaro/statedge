@@ -16,6 +16,7 @@ import {
   fetchToaEventOdds,
   fetchToaEvents,
 } from '../market/providers/theOddsApi.js';
+import { deVigPair } from './oddsFormula.js';
 
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 let cache: { fetchedAt: number; events: UfcMoneylineEvent[] } | null = null;
@@ -24,7 +25,12 @@ export type UfcMoneylineFighter = {
   fighterName: string;
   americanOdds: number;       // -150, +135 etc.
   decimalOdds: number;
-  impliedProbability: number; // 0-1
+  impliedProbability: number; // 0-1, raw book line including juice
+  // Phase 130b — fair probability after de-vigging the pair via the
+  // proportional method (impliedA / (impliedA + impliedB)). Removes
+  // the bookmaker's hold so users see what the book actually thinks
+  // before they tilt the line in their favor.
+  fairProbability: number;    // 0-1
 };
 export type UfcMoneylineEvent = {
   toaEventId: string;
@@ -32,6 +38,10 @@ export type UfcMoneylineEvent = {
   fighterA: UfcMoneylineFighter;
   fighterB: UfcMoneylineFighter;
   bookmaker: string | null;   // which book we picked the consensus from
+  // Bookmaker hold across the two-way market, in percentage points
+  // (e.g. 4.5 means the two implied probabilities sum to 104.5%).
+  // Useful diagnostic for users — sharp lines typically post hold ≤4pp.
+  vigPct: number;
 };
 
 export async function getUfcMoneylines(opts?: { force?: boolean }): Promise<{
@@ -109,12 +119,20 @@ function parseEventOdds(
     const outcomeA = market.outcomes.find((o) => o.name === raw.home_team);
     const outcomeB = market.outcomes.find((o) => o.name === raw.away_team);
     if (!outcomeA || !outcomeB) continue;
+    const a = makeMoneylineFighter(raw.home_team, outcomeA.price);
+    const b = makeMoneylineFighter(raw.away_team, outcomeB.price);
+    // De-vig the pair so we expose the fair probabilities the
+    // bookmaker would offer with no hold.
+    const dv = deVigPair(a.impliedProbability, b.impliedProbability);
+    a.fairProbability = dv.fairProbA;
+    b.fairProbability = dv.fairProbB;
     return {
       toaEventId: raw.id,
       commenceTime,
       bookmaker: bk.key,
-      fighterA: makeMoneylineFighter(raw.home_team, outcomeA.price),
-      fighterB: makeMoneylineFighter(raw.away_team, outcomeB.price),
+      vigPct: dv.vigPct,
+      fighterA: a,
+      fighterB: b,
     };
   }
   return null;
@@ -130,5 +148,9 @@ function makeMoneylineFighter(name: string, americanOdds: number): UfcMoneylineF
     americanOdds,
     decimalOdds,
     impliedProbability: implied,
+    // Placeholder — overwritten by parseEventOdds after both fighters
+    // are computed and we can de-vig the pair. Kept on the type so
+    // every UfcMoneylineFighter shape consistently carries it.
+    fairProbability: implied,
   };
 }

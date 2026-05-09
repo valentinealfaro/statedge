@@ -73,14 +73,25 @@ export function buildMlbElite(lines: ResolvedMlbLine[]): EliteTicket | null {
   // ---------- 1. Per-leg auto-reject filter ----------
   const eligible: ResolvedMlbLine[] = [];
   for (const l of lines) {
-    if (rejectLeg(l)) continue;
-    eligible.push(l);
+    // Defensive: an individual line missing a required field shouldn't
+    // 500 the endpoint. Skip the row, keep going.
+    try {
+      if (!l || !l.projection) continue;
+      if (rejectLeg(l)) continue;
+      eligible.push(l);
+    } catch (err) {
+      console.warn('elite per-leg filter failed', (err as Error).message);
+      continue;
+    }
   }
   if (eligible.length < 3) return null;
 
   // ---------- 2. Cap to top candidates so we don't combinatorially explode
   // Sort by edge × (1 − trap/100) so the strongest legs lead.
-  const ranked = [...eligible].sort((a, b) => legElitenessScore(b) - legElitenessScore(a));
+  const ranked = [...eligible].sort((a, b) => {
+    try { return legElitenessScore(b) - legElitenessScore(a); }
+    catch { return 0; }
+  });
   const candidates = ranked.slice(0, 18);
   if (candidates.length < 3) return null;
 
@@ -94,17 +105,23 @@ export function buildMlbElite(lines: ResolvedMlbLine[]): EliteTicket | null {
         const a = candidates[i]!;
         const b = candidates[j]!;
         const c = candidates[k]!;
-        if (!passesDiversification(a, b, c)) continue;
+        // A bad row (unexpected null on a deeply nested field) shouldn't
+        // take down the whole endpoint — skip the combo and keep going.
+        try {
+          if (!passesDiversification(a, b, c)) continue;
+          const ticket = scoreTicket(a, b, c);
+          if (!ticket) continue;
+          if (ticket.combinedFairPayout < MIN_FAIR_PAYOUT) continue;
 
-        const ticket = scoreTicket(a, b, c);
-        if (!ticket) continue;
-        if (ticket.combinedFairPayout < MIN_FAIR_PAYOUT) continue;
-
-        // Composite ranking: dislocation × payout, weighted by combined edge
-        const score = ticket.dislocationScore * Math.log2(ticket.combinedFairPayout) * (1 + ticket.combinedEdgePercent / 100);
-        if (score > bestScore) {
-          bestScore = score;
-          best = ticket;
+          // Composite ranking: dislocation × payout, weighted by combined edge
+          const score = ticket.dislocationScore * Math.log2(ticket.combinedFairPayout) * (1 + ticket.combinedEdgePercent / 100);
+          if (score > bestScore) {
+            bestScore = score;
+            best = ticket;
+          }
+        } catch (err) {
+          console.warn('elite combo evaluation failed', (err as Error).message);
+          continue;
         }
       }
     }
