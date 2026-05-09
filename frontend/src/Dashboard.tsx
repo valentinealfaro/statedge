@@ -24,6 +24,7 @@ import {
   type WnbaCalibrationReport,
   type WnbaSlateResponse,
 } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -288,6 +289,11 @@ export function Dashboard() {
             </div>
           </>
         )}
+
+        {/* Cross-sport latest articles — closes the Command Center
+            with auto-content surfaced where the institutional user
+            ends a session. Same pattern as Home, no sport filter. */}
+        <LatestNewsRail limit={4} heading="Latest from the Engine" />
       </div>
     </div>
   );
