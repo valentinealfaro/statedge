@@ -1771,6 +1771,7 @@ export type Article = {
     | 'edge_preview'
     | 'big_game'
     | 'fight_night'
+    | 'line_steam'
     | 'situation_report';
   sport: 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';
   title: string;

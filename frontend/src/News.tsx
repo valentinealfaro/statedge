@@ -30,6 +30,7 @@ const KIND_LABEL: Record<string, string> = {
   edge_preview:       'Edge Preview',
   big_game:           'Big Game',
   fight_night:        'Fight Night',
+  line_steam:         'Line Steam',
   situation_report:   'Situation Report',
 };
 

@@ -17,6 +17,7 @@ import {
   generateDailyClvRecaps,
   generateDailyEdgePreviews,
   generateFightNightArticles,
+  generateLineSteamArticles,
   generateSlatePublishArticles,
 } from '../news/generator.js';
 import { fetchMlbBigGameInputs } from '../news/mlbBigGameFetcher.js';
@@ -316,6 +317,32 @@ newsRouter.get('/cron/clv-recap', async (req, res) => {
     });
   } catch (err) {
     console.error('cron/clv-recap failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/news/cron/line-steam — afternoon ET. Reads the last 24h
+// of market_snapshots, computes per-prop first-vs-latest deltas,
+// emits one article per sport with the biggest movers.
+newsRouter.get('/cron/line-steam', async (req, res) => {
+  const authErr = requireCronAuth(req);
+  if (authErr) {
+    res.status(authErr.includes('configured') ? 503 : 401).json({ error: authErr });
+    return;
+  }
+  try {
+    const date = (req.query.date as string | undefined) ?? todayEt();
+    const hours = req.query.hours ? Number(req.query.hours) : 24;
+    const articles = await generateLineSteamArticles({ date, hours });
+    res.json({
+      ok: true,
+      date,
+      hours,
+      articlesGenerated: articles.length,
+      articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
+    });
+  } catch (err) {
+    console.error('cron/line-steam failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

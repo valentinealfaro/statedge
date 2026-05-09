@@ -537,6 +537,80 @@ export function generateBigGame(opts: {
   };
 }
 
+// ---------- Line Steam (Phase 109c) ----------
+//
+// Daily afternoon-ET cron: surfaces the day's biggest line moves
+// across the slate. Sharp money + injury news + lineup changes all
+// manifest as line movement; the article doesn't try to attribute
+// (we don't have provenance data), it just reports what moved and
+// by how much. Sorted by absolute line delta.
+
+export type LineSteamMover = {
+  sport: 'mlb' | 'nba' | 'wnba';
+  playerName: string;
+  team: string | null;
+  statLabel: string;
+  firstLine: number;
+  latestLine: number;
+  lineDelta: number;
+  firstImplied: number | null;     // 0-1
+  latestImplied: number | null;    // 0-1
+  snapshotCount: number;
+};
+
+export function generateLineSteamArticle(opts: {
+  sport: 'mlb' | 'nba' | 'wnba';
+  date: string;
+  movers: LineSteamMover[];
+}): ArticleDraft | null {
+  const movers = opts.movers.filter((m) => m.sport === opts.sport);
+  if (movers.length === 0) return null;
+
+  const top = movers.slice(0, 8);
+  const slug = articleSlug({ kind: 'line_steam', date: opts.date, sport: opts.sport });
+  const sportLabel = opts.sport.toUpperCase();
+  const summary = `${top.length} ${sportLabel} props moved sharply on the day's market — sharp action, injury news, and lineup changes show up here first.`;
+
+  const lines: string[] = [];
+  lines.push(`# ${sportLabel} Line Steam · ${humanDate(opts.date)}`);
+  lines.push('');
+  lines.push(summary);
+  lines.push('');
+  lines.push(`The market is information aggregating in real time. When a line moves more than 0.5 stat units or 5 percentage points of implied probability between morning and afternoon, that's the consensus reacting to something specific. We don't always know what — but we know it matters.`);
+  lines.push('');
+
+  lines.push(`| Player | Stat | Line move | Implied move | Snapshots |`);
+  lines.push(`|---|---|---|---|---|`);
+  for (const m of top) {
+    const arrow = m.lineDelta > 0 ? '↑' : m.lineDelta < 0 ? '↓' : '→';
+    const lineMove = `${m.firstLine.toFixed(1)} → ${m.latestLine.toFixed(1)} (${m.lineDelta >= 0 ? '+' : ''}${m.lineDelta.toFixed(1)} ${arrow})`;
+    const impliedMove = m.firstImplied !== null && m.latestImplied !== null
+      ? `${Math.round(m.firstImplied * 100)}% → ${Math.round(m.latestImplied * 100)}%`
+      : '—';
+    const teamSuffix = m.team ? ` (${m.team})` : '';
+    lines.push(`| ${m.playerName}${teamSuffix} | ${m.statLabel} | ${lineMove} | ${impliedMove} | ${m.snapshotCount} |`);
+  }
+  lines.push('');
+
+  lines.push(`---`);
+  lines.push('');
+  lines.push(`*Lines that move late = lines worth a second look. The model recomputes on every snapshot pull; checking the Compare page for a player whose line just moved is the highest-leverage habit on this site.*`);
+
+  return {
+    slug,
+    kind: 'line_steam',
+    sport: opts.sport,
+    title: `${sportLabel} Line Steam · ${humanDate(opts.date)}`,
+    summary,
+    bodyMd: lines.join('\n'),
+    heroImageUrl: null,
+    videoYoutubeId: null,
+    relatedPlayerId: null,
+    relatedGameKey: null,
+    expiresAt: endOfDayIso(opts.date),
+  };
+}
+
 // ---------- Fight Night recap (Phase 107e) ----------
 //
 // UFC card recap. Triggered when a card completes with at least one

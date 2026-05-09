@@ -20,6 +20,7 @@ export type ArticleKind =
   | 'edge_preview'           // Today's edge preview per sport
   | 'big_game'               // Player went off — auto-recap with highlight
   | 'fight_night'            // UFC card recap — main event + finishes + title fights
+  | 'line_steam'             // Intraday line movement — market is reacting to info
   | 'situation_report';      // Reserved for Phase 103g situation clustering
 
 export type ArticleSport = 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';

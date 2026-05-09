@@ -17,17 +17,20 @@
 
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import { detectBigGames, type Detection, type DetectionInput } from './bigGameDetector.js';
+import { findLineSteam } from './lineSteam.js';
 import type { FightNightInput } from './mmaFightNightFetcher.js';
 import { upsertArticle } from './store.js';
 import {
   generateClvRecap,
   generateEdgePreview,
   generateFightNight,
+  generateLineSteamArticle,
   generateTopMispricings,
   generateTrapWatch,
   generateWhyMarketWrong,
   generateBigGame,
   type EdgeLeg,
+  type LineSteamMover,
 } from './templates.js';
 import { findBigGameHighlight } from './youtubeHighlights.js';
 import type { Article } from './types.js';
@@ -264,6 +267,42 @@ export async function generateDailyClvRecaps(opts: { date: string }): Promise<Ar
       averageBeat: summary.averageBeatMagnitude,
       topBeats,
     });
+    if (draft) out.push(await upsertArticle(draft));
+  }
+  return out;
+}
+
+// ---------- Line Steam bundle (Phase 109c) ----------
+//
+// Daily afternoon-ET cron. Reads market_snapshots over the last 24h,
+// finds the biggest line moves per (player, stat, direction), emits
+// one article per sport listing the day's top movers.
+export async function generateLineSteamArticles(opts: { date: string; hours?: number }): Promise<Article[]> {
+  const movers = await findLineSteam({ hours: opts.hours ?? 24, limit: 30 });
+  if (movers.length === 0) return [];
+
+  // Group by sport and build the LineSteamMover shape templates expect.
+  const bySport: Record<'mlb' | 'nba' | 'wnba', LineSteamMover[]> = { mlb: [], nba: [], wnba: [] };
+  for (const m of movers) {
+    if (m.sport !== 'mlb' && m.sport !== 'nba' && m.sport !== 'wnba') continue;
+    bySport[m.sport].push({
+      sport: m.sport,
+      playerName: m.playerName,
+      team: m.team,
+      statLabel: m.statKey,                    // raw key — template renders as-is
+      firstLine: m.firstLine,
+      latestLine: m.latestLine,
+      lineDelta: m.lineDelta,
+      firstImplied: m.firstImplied,
+      latestImplied: m.latestImplied,
+      snapshotCount: m.snapshotCount,
+    });
+  }
+
+  const out: Article[] = [];
+  for (const sport of ['mlb', 'nba', 'wnba'] as const) {
+    if (bySport[sport].length === 0) continue;
+    const draft = generateLineSteamArticle({ sport, date: opts.date, movers: bySport[sport] });
     if (draft) out.push(await upsertArticle(draft));
   }
   return out;
