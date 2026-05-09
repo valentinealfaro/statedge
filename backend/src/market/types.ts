@@ -12,7 +12,7 @@
 // read from market_snapshots / consensus tables — not call providers
 // directly. That separation lets us swap providers freely.
 
-export type MarketSport = 'nba' | 'mlb' | 'wnba' | 'nfl' | 'nhl';
+export type MarketSport = 'nba' | 'mlb' | 'wnba' | 'mma' | 'nfl' | 'nhl';
 
 // Bookmaker identity. Case-insensitive on input; canonical lowercase
 // on storage. PrizePicks + Underdog are special — they're DFS books,
