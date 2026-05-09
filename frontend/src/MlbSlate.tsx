@@ -15,7 +15,7 @@
 // for MLB is a future slice.
 
 import { useEffect, useMemo, useState } from 'react';
-import { MlbPlayerAvatar } from './Avatar';
+import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
 import {
   buildMlbSlateRequest,
   clearMlbDailySlate,
@@ -30,6 +30,7 @@ import {
   type MlbWildCardCombo,
   type RawMlbSlateLine,
 } from './api';
+import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -995,6 +996,8 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
   // cards render exactly as before.
   const liveToday = useLiveToday();
 
+  const [drilldownPlayer, setDrilldownPlayer] = useState<DrilldownPlayer | null>(null);
+
   return (
     <div className="mlb-slate-result">
       <div className="mlb-info-banner">
@@ -1032,12 +1035,20 @@ function SlateResultView({ data }: { data: MlbSlateResponse }) {
 
       <div className="best-picks-rail">
         {data.combos.map((slot) => (
-          <ComboCard key={slot.size} slot={slot} liveToday={liveToday} />
+          <ComboCard key={slot.size} slot={slot} liveToday={liveToday} onPlayerClick={setDrilldownPlayer} />
         ))}
-        <WildCardCard wildCard={data.wildCard} liveToday={liveToday} />
+        <WildCardCard wildCard={data.wildCard} liveToday={liveToday} onPlayerClick={setDrilldownPlayer} />
       </div>
 
       <p className="mlb-disclaimer">{data.disclaimer}</p>
+
+      {drilldownPlayer && (
+        <MlbPlayerDrilldown
+          player={drilldownPlayer}
+          slate={data}
+          onClose={() => setDrilldownPlayer(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1100,7 +1111,15 @@ function EngineActivityPanel({
 
 // Wild Card — uses the same `best-pick-card wild` styling as NBA so
 // users see one unified visual system across both sports.
-function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liveToday: MlbLiveTodayResponse | null }) {
+function WildCardCard({
+  wildCard,
+  liveToday,
+  onPlayerClick,
+}: {
+  wildCard: MlbWildCardCombo;
+  liveToday: MlbLiveTodayResponse | null;
+  onPlayerClick: (p: DrilldownPlayer) => void;
+}) {
   const kindLabel =
     wildCard.kind === 'standard' ? 'Standard'
     : wildCard.kind === 'near_miss' ? 'Near Miss'
@@ -1126,10 +1145,22 @@ function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liv
             {wildCard.closestCandidates.map((leg, i) => (
               <div key={i} className="best-pick-leg-block">
                 <div className="best-pick-leg">
-                  <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => onPlayerClick({ playerId: leg.playerId, playerName: leg.playerName, team: leg.team })}
+                    className="best-pick-leg-name slate-leg-button"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title="Click for player drilldown"
+                  >
                     <MlbPlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />
                     {leg.playerName}
-                  </span>
+                    {leg.team && (
+                      <span className="slate-leg-team">
+                        <MlbTeamLogo abbr={leg.team} name={leg.team} size="md" />
+                        <span>{leg.team}</span>
+                      </span>
+                    )}
+                  </button>
                   <span className="best-pick-leg-stat">
                     {leg.statLabel} {leg.line}
                   </span>
@@ -1254,10 +1285,22 @@ function WildCardCard({ wildCard, liveToday }: { wildCard: MlbWildCardCombo; liv
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onPlayerClick({ playerId: l.playerId, playerName: l.playerName, team: l.team })}
+                  className="best-pick-leg-name slate-leg-button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Click for player drilldown"
+                >
                   <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
                   {l.playerName}
-                </span>
+                  {l.team && (
+                    <span className="slate-leg-team">
+                      <MlbTeamLogo abbr={l.team} name={l.team} size="md" />
+                      <span>{l.team}</span>
+                    </span>
+                  )}
+                </button>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>
@@ -1393,7 +1436,15 @@ function computeCardWarnings(
 // Render a polished MLB combo card matching the NBA `best-pick-card`
 // design system: dense 4-stat grid, per-leg confidence + category +
 // trap badges, warnings strip, "Load parlay" CTA.
-function ComboCard({ slot, liveToday }: { slot: MlbSlateResponse['combos'][number]; liveToday: MlbLiveTodayResponse | null }) {
+function ComboCard({
+  slot,
+  liveToday,
+  onPlayerClick,
+}: {
+  slot: MlbSlateResponse['combos'][number];
+  liveToday: MlbLiveTodayResponse | null;
+  onPlayerClick: (p: DrilldownPlayer) => void;
+}) {
   if (!slot.combo) {
     return (
       <div className="best-pick-card empty">
@@ -1510,10 +1561,22 @@ function ComboCard({ slot, liveToday }: { slot: MlbSlateResponse['combos'][numbe
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onPlayerClick({ playerId: l.playerId, playerName: l.playerName, team: l.team })}
+                  className="best-pick-leg-name slate-leg-button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Click for player drilldown"
+                >
                   <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
                   {l.playerName}
-                </span>
+                  {l.team && (
+                    <span className="slate-leg-team">
+                      <MlbTeamLogo abbr={l.team} name={l.team} size="md" />
+                      <span>{l.team}</span>
+                    </span>
+                  )}
+                </button>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>

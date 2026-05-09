@@ -1010,7 +1010,16 @@ function BestPicksRail({
                     {c.closestCandidates.map((l, i) => (
                       <div key={i} className="best-pick-leg-block">
                         <div className="best-pick-leg">
-                          <span className="best-pick-leg-name">{l.playerName}</span>
+                          <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <PlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
+                            {l.playerName}
+                            {l.team && (
+                              <span className="slate-leg-team">
+                                <TeamLogo abbr={l.team} name={l.team} size="md" />
+                                <span>{l.team}</span>
+                              </span>
+                            )}
+                          </span>
                           <span className="best-pick-leg-stat">
                             {l.statLabel} {l.line}
                           </span>
@@ -1198,7 +1207,16 @@ function BestPicksRail({
                   return (
                   <div key={i} className="best-pick-leg-block">
                     <div className="best-pick-leg">
-                      <span className="best-pick-leg-name">{l.playerName}</span>
+                      <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <PlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
+                        {l.playerName}
+                        {l.team && (
+                          <span className="slate-leg-team">
+                            <TeamLogo abbr={l.team} name={l.team} size="md" />
+                            <span>{l.team}</span>
+                          </span>
+                        )}
+                      </span>
                       <span className="best-pick-leg-stat">
                         {l.statLabel}{' '}
                         {l.lineRaised && l.originalLine !== undefined ? (

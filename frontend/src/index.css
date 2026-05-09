@@ -2449,6 +2449,33 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.slate-leg-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.slate-leg-button:hover { text-decoration: underline; text-decoration-color: rgba(122, 162, 255, 0.6); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.slate-leg-button:focus-visible { outline: 1px solid var(--brand-blue); outline-offset: 2px; border-radius: 3px; }
+.slate-leg-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px 1px 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.slate-leg-team .avatar.team.md { width: 14px; height: 14px; }
 .best-pick-leg-stat {
   font-size: 10px;
   color: var(--text-3);

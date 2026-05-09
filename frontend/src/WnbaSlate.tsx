@@ -15,7 +15,7 @@
 // construction.
 
 import { useEffect, useMemo, useState } from 'react';
-import { WnbaPlayerAvatar } from './Avatar';
+import { WnbaPlayerAvatar, WnbaTeamLogo } from './Avatar';
 import {
   clearWnbaSlate,
   getWnbaLiveToday,
@@ -813,7 +813,16 @@ function ComboCard({
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name">{l.playerName}</span>
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <WnbaPlayerAvatar playerId={l.athleteId} name={l.playerName} size="md" />
+                  {l.playerName}
+                  {l.team && (
+                    <span className="slate-leg-team">
+                      <WnbaTeamLogo abbr={l.team} name={l.team} size="md" />
+                      <span>{l.team}</span>
+                    </span>
+                  )}
+                </span>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>
@@ -828,7 +837,6 @@ function ComboCard({
                 >
                   {l.edgePercent >= 0 ? '+' : ''}{l.edgePercent.toFixed(0)}% edge
                 </span>
-                {l.team && <span className="best-pick-leg-cat">{l.team}</span>}
                 {l.trapScore >= 60 && (
                   <span className="best-pick-leg-trap">⚠ TRAP RISK</span>
                 )}
