@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ClvTrustBanner } from './ClvTrustBanner';
+import { EnginePulseStrip } from './EnginePulseStrip';
 import { LatestNewsRail } from './LatestNewsRail';
 import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
@@ -41,6 +42,12 @@ export function Home() {
           We provide statistics and analysis only. No betting advice.
         </p>
       </header>
+
+      {/* Compact engine pulse — Bloomberg-feel ticker showing
+          live activity. Self-hides until at least one engine
+          source has data; click-through to /methodology for the
+          full operational view. */}
+      <EnginePulseStrip />
 
       {/* CLV truth metric — the institutional credential. Pinned high
           so the data-first promise is visible, not buried. Banner
