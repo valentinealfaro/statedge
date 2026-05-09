@@ -10,6 +10,7 @@
 // can trust it because the math is published.
 
 import { Link } from 'react-router-dom';
+import { EngineStatus } from './EngineStatus';
 import { NavBar } from './NavBar';
 import { useTitle } from './useTitle';
 
@@ -224,6 +225,11 @@ export function Methodology() {
             blurb="How much does our line move after publish? Stable + Confirmed = market validated. Eroded = market disagreed."
           />
         </div>
+
+        {/* Operational pulse — live counters showing the engine is
+            actually running. Self-hides if the status endpoint
+            returns nothing. */}
+        <EngineStatus />
 
         <h2 style={{ marginTop: 32, fontSize: 22, fontWeight: 800, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 8 }}>
           What's NOT here yet

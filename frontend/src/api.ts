@@ -2050,6 +2050,24 @@ export async function getCalibrationSummary(opts?: { windowDays?: number }): Pro
   return (await res.json()) as CrossSportCalibration;
 }
 
+// Engine status (Phase 122)
+export type EngineCategoryStats = {
+  last24h: number;
+  last7d: number;
+  allTime: number;
+  mostRecent: string | null;
+};
+export type EngineStatusResponse = {
+  articles: EngineCategoryStats & { byKind24h: Record<string, number> };
+  marketSnapshots: EngineCategoryStats;
+  projectionsGraded: { last7d: number; last30d: number };
+};
+export async function getEngineStatus(): Promise<EngineStatusResponse> {
+  const res = await fetch(`${API_BASE}/api/engine/status`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as EngineStatusResponse;
+}
+
 // UFC slate (Phase 110a)
 export type UfcStoredLine = {
   fighterName: string;

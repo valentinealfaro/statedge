@@ -5,6 +5,7 @@ import { teamsRouter } from './routes/teams.js';
 import { compareRouter } from './routes/compare.js';
 import { aiRouter } from './routes/ai.js';
 import { calibrationRouter } from './routes/calibration.js';
+import { engineRouter } from './routes/engine.js';
 import { liveRouter } from './routes/live.js';
 import { playerRouter } from './routes/player.js';
 import { freshnessRouter } from './routes/freshness.js';
@@ -114,6 +115,7 @@ export function createApp(): Express {
   app.use('/api/compare', compareRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/calibration', calibrationRouter);
+  app.use('/api/engine', engineRouter);
   app.use('/api/live', liveRouter);
   app.use('/api/player', playerRouter);
   app.use('/api/data-freshness', freshnessRouter);
