@@ -22,6 +22,7 @@ import {
 } from './api';
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { edgeScore } from './edgeScore';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { useFavorites, type FavoritesAPI } from './favorites';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
@@ -336,6 +337,10 @@ export function Slate() {
         Tap any card to add it to your parlay (up to 6 legs) and we'll
         score the combined hit probability.
       </p>
+
+      {/* Truth metric pinned above the board — institutional users
+          check the scoreboard before they trust tonight's picks. */}
+      <ClvTrustBanner />
 
       {/* Tonight's NBA games — sits at the top so users orient on
           the actual game context before scanning the pre-built

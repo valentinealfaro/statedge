@@ -33,6 +33,7 @@ import {
   type PrizepicksIngestResult,
   type RawMlbSlateLine,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
 import { MlbTodaysGames } from './MlbTodaysGames';
@@ -521,6 +522,11 @@ export function MlbSlate() {
             {adminMode ? '← Public view' : (isAdmin ? 'Admin →' : 'Admin login →')}
           </button>
         </div>
+
+        {/* Truth metric pinned high so the slate's projections come
+            with their accuracy receipt. Banner self-hides if no
+            projections have graded yet. */}
+        <ClvTrustBanner />
 
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (

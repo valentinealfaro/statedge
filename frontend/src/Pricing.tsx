@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { NavBar } from './NavBar';
 import { unlockPro, usePlan } from './plan';
 import { useTitle } from './useTitle';
@@ -37,6 +38,11 @@ export function Pricing() {
           full prop slate, parlay builder, and AI analysis.
         </p>
       </div>
+
+      {/* Truth metric on the pricing page = "here's the receipt before
+          you decide to pay." The credential should be the first thing
+          someone evaluating a Pro upgrade sees. */}
+      <ClvTrustBanner />
 
       <div className="pricing-tiers">
         <div className="pricing-tier">
