@@ -204,6 +204,52 @@ marketRouter.get('/clv', async (req, res) => {
   }
 });
 
+// GET /api/market/clv/recent-props
+//
+// Last N graded props across all sports — the concrete trail behind
+// the truth metric. Each row is one published projection plus the
+// later market snapshot it was graded against. Powers the "Recent
+// Graded Props" section of the /clv audit page.
+//
+// Default 30 days, 25 rows. Cap at 100 to keep response sizes sane.
+marketRouter.get('/clv/recent-props', async (req, res) => {
+  try {
+    const windowDays = req.query.windowDays
+      ? Math.max(1, Math.min(365, Number(req.query.windowDays)))
+      : 30;
+    const limit = req.query.limit
+      ? Math.max(1, Math.min(100, Number(req.query.limit)))
+      : 25;
+
+    // Pull both sports separately (each has its own projection_history
+    // table) and merge by published-at DESC. Each Promise.all leg is
+    // independent so total wait = max(mlb, wnba), not their sum.
+    const [mlb, wnba] = await Promise.all([
+      computeMlbClv({ windowDays, limit: 200 }),
+      computeWnbaClv({ windowDays, limit: 200 }),
+    ]);
+    const all = [
+      ...mlb.rows.map((r) => ({ sport: 'mlb' as const,  ...r })),
+      ...wnba.rows.map((r) => ({ sport: 'wnba' as const, ...r })),
+    ];
+    // Only show props that actually got graded (have a closing snapshot
+    // strictly after the publish). Pre-grade rows aren't useful here
+    // and would dilute the "every prop, audit-able" promise.
+    const graded = all.filter((r) => r.closingLine !== null && r.beatMarket !== null);
+    graded.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+    const top = graded.slice(0, limit);
+
+    res.json({
+      rows: top,
+      count: top.length,
+      windowDays,
+    });
+  } catch (err) {
+    console.error('market/clv/recent-props failed', err);
+    res.status(500).json({ error: 'recent-props failed' });
+  }
+});
+
 // GET /api/market/clv/trust-score
 //
 // Aggregate CLV beat-rate across sports for the home-page Trust

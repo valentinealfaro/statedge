@@ -1975,6 +1975,34 @@ export async function getClvTrustScore(): Promise<ClvTrustScoreResponse> {
   return (await res.json()) as ClvTrustScoreResponse;
 }
 
+export type ClvRecentRow = {
+  sport: 'mlb' | 'wnba';
+  projectionId: number;
+  gameDate: string;
+  playerId: number | string | null;
+  rawPlayerName: string | null;
+  team: string | null;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  publishLine: number;
+  publishedAt: string;
+  closingLine: number | null;
+  closingAt: string | null;
+  lineDelta: number | null;
+  beatMarket: boolean | null;
+  beatMagnitude: number | null;
+  hoursToClosing: number | null;
+};
+
+export async function getClvRecentProps(opts?: { limit?: number; windowDays?: number }): Promise<{ rows: ClvRecentRow[]; count: number; windowDays: number }> {
+  const p = new URLSearchParams();
+  if (opts?.limit) p.set('limit', String(opts.limit));
+  if (opts?.windowDays) p.set('windowDays', String(opts.windowDays));
+  const res = await fetch(`${API_BASE}/api/market/clv/recent-props?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { rows: ClvRecentRow[]; count: number; windowDays: number };
+}
+
 // UFC slate (Phase 110a)
 export type UfcStoredLine = {
   fighterName: string;

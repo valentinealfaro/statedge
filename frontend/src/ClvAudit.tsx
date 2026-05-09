@@ -12,7 +12,13 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getClvTrustScore, type ClvTrustScoreResponse, type ClvTrustWindow } from './api';
+import {
+  getClvRecentProps,
+  getClvTrustScore,
+  type ClvRecentRow,
+  type ClvTrustScoreResponse,
+  type ClvTrustWindow,
+} from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -58,11 +64,17 @@ export function ClvAudit() {
   const [data, setData] = useState<ClvTrustScoreResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [windowKey, setWindowKey] = useState<'window7d' | 'window30d' | 'seasonToDate'>('seasonToDate');
+  const [recent, setRecent] = useState<ClvRecentRow[] | null>(null);
 
   useEffect(() => {
     getClvTrustScore()
       .then(setData)
       .catch((err: Error) => setError(err.message));
+    // Recent props are fetched in parallel — failure is non-fatal,
+    // the section silently hides if no graded props exist.
+    getClvRecentProps({ limit: 25, windowDays: 30 })
+      .then((r) => setRecent(r.rows))
+      .catch(() => setRecent([]));
   }, []);
 
   const win = data?.[windowKey];
@@ -193,6 +205,96 @@ export function ClvAudit() {
                     ))}
                   </tbody>
                 </table>
+              </section>
+            )}
+
+            {/* Recent graded props — the concrete trail behind the
+                top-line beat rate. Every prop, every line move,
+                every grade. The "we publish the math" promise made
+                physical. */}
+            {recent && recent.length > 0 && (
+              <section style={{ marginBottom: 24 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
+                  Recent Graded Props
+                </h2>
+                <p className="muted small" style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.5 }}>
+                  Most recent {recent.length} graded projections (last 30 days). Beat = our published line was directionally better than the market's eventual close. Magnitude in stat units.
+                </p>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
+                        <th style={thStyle}>Sport</th>
+                        <th style={thStyle}>Game Date</th>
+                        <th style={thStyle}>Player</th>
+                        <th style={thStyle}>Stat</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Our Line</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Close</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Δ</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recent.map((r) => (
+                        <tr key={`${r.sport}-${r.projectionId}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={tdStyle}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 800, letterSpacing: '0.05em',
+                              color: SPORT_COLOR[r.sport] ?? 'rgba(255,255,255,0.6)',
+                              textTransform: 'uppercase',
+                            }}>
+                              {r.sport}
+                            </span>
+                          </td>
+                          <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.6)' }}>
+                            {r.gameDate.slice(0, 10)}
+                          </td>
+                          <td style={tdStyle}>
+                            {r.rawPlayerName ?? `Player ${r.playerId ?? '?'}`}
+                            {r.team && <span className="muted small" style={{ marginLeft: 4, fontSize: 10 }}>{r.team}</span>}
+                          </td>
+                          <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.85)' }}>
+                            {STAT_LABEL[r.statKey] ?? r.statKey}
+                            <span className="muted small" style={{
+                              marginLeft: 4, fontSize: 9, fontWeight: 800, letterSpacing: '0.05em',
+                              color: r.direction === 'OVER' ? '#66bb6a' : '#ef5350',
+                            }}>
+                              {r.direction === 'OVER' ? '↑' : '↓'}
+                            </span>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
+                            {r.publishLine.toFixed(1)}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.65)' }}>
+                            {r.closingLine !== null ? r.closingLine.toFixed(1) : '—'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.7)' }}>
+                            {r.lineDelta !== null
+                              ? `${r.lineDelta >= 0 ? '+' : ''}${r.lineDelta.toFixed(1)}`
+                              : '—'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            {r.beatMarket === true && (
+                              <span style={{ fontSize: 11, fontWeight: 800, color: '#66bb6a' }}>
+                                ✓ BEAT
+                              </span>
+                            )}
+                            {r.beatMarket === false && (
+                              <span style={{ fontSize: 11, fontWeight: 800, color: '#ef5350' }}>
+                                ✗ LOST
+                              </span>
+                            )}
+                            {r.beatMarket === null && (
+                              <span className="muted small" style={{ fontSize: 11 }}>
+                                —
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
 
