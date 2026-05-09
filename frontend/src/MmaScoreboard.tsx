@@ -6,6 +6,7 @@
 // phases.
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   getUfcMoneylines,
   getUfcScoreboard,
@@ -218,8 +219,9 @@ function FightRow({ fight, primary, moneylineByFighter }: { fight: UfcFight; pri
   );
 }
 
-function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean; moneyline?: { american: number; implied: number; bookmaker: string | null } }) {
+function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: string; displayName: string; record: string | null; headshot: string | null } | null; winner: boolean; primary: boolean; alignRight?: boolean; moneyline?: { american: number; implied: number; bookmaker: string | null } }) {
   if (!f) return <span style={{ flex: 1, color: 'rgba(255,255,255,0.4)' }}>TBD</span>;
+  const nameColor = winner ? '#66bb6a' : 'rgba(255,255,255,0.92)';
   return (
     <div style={{
       flex: 1,
@@ -230,17 +232,22 @@ function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { displ
       textAlign: alignRight ? 'right' : 'left',
     }}>
       {primary && f.headshot && (
-        <img
-          src={f.headshot}
-          alt=""
-          loading="lazy"
-          style={{ width: 32, height: 32, borderRadius: 16, objectFit: 'cover', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }}
-        />
+        <Link to={`/mma/fighter/${f.id}`} style={{ flexShrink: 0 }}>
+          <img
+            src={f.headshot}
+            alt=""
+            loading="lazy"
+            style={{ width: 32, height: 32, borderRadius: 16, objectFit: 'cover', background: 'rgba(255,255,255,0.05)', display: 'block' }}
+          />
+        </Link>
       )}
       <div style={{ minWidth: 0, overflow: 'hidden' }}>
-        <div style={{ fontWeight: winner ? 800 : 600, color: winner ? '#66bb6a' : 'rgba(255,255,255,0.92)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Link
+          to={`/mma/fighter/${f.id}`}
+          style={{ fontWeight: winner ? 800 : 600, color: nameColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none', display: 'block' }}
+        >
           {f.displayName}
-        </div>
+        </Link>
         <div className="muted small" style={{ fontSize: 10, display: 'flex', gap: 6, justifyContent: alignRight ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
           {f.record && <span>{f.record}</span>}
           {moneyline && (

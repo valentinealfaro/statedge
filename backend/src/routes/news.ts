@@ -59,12 +59,13 @@ newsRouter.get('/player/:sport/:id', async (req, res) => {
     const playerName = (req.query.name as string | undefined) ?? '';
 
     // ESPN bio enrichment — only when the id makes sense for ESPN.
-    // NBA + WNBA player ids in our system ARE ESPN athlete ids (we
-    // ingest from ESPN). MLB ids are MLB Stats API ids, so the
-    // ESPN endpoint won't recognize them — skip those.
+    // NBA + WNBA + MMA player ids in our system ARE ESPN athlete ids
+    // (we ingest from ESPN scoreboard). MLB ids are MLB Stats API
+    // ids, so the ESPN endpoint won't recognize them — skip those.
     const espnSlug =
-      sport === 'nba'  ? 'basketball/nba'
-      : sport === 'wnba' ? 'basketball/wnba'
+      sport === 'nba'  ? 'basketball/nba' as const
+      : sport === 'wnba' ? 'basketball/wnba' as const
+      : sport === 'mma'  ? 'mma/ufc' as const
       : null;
 
     const [articles, headlines, bio] = await Promise.all([
@@ -110,8 +111,16 @@ function buildSearchLinks(name: string, sport: ArticleSport, id: string): Array<
     links.push({ label: 'NBA.com', url: `https://www.nba.com/search?q=${q}` , kind: 'reference' });
   } else if (sport === 'wnba') {
     links.push({ label: 'WNBA.com', url: `https://www.wnba.com/search?q=${q}`, kind: 'reference' });
+  } else if (sport === 'mma') {
+    links.push({ label: 'UFC Profile',    url: `https://www.ufc.com/athlete/${slugifyName(name)}`, kind: 'reference' });
+    links.push({ label: 'UFCStats',       url: `https://www.ufcstats.com/statistics/fighters?char=${q.charAt(0)}`, kind: 'reference' });
+    links.push({ label: 'Tapology',       url: `https://www.tapology.com/search?term=${q}&mainSearchFilter=fighters`, kind: 'reference' });
   }
   return links;
+}
+
+function slugifyName(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 // GET /api/news/:slug — single article body
