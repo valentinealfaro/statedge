@@ -21,6 +21,7 @@ import {
 import {
   fetchPrizepicksProjections,
 } from '../market/providers/prizepicksApi.js';
+import { generateSlatePublishArticles } from '../news/generator.js';
 import {
   fetchToaEventOdds,
   fetchToaEvents,
@@ -900,6 +901,33 @@ marketRouter.post('/prizepicks/ingest', async (req, res) => {
       }
     }
 
+    // Phase 104f — auto-generate articles after slate publishes.
+    // Best-effort: failures here do NOT fail the ingest.
+    let articlesGenerated = 0;
+    if (slatePublished) {
+      try {
+        const edges = snapshotProps
+          .filter((p) => typeof p.internalPlayerId === 'number' || typeof p.internalPlayerId === 'string')
+          .map((p) => ({
+            sport: (p.sport === 'mlb' ? 'mlb' : p.sport === 'nba' ? 'nba' : 'wnba') as 'mlb' | 'nba' | 'wnba',
+            playerId: p.internalPlayerId as number | string,
+            playerName: p.rawPlayerName,
+            team: p.team,
+            statLabel: p.rawStatType,
+            line: p.line,
+            direction: p.direction === 'BOTH' ? 'OVER' : p.direction,
+            probability: p.impliedProbability ?? 50,
+            edgePercent: 0,                        // PrizePicks pre-projection — placeholder
+            trapScore: 0,
+            projection: p.line,
+          }));
+        const generated = await generateSlatePublishArticles({ edges });
+        articlesGenerated = generated.length;
+      } catch (err) {
+        console.warn('slate-publish article generation failed:', (err as Error).message);
+      }
+    }
+
     res.json({
       ok: true,
       sport,
@@ -908,6 +936,7 @@ marketRouter.post('/prizepicks/ingest', async (req, res) => {
       resolution,
       slatePublished,
       slateLines,
+      articlesGenerated,
     });
   } catch (err) {
     console.error('prizepicks/ingest failed', err);

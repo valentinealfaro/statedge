@@ -14,6 +14,7 @@ import { performersRouter } from './routes/performers.js';
 import { slateRouter } from './routes/slate.js';
 import { marketRouter } from './routes/market.js';
 import { mlbRouter } from './routes/mlb.js';
+import { newsRouter } from './routes/news.js';
 import { wnbaRouter } from './routes/wnba.js';
 
 export function createApp(): Express {
@@ -119,6 +120,7 @@ export function createApp(): Express {
   app.use('/api/mlb', mlbRouter);
   app.use('/api/wnba', wnbaRouter);
   app.use('/api/market', marketRouter);
+  app.use('/api/news', newsRouter);
 
   // Explicit JSON 404 — avoids Express's default HTML response, which
   // can trip the Vercel serverless adapter on unmatched paths.
