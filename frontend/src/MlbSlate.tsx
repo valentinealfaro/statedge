@@ -21,6 +21,8 @@ import {
   clearMlbDailySlate,
   getMlbDailySlate,
   getMlbLiveToday,
+  ingestPrizepicksRaw,
+  pullPrizepicksFromBrowser,
   rebuildMlbDailySlate,
   setMlbDailySlate,
   type MlbDailySlateResponse,
@@ -28,6 +30,7 @@ import {
   type MlbLiveTodayResponse,
   type MlbSlateResponse,
   type MlbWildCardCombo,
+  type PrizepicksIngestResult,
   type RawMlbSlateLine,
 } from './api';
 import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
@@ -234,6 +237,15 @@ export function MlbSlate() {
   const [retryTick, setRetryTick] = useState(0);
   const isAdmin = adminSecret.trim().length > 0;
 
+  // Phase 103g-tris — browser-side PrizePicks pull state. Vercel
+  // datacenter IPs are blocked by Cloudflare, so we fetch via the
+  // user's residential IP and POST the JSON to backend.
+  const [pullingPrizepicks, setPullingPrizepicks] = useState(false);
+  const [pullResult, setPullResult] = useState<PrizepicksIngestResult | null>(null);
+  const [pullError, setPullError] = useState<string | null>(null);
+  const [pullPasteJson, setPullPasteJson] = useState('');
+  const [showPasteFallback, setShowPasteFallback] = useState(false);
+
   // Fetch today's published slate on mount + after every publish.
   // Retries transient failures (cold-start, deploy churn) up to 3
   // times with exponential backoff before surfacing the error. The
@@ -352,6 +364,66 @@ export function MlbSlate() {
   function clearSeen(): void {
     setSeen({});
     setSkippedCount(0);
+  }
+
+  // Phase 103g-tris: pull from PrizePicks via the user's browser. The
+  // backend can't fetch directly because Cloudflare blocks Vercel IPs,
+  // but the user's residential IP works. Result auto-publishes the
+  // slate so no further build step is needed.
+  async function handlePullPrizepicks() {
+    if (!isAdmin) return;
+    setPullingPrizepicks(true);
+    setPullResult(null);
+    setPullError(null);
+    setShowPasteFallback(false);
+    try {
+      const result = await pullPrizepicksFromBrowser({
+        sport: 'mlb',
+        adminSecret,
+        publishSlate: true,
+        mode: mode === 'auto' ? 'balanced' : mode,
+      });
+      setPullResult(result);
+      // Force a refetch of today's slate so the freshly-published
+      // version surfaces immediately.
+      setRetryTick((t) => t + 1);
+    } catch (err) {
+      const msg = (err as Error).message;
+      setPullError(msg);
+      // CORS errors mention "browser fetch failed" — surface the paste
+      // fallback so the user has a working path even when CORS blocks
+      // the direct call.
+      if (/browser fetch failed/i.test(msg) || /CORS/i.test(msg) || /Failed to fetch/i.test(msg)) {
+        setShowPasteFallback(true);
+      }
+    } finally {
+      setPullingPrizepicks(false);
+    }
+  }
+
+  async function handleIngestPasted() {
+    if (!isAdmin || !pullPasteJson.trim()) return;
+    setPullingPrizepicks(true);
+    setPullResult(null);
+    setPullError(null);
+    try {
+      const raw = JSON.parse(pullPasteJson);
+      const result = await ingestPrizepicksRaw({
+        sport: 'mlb',
+        adminSecret,
+        raw,
+        publishSlate: true,
+        mode: mode === 'auto' ? 'balanced' : mode,
+      });
+      setPullResult(result);
+      setPullPasteJson('');
+      setShowPasteFallback(false);
+      setRetryTick((t) => t + 1);
+    } catch (err) {
+      setPullError((err as Error).message);
+    } finally {
+      setPullingPrizepicks(false);
+    }
   }
 
   async function handleBuild() {
@@ -512,6 +584,112 @@ export function MlbSlate() {
             <option value="aggressive">Aggressive (3-6 leg, edge-led)</option>
             <option value="insane">Insane (5-6 leg, lottery-ticket)</option>
           </select>
+
+          {/* Phase 103g-tris — automated PrizePicks pull. Replaces
+              the manual paste below for the typical workflow. */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'rgba(122, 162, 255, 0.06)',
+              border: '1px solid rgba(122, 162, 255, 0.25)',
+              borderRadius: 6,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+              <strong style={{ fontSize: 13 }}>Auto-pull from PrizePicks</strong>
+              <span className="muted small" style={{ fontSize: 11 }}>
+                fetches via your browser, persists snapshots, auto-publishes the slate
+              </span>
+            </div>
+            <button
+              type="button"
+              className="mlb-build-btn"
+              onClick={handlePullPrizepicks}
+              disabled={pullingPrizepicks}
+            >
+              {pullingPrizepicks ? 'Pulling…' : 'Pull from PrizePicks'}
+            </button>
+            {pullResult && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  background: 'rgba(102, 187, 106, 0.08)',
+                  border: '1px solid rgba(102, 187, 106, 0.3)',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: '#66bb6a' }}>✓ Pulled {pullResult.propsFetched} props</strong>
+                <div className="muted small" style={{ marginTop: 2 }}>
+                  Snapshots inserted: <strong>{pullResult.snapshotsInserted}</strong>
+                  {' · '}
+                  Players resolved: <strong>{pullResult.resolution.resolvedPlayers}</strong>
+                  {pullResult.resolution.unresolvedPlayers > 0 && (
+                    <> · <span style={{ color: '#ffb74d' }}>{pullResult.resolution.unresolvedPlayers} unresolved</span></>
+                  )}
+                  {' · '}
+                  Slate {pullResult.slatePublished ? `published (${pullResult.slateLines} lines)` : 'NOT published'}
+                </div>
+              </div>
+            )}
+            {pullError && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  background: 'rgba(239, 83, 80, 0.08)',
+                  border: '1px solid rgba(239, 83, 80, 0.3)',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: '#ef5350' }}>Pull failed</strong>
+                <div className="muted small" style={{ marginTop: 2 }}>{pullError}</div>
+              </div>
+            )}
+            {showPasteFallback && (
+              <div style={{ marginTop: 12 }}>
+                <label className="mlb-label" htmlFor="mlb-pp-paste">
+                  Manual fallback · open the URL in a new tab, copy the JSON, paste it here
+                </label>
+                <p className="muted small" style={{ margin: '0 0 6px' }}>
+                  Open this in a new tab:{' '}
+                  <a
+                    href="https://api.prizepicks.com/projections?league_id=7&per_page=500"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#7aa2ff' }}
+                  >
+                    api.prizepicks.com/projections?league_id=7
+                  </a>
+                  {' · '}
+                  Cmd/Ctrl-A to select all, copy, paste below.
+                </p>
+                <textarea
+                  id="mlb-pp-paste"
+                  className="mlb-lines-textarea"
+                  spellCheck={false}
+                  value={pullPasteJson}
+                  onChange={(e) => setPullPasteJson(e.target.value)}
+                  placeholder='{"data": [...], "included": [...]}'
+                  rows={6}
+                />
+                <button
+                  type="button"
+                  className="mlb-build-btn"
+                  onClick={handleIngestPasted}
+                  disabled={pullingPrizepicks || !pullPasteJson.trim()}
+                  style={{ marginTop: 8 }}
+                >
+                  {pullingPrizepicks ? 'Ingesting…' : 'Ingest pasted JSON'}
+                </button>
+              </div>
+            )}
+          </div>
 
           <label className="mlb-label" htmlFor="mlb-lines-textarea" style={{ marginTop: 12 }}>
             Tonight's lines · paste pipe format OR JSON

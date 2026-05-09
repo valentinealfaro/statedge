@@ -1759,6 +1759,115 @@ export async function clearMlbDailySlate(adminSecret: string): Promise<{ ok: boo
   return (await res.json()) as { ok: boolean };
 }
 
+// Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
+// IPs are blocked by PrizePicks Cloudflare, so server-side fetch
+// returns 403. This helper fetches from the user's residential IP
+// (Cloudflare doesn't block) then POSTs the response to backend for
+// persistence.
+//
+// Returns: { propsFetched, snapshotsInserted, slatePublished, slateLines, resolution }
+export type PrizepicksIngestResult = {
+  ok: boolean;
+  sport: string;
+  propsFetched: number;
+  snapshotsInserted: number;
+  slatePublished: boolean;
+  slateLines: number;
+  resolution: {
+    resolvedPlayers: number;
+    resolvedTeams: number;
+    unresolvedPlayers: number;
+  };
+  message?: string;
+};
+
+const PP_LEAGUE_ID_FRONTEND: Record<string, number> = {
+  mlb:  7,
+  nba:  9,
+  wnba: 5,
+  mma:  16,
+};
+
+export async function pullPrizepicksFromBrowser(opts: {
+  sport: 'mlb' | 'nba' | 'wnba' | 'mma';
+  adminSecret: string;
+  publishSlate?: boolean;
+  mode?: string;
+}): Promise<PrizepicksIngestResult> {
+  const leagueId = PP_LEAGUE_ID_FRONTEND[opts.sport];
+  if (!leagueId) throw new Error(`No league_id mapping for sport ${opts.sport}`);
+
+  // Step 1: fetch from PrizePicks via the user's residential IP.
+  let raw: unknown;
+  try {
+    const ppRes = await fetch(
+      `https://api.prizepicks.com/projections?league_id=${leagueId}&per_page=500`,
+      { headers: { 'Accept': 'application/json' } },
+    );
+    if (!ppRes.ok) {
+      throw new Error(`PrizePicks returned ${ppRes.status}`);
+    }
+    raw = await ppRes.json();
+  } catch (err) {
+    // CORS errors typically surface as TypeError with no status. The
+    // browser blocks reading the response body. Surface a helpful hint.
+    throw new Error(
+      `Browser fetch failed (${(err as Error).message}). ` +
+      `If this is a CORS error, open https://api.prizepicks.com/projections?league_id=${leagueId}&per_page=500 in a new tab, copy the JSON, and paste it into the manual fallback.`,
+    );
+  }
+
+  // Step 2: POST to backend for parse + enrich + persist + publish.
+  const res = await fetch(`${API_BASE}/api/market/prizepicks/ingest`, {
+    method: 'POST',
+    headers: {
+      'x-admin-secret': opts.adminSecret,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      raw,
+      sport: opts.sport,
+      publishSlate: opts.publishSlate ?? true,
+      mode: opts.mode ?? 'balanced',
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as PrizepicksIngestResult;
+}
+
+// Same flow but caller provides pre-fetched JSON (manual paste fallback
+// when CORS blocks the direct fetch). Used by the textarea path on the
+// admin panel.
+export async function ingestPrizepicksRaw(opts: {
+  sport: 'mlb' | 'nba' | 'wnba' | 'mma';
+  adminSecret: string;
+  raw: unknown;
+  publishSlate?: boolean;
+  mode?: string;
+}): Promise<PrizepicksIngestResult> {
+  const res = await fetch(`${API_BASE}/api/market/prizepicks/ingest`, {
+    method: 'POST',
+    headers: {
+      'x-admin-secret': opts.adminSecret,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      raw: opts.raw,
+      sport: opts.sport,
+      publishSlate: opts.publishSlate ?? true,
+      mode: opts.mode ?? 'balanced',
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as PrizepicksIngestResult;
+}
+
 // Re-runs the slate builder against the stored raw lines without
 // requiring a re-paste. Used after new engine code deploys to apply
 // the new logic to today's slate without admin re-entry.

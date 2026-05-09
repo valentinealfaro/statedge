@@ -797,6 +797,124 @@ marketRouter.post('/prizepicks/sync', async (req, res) => {
   }
 });
 
+// POST /api/market/prizepicks/ingest (admin only)
+//
+// Phase 103g-tris fallback path. Vercel datacenter IPs are blocked by
+// PrizePicks Cloudflare regardless of headers, so server-side fetch
+// returns 403. This endpoint accepts a PRE-FETCHED PrizePicks JSON
+// response (captured by an admin's browser on a residential IP, where
+// Cloudflare doesn't block) and runs the same parse + enrich +
+// persist + slate-publish pipeline as /sync.
+//
+// Workflow:
+//   1. Admin clicks "Pull from PrizePicks" button on /mlb/slate.
+//   2. Frontend fetches api.prizepicks.com from THEIR browser.
+//   3. Frontend POSTs the response body here for persistence.
+//
+// Body: {
+//   raw: <full PrizePicks projections response>,
+//   sport: 'mlb' | 'nba' | 'wnba' | 'mma',
+//   publishSlate?: boolean,    // default true
+//   mode?: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto'
+// }
+marketRouter.post('/prizepicks/ingest', async (req, res) => {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured' });
+    return;
+  }
+  if (req.header('x-admin-secret') !== expected) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    raw?: unknown;
+    sport?: MarketSport;
+    publishSlate?: boolean;
+    mode?: string;
+  };
+  if (!body.raw) {
+    res.status(400).json({ error: 'body.raw required (PrizePicks JSON response)' });
+    return;
+  }
+  const sport = (body.sport ?? 'mlb') as MarketSport;
+  const publishSlate = body.publishSlate ?? true;
+  const mode = body.mode ?? 'balanced';
+
+  try {
+    const props = (await import('../market/providers/prizepicksApi.js'))
+      .prizepicksApiProvider.parse(body.raw);
+
+    if (props.length === 0) {
+      res.json({
+        ok: true,
+        sport,
+        propsFetched: 0,
+        snapshotsInserted: 0,
+        slatePublished: false,
+        message: 'PrizePicks response had 0 parseable projections.',
+      });
+      return;
+    }
+
+    let snapshotProps = props;
+    let resolution = { resolvedPlayers: 0, resolvedTeams: 0, unresolvedPlayers: 0 };
+    if (sport === 'mlb') {
+      const enriched = await enrichToaSnapshots(snapshotProps, []);
+      snapshotProps = enriched.props;
+      resolution = {
+        resolvedPlayers: enriched.resolvedPlayers,
+        resolvedTeams: enriched.resolvedTeams,
+        unresolvedPlayers: enriched.unresolvedPlayers,
+      };
+    }
+    const writeRes = await writeMarketSnapshots(snapshotProps);
+
+    let slatePublished = false;
+    let slateLines = 0;
+    if (publishSlate && sport === 'mlb' && isDbConfigured()) {
+      const stored: MlbStoredDailyLine[] = [];
+      for (const p of snapshotProps) {
+        if (typeof p.internalPlayerId !== 'number') continue;
+        const direction: 'over' | 'under' | 'both' =
+          p.isDemon ? 'over' : p.isGoblin ? 'under' : 'both';
+        stored.push({
+          playerId: p.internalPlayerId,
+          statKey: p.statKey as MlbStoredDailyLine['statKey'],
+          line: p.line,
+          direction,
+        });
+      }
+      const dedup = new Map<string, MlbStoredDailyLine>();
+      for (const l of stored) {
+        const k = `${l.playerId}::${l.statKey}::${l.line}`;
+        const ex = dedup.get(k);
+        if (!ex || l.direction === 'both') dedup.set(k, l);
+      }
+      const finalLines = [...dedup.values()];
+      if (finalLines.length > 0) {
+        await setMlbDailySlateInDb({ lines: finalLines, rawText: null, mode });
+        slatePublished = true;
+        slateLines = finalLines.length;
+      }
+    }
+
+    res.json({
+      ok: true,
+      sport,
+      propsFetched: props.length,
+      snapshotsInserted: writeRes.inserted,
+      resolution,
+      slatePublished,
+      slateLines,
+    });
+  } catch (err) {
+    console.error('prizepicks/ingest failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /api/market/prizepicks/sync (Vercel Cron only)
 //
 // GET wrapper for the POST sync endpoint. Used by Vercel Cron, which
