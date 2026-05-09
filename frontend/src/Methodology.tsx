@@ -10,6 +10,7 @@
 // can trust it because the math is published.
 
 import { Link } from 'react-router-dom';
+import { BeatRateTrend } from './BeatRateTrend';
 import { EngineStatus } from './EngineStatus';
 import { NavBar } from './NavBar';
 import { useTitle } from './useTitle';
@@ -225,6 +226,14 @@ export function Methodology() {
             blurb="How much does our line move after publish? Stable + Confirmed = market validated. Eroded = market disagreed."
           />
         </div>
+
+        {/* Beat-rate time series — proves the receipt is more than
+            a snapshot. Self-hides until graded volume accumulates. */}
+        <BeatRateTrend
+          weeks={12}
+          heading="Beat Rate · 12-Week Trend"
+          blurb="The truth metric over time. If our process is real edge, the bars cluster above 50% (the dotted line) and ideally above 55% (the green dotted institutional bar). One bar per ISO week; gaps mean weeks with no graded props."
+        />
 
         {/* Operational pulse — live counters showing the engine is
             actually running. Self-hides if the status endpoint

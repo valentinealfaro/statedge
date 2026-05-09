@@ -14,13 +14,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getClvRecentProps,
-  getClvTrend,
   getClvTrustScore,
   type ClvRecentRow,
   type ClvTrustScoreResponse,
   type ClvTrustWindow,
-  type ClvWeekBucket,
 } from './api';
+import { BeatRateTrend } from './BeatRateTrend';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -67,7 +66,6 @@ export function ClvAudit() {
   const [error, setError] = useState<string | null>(null);
   const [windowKey, setWindowKey] = useState<'window7d' | 'window30d' | 'seasonToDate'>('seasonToDate');
   const [recent, setRecent] = useState<ClvRecentRow[] | null>(null);
-  const [trend, setTrend] = useState<ClvWeekBucket[] | null>(null);
 
   useEffect(() => {
     getClvTrustScore()
@@ -78,10 +76,7 @@ export function ClvAudit() {
     getClvRecentProps({ limit: 25, windowDays: 30 })
       .then((r) => setRecent(r.rows))
       .catch(() => setRecent([]));
-    // Trend chart — 12 weeks of week-over-week beat rate.
-    getClvTrend({ weeks: 12 })
-      .then((r) => setTrend(r.weeks))
-      .catch(() => setTrend([]));
+    // Trend data is fetched inside <BeatRateTrend />.
   }, []);
 
   const win = data?.[windowKey];
@@ -137,13 +132,10 @@ export function ClvAudit() {
               <WindowTab active={windowKey === 'seasonToDate'} onClick={() => setWindowKey('seasonToDate')}>Season to date</WindowTab>
             </div>
 
-            {/* Beat-rate trend (Phase 126) — week-over-week time
-                series so users see whether the model is sharpening,
-                holding, or drifting. Empty weeks render as gaps;
-                we don't fabricate continuity. */}
-            {trend && trend.some((w) => w.withClosing > 0) && (
-              <BeatRateTrendChart weeks={trend} />
-            )}
+            {/* Beat-rate trend (Phase 126/127) — extracted as a
+                reusable component; self-fetches and self-hides when
+                no week has graded props. */}
+            <BeatRateTrend weeks={12} />
 
             {/* Edge durability (Phase 118) — different angle on the
                 same data: instead of "did we beat the close" (binary),
@@ -389,92 +381,6 @@ export function ClvAudit() {
         )}
       </div>
     </div>
-  );
-}
-
-function BeatRateTrendChart({ weeks }: { weeks: ClvWeekBucket[] }) {
-  // Each column = one week. Height = beat rate (0-100%). Color =
-  // green ≥55, yellow 50-55, red <50, neutral grey for empty weeks.
-  // 50% reference line drawn behind bars as the institutional bar.
-  const max = 100;
-  return (
-    <section style={{ marginBottom: 24 }}>
-      <h2 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
-        Beat Rate · Last 12 Weeks
-      </h2>
-      <p className="muted small" style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.5 }}>
-        Cross-sport beat rate per ISO week. Each bar is one week's batch of graded props;
-        green = ≥55%, yellow = 50–55%, red = below 50%. The dotted line marks 50%. Empty
-        weeks show as gaps — we don't infer between samples.
-      </p>
-      <div style={{
-        position: 'relative', height: 140,
-        background: 'rgba(0,0,0,0.25)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 6, padding: '12px 12px 24px',
-        display: 'flex', alignItems: 'flex-end', gap: 4,
-      }}>
-        {/* 50% reference line */}
-        <div style={{
-          position: 'absolute', left: 12, right: 12,
-          top: '50%', height: 1,
-          borderTop: '1px dashed rgba(255,255,255,0.18)',
-        }} />
-        {/* 55% line — the institutional bar */}
-        <div style={{
-          position: 'absolute', left: 12, right: 12,
-          top: `${100 - 55}%`, height: 1,
-          borderTop: '1px dashed rgba(102,187,106,0.35)',
-        }} />
-        {weeks.map((w) => {
-          const rate = w.beatRate;
-          const heightPct = rate === null ? 0 : (rate / max) * 100;
-          const color = rate === null ? 'rgba(255,255,255,0.08)'
-            : rate >= 55 ? '#66bb6a'
-            : rate >= 50 ? '#ffd54f'
-            : '#ef5350';
-          const dateStr = w.weekStart.slice(5);   // MM-DD
-          return (
-            <div
-              key={w.weekStart}
-              title={rate !== null
-                ? `Week of ${w.weekStart}: ${rate.toFixed(1)}% (${w.beatMarket}/${w.withClosing})`
-                : `Week of ${w.weekStart}: no graded props`
-              }
-              style={{
-                flex: 1,
-                height: '100%',
-                position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
-                cursor: rate !== null ? 'help' : 'default',
-              }}
-            >
-              <div style={{
-                width: '100%',
-                height: `${heightPct}%`,
-                background: color,
-                borderRadius: '2px 2px 0 0',
-                opacity: rate === null ? 0.3 : 0.85,
-                minHeight: rate === null ? 1 : 4,
-              }} />
-              <div style={{
-                position: 'absolute',
-                bottom: -18,
-                left: 0, right: 0,
-                fontSize: 9,
-                color: 'rgba(255,255,255,0.45)',
-                textAlign: 'center',
-                fontWeight: 600,
-              }}>
-                {dateStr}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 

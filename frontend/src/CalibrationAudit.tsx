@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getCalibrationSummary, type CrossSportCalibration, type CrossSportProbabilityBucket } from './api';
+import { BeatRateTrend } from './BeatRateTrend';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -118,6 +119,15 @@ export function CalibrationAudit() {
                 }
               />
             </div>
+
+            {/* Beat-rate trend (CLV's truth-metric companion) — paired
+                here because users auditing calibration usually want to
+                see the OTHER pillar's time-series too. */}
+            <BeatRateTrend
+              weeks={12}
+              heading="CLV Beat Rate · 12-Week Trend"
+              blurb="Calibration's companion: the CLV truth-metric trend. Process accuracy (this) and probability accuracy (above) should both hold over time."
+            />
 
             {/* Probability decile breakdown */}
             {data.byProbability.length > 0 && (
