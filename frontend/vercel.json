@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "https://statedge-backend.vercel.app/sitemap.xml" },
+    { "source": "/rss.xml", "destination": "https://statedge-backend.vercel.app/rss.xml" },
+    { "source": "/robots.txt", "destination": "https://statedge-backend.vercel.app/robots.txt" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
