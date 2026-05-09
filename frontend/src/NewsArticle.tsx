@@ -27,6 +27,7 @@ const KIND_LABEL: Record<string, string> = {
   clv_recap:          'CLV Recap',
   edge_preview:       'Edge Preview',
   big_game:           'Big Game',
+  fight_night:        'Fight Night',
   situation_report:   'Situation Report',
 };
 

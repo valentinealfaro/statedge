@@ -9,11 +9,13 @@ import { Router } from 'express';
 import { listRecentSnapshots, type RawSnapshotRow } from '../market/snapshots.js';
 import { fetchEspnAthleteBio } from '../news/espnBio.js';
 import { fetchGoogleNewsHeadlines } from '../news/externalNews.js';
+import { fetchUfcFightNightInputs } from '../news/mmaFightNightFetcher.js';
 import type { EdgeLeg } from '../news/templates.js';
 import {
   generateBigGameArticles,
   generateDailyClvRecaps,
   generateDailyEdgePreviews,
+  generateFightNightArticles,
   generateSlatePublishArticles,
 } from '../news/generator.js';
 import { fetchMlbBigGameInputs } from '../news/mlbBigGameFetcher.js';
@@ -247,14 +249,20 @@ newsRouter.get('/cron/big-game', async (req, res) => {
   }
   try {
     const date = (req.query.date as string | undefined) ?? todayEt();
-    // Run both fetchers in parallel — they hit different upstreams
-    // (MLB Stats API vs ESPN), so no shared rate-limit pressure.
-    const [mlbInputs, nbaInputs] = await Promise.all([
+    // Run all fetchers in parallel — they hit different upstreams
+    // (MLB Stats API vs ESPN NBA vs ESPN UFC), so no shared rate-
+    // limit pressure.
+    const [mlbInputs, nbaInputs, ufcInputs] = await Promise.all([
       fetchMlbBigGameInputs(date),
       fetchNbaBigGameInputs(date),
+      fetchUfcFightNightInputs({ date }),
     ]);
     const inputs = [...mlbInputs, ...nbaInputs];
-    const articles = await generateBigGameArticles({ inputs });
+    const [bigGameArticles, fightNightArticles] = await Promise.all([
+      generateBigGameArticles({ inputs }),
+      generateFightNightArticles({ inputs: ufcInputs }),
+    ]);
+    const articles = [...bigGameArticles, ...fightNightArticles];
     res.json({
       ok: true,
       date,
@@ -265,6 +273,10 @@ newsRouter.get('/cron/big-game', async (req, res) => {
       nba: {
         gamesScanned: new Set(nbaInputs.map((i) => i.game.eventId)).size,
         playersScanned: nbaInputs.length,
+      },
+      ufc: {
+        eventsScanned: ufcInputs.length,
+        fightsScanned: ufcInputs.reduce((sum, e) => sum + e.fights.length, 0),
       },
       articlesGenerated: articles.length,
       articles: articles.map((a) => ({ slug: a.slug, title: a.title })),

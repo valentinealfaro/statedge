@@ -537,6 +537,158 @@ export function generateBigGame(opts: {
   };
 }
 
+// ---------- Fight Night recap (Phase 107e) ----------
+//
+// UFC card recap. Triggered when a card completes with at least one
+// "newsworthy" fight: main event, title fight, finish in any round
+// (KO/TKO/Submission), or a championship interim. We summarize the
+// whole card with extra space for the headline fight. Hero image
+// pulls the winner's headshot from ESPN; YouTube highlight (if found)
+// embeds with the trusted-channel whitelist (UFC official channel,
+// ESPN MMA, etc.).
+
+export type FightNightFightLine = {
+  fightId: string;
+  red: { id: string; name: string; record: string | null; headshot: string | null };
+  blue: { id: string; name: string; record: string | null; headshot: string | null };
+  winnerId: string | null;
+  winnerName: string | null;
+  loserName: string | null;
+  method: string | null;            // "KO/TKO", "Submission", "Decision - Unanimous"
+  round: number | null;
+  time: string | null;              // "MM:SS"
+  weightClass: string | null;
+  isMain: boolean;
+  isTitle: boolean;
+};
+
+export function generateFightNight(opts: {
+  eventId: string;
+  eventName: string;
+  eventShortName: string;
+  date: string;                  // YYYY-MM-DD ET
+  venue: { fullName: string; city: string | null; country: string | null } | null;
+  fights: FightNightFightLine[];
+  highlight?: { videoId: string; title: string; channelTitle: string } | null;
+}): ArticleDraft | null {
+  if (opts.fights.length === 0) return null;
+
+  // Surface the headline fight — main event preferred, else first
+  // title fight, else first finish, else first listed fight.
+  const main =
+    opts.fights.find((f) => f.isMain) ??
+    opts.fights.find((f) => f.isTitle) ??
+    opts.fights.find((f) => f.method && !/decision/i.test(f.method)) ??
+    opts.fights[0]!;
+
+  const headline = main.winnerName && main.loserName
+    ? `${main.winnerName} def. ${main.loserName}${main.method ? ` via ${shortenMethod(main.method)}` : ''}`
+    : `${opts.eventShortName} card recap`;
+
+  const slug = articleSlug({
+    kind: 'fight_night',
+    date: opts.date,
+    sport: 'mma',
+    subject: opts.eventShortName || opts.eventId,
+  });
+
+  const lines: string[] = [];
+  lines.push(`# ${opts.eventName}`);
+  lines.push('');
+  lines.push(`*${humanDate(opts.date)} · UFC${opts.venue ? ` · ${opts.venue.fullName}${opts.venue.city ? `, ${opts.venue.city}` : ''}` : ''}*`);
+  lines.push('');
+  lines.push(headline + '.');
+  lines.push('');
+
+  // Highlight embed for the main event
+  if (opts.highlight) {
+    lines.push(`## Main event highlight`);
+    lines.push('');
+    lines.push(`[![${opts.highlight.title}](https://img.youtube.com/vi/${opts.highlight.videoId}/maxresdefault.jpg)](https://www.youtube.com/watch?v=${opts.highlight.videoId})`);
+    lines.push('');
+    lines.push(`*Via ${opts.highlight.channelTitle}.*`);
+    lines.push('');
+  }
+
+  // Main event detail
+  lines.push(`## Main Event`);
+  lines.push('');
+  lines.push(renderFightDetail(main));
+  lines.push('');
+
+  // Full card table
+  lines.push(`## Full Card Results`);
+  lines.push('');
+  lines.push(`| Fight | Result | Method | Round |`);
+  lines.push(`|---|---|---|---|`);
+  for (const f of opts.fights) {
+    const matchup = `${f.red.name} vs. ${f.blue.name}${f.isTitle ? ' 🏆' : ''}${f.isMain ? ' (Main)' : ''}`;
+    const result = f.winnerName ? f.winnerName : '—';
+    const method = f.method ?? '—';
+    const round = f.round ? `${f.round}${f.time ? ` (${f.time})` : ''}` : '—';
+    lines.push(`| ${matchup} | ${result} | ${method} | ${round} |`);
+  }
+  lines.push('');
+
+  // Card-wide stats
+  const finishes = opts.fights.filter((f) => f.method && !/decision/i.test(f.method)).length;
+  const decisions = opts.fights.length - finishes;
+  lines.push(`## Card at a glance`);
+  lines.push('');
+  lines.push(`- **${opts.fights.length}** fights on the card`);
+  lines.push(`- **${finishes}** finishes (KO/TKO/Submission)`);
+  lines.push(`- **${decisions}** decisions`);
+  if (opts.fights.some((f) => f.isTitle)) {
+    lines.push(`- **${opts.fights.filter((f) => f.isTitle).length}** title fight${opts.fights.filter((f) => f.isTitle).length > 1 ? 's' : ''}`);
+  }
+  lines.push('');
+
+  lines.push(`---`);
+  lines.push('');
+  lines.push(`*Lines and futures will move sharply after a card like this — winners get inflated, losers get oversold. Watch for trap-inflation flags on next-card props.*`);
+
+  const heroImage = main.red.id === main.winnerId ? main.red.headshot : main.blue.headshot;
+  const summary = main.winnerName && main.loserName
+    ? `${main.winnerName} took the headline over ${main.loserName}${main.method ? ` via ${shortenMethod(main.method)}` : ''} — full ${opts.eventShortName} card recap.`
+    : `Full ${opts.eventShortName} card recap with results, method-of-victory, and round breakdowns.`;
+
+  return {
+    slug,
+    kind: 'fight_night',
+    sport: 'mma',
+    title: `${opts.eventShortName}: ${headline}`,
+    summary,
+    bodyMd: lines.join('\n'),
+    heroImageUrl: heroImage ?? null,
+    videoYoutubeId: opts.highlight?.videoId ?? null,
+    relatedPlayerId: main.winnerId,
+    relatedGameKey: opts.eventId,
+    expiresAt: null,
+  };
+}
+
+function renderFightDetail(f: FightNightFightLine): string {
+  if (!f.winnerName) {
+    return `${f.red.name} vs. ${f.blue.name}${f.weightClass ? ` (${f.weightClass})` : ''} — result not yet posted.`;
+  }
+  const parts: string[] = [];
+  parts.push(`**${f.winnerName}** def. ${f.loserName}`);
+  if (f.method) parts.push(`via ${f.method}`);
+  if (f.round) parts.push(`Round ${f.round}${f.time ? ` (${f.time})` : ''}`);
+  if (f.weightClass) parts.push(`${f.weightClass}${f.isTitle ? ' Championship' : ''}`);
+  return parts.join(' · ') + '.';
+}
+
+function shortenMethod(method: string): string {
+  // "Decision - Unanimous" → "UD"; KO/TKO stays as is; "Submission" stays.
+  if (/unanimous/i.test(method)) return 'UD';
+  if (/split/i.test(method)) return 'SD';
+  if (/majority/i.test(method)) return 'MD';
+  if (/submission/i.test(method)) return 'submission';
+  if (/ko\/tko|knockout/i.test(method)) return 'KO/TKO';
+  return method;
+}
+
 function prettyStatLine(headline: BigGameStat, supporting: BigGameStat[]): string {
   const parts = [headline, ...supporting.slice(0, 2)];
   return parts.map((s) => `${s.actual} ${shortLabel(s.label)}`).join(', ');

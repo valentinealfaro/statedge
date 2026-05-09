@@ -19,6 +19,7 @@ export type ArticleKind =
   | 'clv_recap'              // Daily CLV report (yesterday's results)
   | 'edge_preview'           // Today's edge preview per sport
   | 'big_game'               // Player went off — auto-recap with highlight
+  | 'fight_night'            // UFC card recap — main event + finishes + title fights
   | 'situation_report';      // Reserved for Phase 103g situation clustering
 
 export type ArticleSport = 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';

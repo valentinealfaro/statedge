@@ -17,10 +17,12 @@
 
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import { detectBigGames, type Detection, type DetectionInput } from './bigGameDetector.js';
+import type { FightNightInput } from './mmaFightNightFetcher.js';
 import { upsertArticle } from './store.js';
 import {
   generateClvRecap,
   generateEdgePreview,
+  generateFightNight,
   generateTopMispricings,
   generateTrapWatch,
   generateWhyMarketWrong,
@@ -176,6 +178,58 @@ async function hydrateStat(
   }
   const delta = seasonAvg !== null ? Math.round((stat.actual - seasonAvg) * 10) / 10 : null;
   return { ...stat, seasonAvg, delta };
+}
+
+// ---------- Fight Night recap bundle (Phase 107e) ----------
+//
+// Daily cron runs this against the past 7 days of completed UFC
+// events. Each completed event becomes one fight-night article.
+// YouTube highlight is best-effort — articles publish without it.
+export async function generateFightNightArticles(opts: {
+  inputs: FightNightInput[];
+}): Promise<Article[]> {
+  if (opts.inputs.length === 0) return [];
+  const out: Article[] = [];
+  for (const input of opts.inputs) {
+    out.push(await renderFightNightArticle(input));
+  }
+  return out;
+}
+
+async function renderFightNightArticle(input: FightNightInput): Promise<Article> {
+  const event = input.event;
+  const main = input.fights.find((f) => f.isMain) ?? input.fights[0]!;
+
+  // Best-effort highlight pulled with the winner's name + UFC card
+  // identifier as the search query. Trusted-channel filter in
+  // youtubeHighlights guards against random uploads slipping through.
+  let highlight: Awaited<ReturnType<typeof findBigGameHighlight>> = null;
+  try {
+    if (main.winnerName) {
+      highlight = await findBigGameHighlight({
+        playerName: main.winnerName,
+        team: null,
+        gameDate: event.date.slice(0, 10),
+        sport: 'mma',
+      });
+    }
+  } catch (err) {
+    console.warn('fight-night highlight lookup failed:', (err as Error).message);
+  }
+
+  const draft = generateFightNight({
+    eventId: event.id,
+    eventName: event.name,
+    eventShortName: event.shortName,
+    date: event.date.slice(0, 10),
+    venue: event.venue,
+    fights: input.fights,
+    highlight,
+  });
+  if (!draft) {
+    throw new Error(`generateFightNight returned null for event ${event.id}`);
+  }
+  return upsertArticle(draft);
 }
 
 // ---------- CLV recap bundle ----------

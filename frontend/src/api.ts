@@ -1770,6 +1770,7 @@ export type Article = {
     | 'clv_recap'
     | 'edge_preview'
     | 'big_game'
+    | 'fight_night'
     | 'situation_report';
   sport: 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';
   title: string;
