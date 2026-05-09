@@ -41,6 +41,7 @@ type SubnavItem = { label: string; path: string };
 const NBA_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/nba/compare' },
   { label: 'Slate', path: '/nba/slate' },
+  { label: 'History', path: '/nba/slate/history' },
   { label: 'Standings', path: '/nba/standings' },
   { label: 'Calibration', path: '/nba/calibration' },
 ];
@@ -48,6 +49,7 @@ const NBA_SUBNAV: SubnavItem[] = [
 const MLB_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/mlb/compare' },
   { label: 'Slate', path: '/mlb/slate' },
+  { label: 'History', path: '/mlb/slate/history' },
   { label: 'Standings', path: '/mlb/standings' },
   { label: 'Calibration', path: '/mlb/calibration' },
 ];
@@ -57,6 +59,7 @@ const MLB_SUBNAV: SubnavItem[] = [
 const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/wnba/compare' },
   { label: 'Slate', path: '/wnba/slate' },
+  { label: 'History', path: '/wnba/slate/history' },
   { label: 'Standings', path: '/wnba/standings' },
   { label: 'Calibration', path: '/wnba/calibration' },
 ];
