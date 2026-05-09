@@ -2003,6 +2003,47 @@ export async function getClvRecentProps(opts?: { limit?: number; windowDays?: nu
   return (await res.json()) as { rows: ClvRecentRow[]; count: number; windowDays: number };
 }
 
+// Phase 114 — cross-sport calibration audit
+export type CrossSportProbabilityBucket = {
+  label: string;
+  predictedAverage: number;
+  observedHitRate: number;
+  graded: number;
+  hits: number;
+  bySport: Array<{
+    sport: string;
+    predictedAverage: number;
+    observedHitRate: number;
+    graded: number;
+    hits: number;
+  }>;
+};
+export type CrossSportCalibration = {
+  windowDays: number;
+  totalGraded: number;
+  totalHits: number;
+  totalMisses: number;
+  overallHitRate: number;
+  averagePredicted: number;
+  calibrationGap: number;
+  byProbability: CrossSportProbabilityBucket[];
+  bySport: Array<{
+    sport: string;
+    totalGraded: number;
+    overallHitRate: number;
+    averagePredicted: number;
+    calibrationGap: number;
+  }>;
+};
+
+export async function getCalibrationSummary(opts?: { windowDays?: number }): Promise<CrossSportCalibration> {
+  const p = new URLSearchParams();
+  if (opts?.windowDays) p.set('windowDays', String(opts.windowDays));
+  const res = await fetch(`${API_BASE}/api/calibration/summary?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as CrossSportCalibration;
+}
+
 // UFC slate (Phase 110a)
 export type UfcStoredLine = {
   fighterName: string;

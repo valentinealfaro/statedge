@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
 import { Compare } from './Compare';
 import { Dashboard } from './Dashboard';
+import { CalibrationAudit } from './CalibrationAudit';
 import { ClvAudit } from './ClvAudit';
 import { ErrorBoundary } from './ErrorBoundary';
 import { EspnGameDetail } from './EspnGameDetail';
@@ -45,6 +46,7 @@ export function App() {
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/clv" element={<ClvAudit />} />
+          <Route path="/calibration" element={<CalibrationAudit />} />
 
           {/* NBA — sport-grouped */}
           <Route path="/nba/compare" element={<Compare />} />

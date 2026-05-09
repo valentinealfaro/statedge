@@ -71,12 +71,14 @@ export function ClvTrustBanner() {
             )}
           </h2>
         </div>
-        <Link
-          to="/clv"
-          style={{ fontSize: 12, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none' }}
-        >
-          Full CLV report →
-        </Link>
+        <div style={{ display: 'flex', gap: 14, fontSize: 12, fontWeight: 700 }}>
+          <Link to="/clv" style={{ color: '#7aa2ff', textDecoration: 'none' }}>
+            CLV report →
+          </Link>
+          <Link to="/calibration" style={{ color: '#7aa2ff', textDecoration: 'none' }}>
+            Calibration →
+          </Link>
+        </div>
       </div>
 
       <p className="muted small" style={{ margin: '0 0 16px', fontSize: 12, lineHeight: 1.5 }}>

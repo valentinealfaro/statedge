@@ -101,6 +101,10 @@ export function ClvAudit() {
           settled on or you didn't. Long-run ≥55% on real volume = real edge. No editing, no
           cherry-picking, no fabricated retrospective claims. Every published prop is graded.
         </p>
+        <p className="muted small" style={{ margin: '0 0 16px', fontSize: 12, lineHeight: 1.5, maxWidth: 760 }}>
+          The other half of the truth metric is <Link to="/calibration" style={{ color: '#7aa2ff' }}>Calibration</Link>:
+          when we say a leg has a 70% chance, do players actually hit at 70%? Process accuracy + probability accuracy = the institutional pair.
+        </p>
 
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
         {!data && !error && <Skeleton width="100%" height={400} />}
