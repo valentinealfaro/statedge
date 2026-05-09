@@ -1864,6 +1864,54 @@ export async function getPlayerNewsBundle(opts: {
   return (await res.json()) as PlayerProfileBundle;
 }
 
+// Phase 107 — MMA / UFC scoreboard.
+export type UfcFighter = {
+  id: string;
+  displayName: string;
+  shortName: string;
+  headshot: string | null;
+  record: string | null;
+  flag: string | null;
+};
+export type UfcFight = {
+  id: string;
+  date: string;
+  state: 'pre' | 'in' | 'post';
+  status: string;
+  weightClass: string | null;
+  isMain: boolean;
+  isTitle: boolean;
+  fighters: { red: UfcFighter | null; blue: UfcFighter | null };
+  result: {
+    winnerId: string | null;
+    method: string | null;
+    round: number | null;
+    time: string | null;
+  } | null;
+};
+export type UfcEvent = {
+  id: string;
+  name: string;
+  shortName: string;
+  date: string;
+  status: string;
+  state: 'pre' | 'in' | 'post';
+  venue: { fullName: string; city: string | null; country: string | null } | null;
+  fights: UfcFight[];
+};
+export type UfcScoreboardResponse = {
+  events: UfcEvent[];
+  count: number;
+  upcoming: number;
+  live: number;
+  completed: number;
+};
+export async function getUfcScoreboard(): Promise<UfcScoreboardResponse> {
+  const res = await fetch(`${API_BASE}/api/mma/scoreboard`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcScoreboardResponse;
+}
+
 // Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
 // IPs are blocked by PrizePicks Cloudflare, so server-side fetch
 // returns 403. This helper fetches from the user's residential IP

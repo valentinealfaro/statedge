@@ -21,7 +21,7 @@ import { UserMenu } from './UserMenu';
 // All three land in the nav as soon as they're real pages, not
 // placeholder links.
 
-type SportKey = 'nba' | 'mlb' | 'wnba';
+type SportKey = 'nba' | 'mlb' | 'wnba' | 'mma';
 
 // Resolve which sport the user is currently viewing from the URL.
 // Falls back to 'nba' as the default when the user is on a route
@@ -30,6 +30,7 @@ function resolveSport(pathname: string): SportKey | null {
   if (pathname.startsWith('/nba')) return 'nba';
   if (pathname.startsWith('/mlb')) return 'mlb';
   if (pathname.startsWith('/wnba')) return 'wnba';
+  if (pathname.startsWith('/mma')) return 'mma';
   return null;
 }
 
@@ -64,19 +65,30 @@ const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Calibration', path: '/wnba/calibration' },
 ];
 
+// MMA subnav — Phase 107 foundation. Just scoreboard for now;
+// items land here as their pages ship.
+const MMA_SUBNAV: SubnavItem[] = [
+  { label: 'Scoreboard', path: '/mma/scoreboard' },
+];
+
 // Toggle the sport prefix in the current URL. /nba/slate ↔ /mlb/slate
 // swaps the prefix while preserving the rest of the path. Lands on
 // the sport's "compare" page when the current page doesn't have a
 // counterpart in the other sport (e.g. /mlb/calibration → /nba/compare
 // because NBA calibration lives inside /nba/slate as a tab).
 function switchSportPath(currentPath: string, target: SportKey): string {
-  const tail = currentPath.replace(/^\/(nba|mlb|wnba)\//, '');
-  const targetSubnav = target === 'nba' ? NBA_SUBNAV : target === 'mlb' ? MLB_SUBNAV : WNBA_SUBNAV;
+  const tail = currentPath.replace(/^\/(nba|mlb|wnba|mma)\//, '');
+  const targetSubnav =
+    target === 'nba'  ? NBA_SUBNAV
+    : target === 'mlb' ? MLB_SUBNAV
+    : target === 'wnba' ? WNBA_SUBNAV
+    : MMA_SUBNAV;
   const matched = targetSubnav.find((it) => it.path.endsWith(`/${tail}`));
   // Sport-specific landing fallback when the current page has no
-  // counterpart (e.g. /mlb/calibration doesn't exist for WNBA yet).
-  // Default landing is each sport's Compare page.
-  return matched?.path ?? `/${target}/compare`;
+  // counterpart (e.g. /mlb/calibration doesn't exist for MMA).
+  // Default landing is each sport's primary page.
+  if (matched) return matched.path;
+  return target === 'mma' ? '/mma/scoreboard' : `/${target}/compare`;
 }
 
 export function NavBar() {
@@ -89,6 +101,7 @@ export function NavBar() {
     sport === 'nba'  ? NBA_SUBNAV
     : sport === 'mlb' ? MLB_SUBNAV
     : sport === 'wnba' ? WNBA_SUBNAV
+    : sport === 'mma' ? MMA_SUBNAV
     : [];
 
   return (
@@ -121,6 +134,12 @@ export function NavBar() {
               MLB
             </Link>
             <Link
+              to="/mma/scoreboard"
+              className={sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}
+            >
+              MMA
+            </Link>
+            <Link
               to="/wnba/compare"
               className={sport === 'wnba' ? 'navlink active sport-wnba' : 'navlink'}
             >
@@ -146,6 +165,12 @@ export function NavBar() {
               className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
             >
               NBA
+            </Link>
+            <Link
+              to="/mma/scoreboard"
+              className={sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}
+            >
+              MMA
             </Link>
             <Link
               to="/news"
@@ -179,6 +204,13 @@ export function NavBar() {
               aria-selected={sport === 'mlb'}
             >
               MLB
+            </Link>
+            <Link
+              to={switchSportPath(pathname, 'mma')}
+              className={`sport-pill ${sport === 'mma' ? 'active sport-mma' : ''}`}
+              aria-selected={sport === 'mma'}
+            >
+              MMA
             </Link>
             <Link
               to={switchSportPath(pathname, 'wnba')}

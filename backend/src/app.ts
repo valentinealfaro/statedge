@@ -14,6 +14,7 @@ import { performersRouter } from './routes/performers.js';
 import { slateRouter } from './routes/slate.js';
 import { marketRouter } from './routes/market.js';
 import { mlbRouter } from './routes/mlb.js';
+import { mmaRouter } from './routes/mma.js';
 import { newsRouter } from './routes/news.js';
 import { seoRouter } from './routes/seo.js';
 import { seoStubRouter } from './routes/seoStub.js';
@@ -120,6 +121,7 @@ export function createApp(): Express {
   app.use('/api/performers', performersRouter);
   app.use('/api/slate', slateRouter);
   app.use('/api/mlb', mlbRouter);
+  app.use('/api/mma', mmaRouter);
   app.use('/api/wnba', wnbaRouter);
   app.use('/api/market', marketRouter);
   app.use('/api/news', newsRouter);

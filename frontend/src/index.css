@@ -666,6 +666,13 @@ h3 { font-size: 17px; margin: 28px 0 12px; color: var(--text-2); font-weight: 70
   background: linear-gradient(135deg, #10b981, #059669);
   box-shadow: 0 4px 16px rgba(16, 185, 129, 0.30);
 }
+.navlink.active.sport-mma {
+  background: linear-gradient(135deg, #ef5350, #c62828);
+  box-shadow: 0 4px 16px rgba(239, 83, 80, 0.30);
+}
+.navlink.active.sport-wnba {
+  background: linear-gradient(135deg, #b388ff, #7c43bd);
+}
 
 /* Sport switcher — pill that toggles between NBA / MLB at the same
    conceptual depth. Surfaces only on sport pages. */
@@ -696,6 +703,14 @@ h3 { font-size: 17px; margin: 28px 0 12px; color: var(--text-2); font-weight: 70
 .sport-pill.active.sport-mlb {
   color: #fff;
   background: linear-gradient(135deg, #10b981, #059669);
+}
+.sport-pill.active.sport-mma {
+  color: #fff;
+  background: linear-gradient(135deg, #ef5350, #c62828);
+}
+.sport-pill.active.sport-wnba {
+  color: #fff;
+  background: linear-gradient(135deg, #b388ff, #7c43bd);
 }
 
 /* Subnav strip — sits below the main nav, visible only when on a

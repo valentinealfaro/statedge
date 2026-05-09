@@ -12,6 +12,7 @@ import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
 import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
+import { MmaScoreboard } from './MmaScoreboard';
 import { NbaCalibration } from './NbaCalibration';
 import { NbaSlateHistory } from './NbaSlateHistory';
 import { News } from './News';
@@ -70,6 +71,12 @@ export function App() {
           <Route path="/wnba/calibration" element={<WnbaCalibration />} />
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />
+
+          {/* MMA — Phase 107 foundation. UFC scoreboard only for now;
+              fighter profiles + odds integration land in subsequent
+              phases. Replaces WNBA as the third sport per priorities. */}
+          <Route path="/mma" element={<MmaScoreboard />} />
+          <Route path="/mma/scoreboard" element={<MmaScoreboard />} />
 
           {/* News — Phase 104. Auto-generated articles, public SEO. */}
           <Route path="/news" element={<News />} />
