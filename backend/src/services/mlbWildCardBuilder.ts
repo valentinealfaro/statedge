@@ -353,6 +353,13 @@ function toComboLegWithReason(
     isPitcher: l.isPitcher,
     gamePk: l.gamePk,
     bookableSide: l.bookableSide,
+    // Phase 101 — pass through market intel.
+    marketImpliedProb: l.projection.marketImpliedProb,
+    lineInflationScore: l.projection.lineInflationScore,
+    publicBiasTags: l.projection.publicBiasTags,
+    sharpnessScore: l.projection.sharpnessScore,
+    edgeDurability: l.projection.edgeDurability,
+    whyMarketWrong: l.projection.whyMarketWrong,
     wildCardReason: reason,
   };
 }

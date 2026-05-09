@@ -48,6 +48,13 @@ function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
     originalProbability: null,
     lineRaised: false,
     lineRaiseReason: null,
+    // Phase 101 — neutral defaults.
+    marketImpliedProb: 53,
+    lineInflationScore: 0,
+    publicBiasTags: [],
+    sharpnessScore: 50,
+    edgeDurability: 'mixed',
+    whyMarketWrong: null,
     ...over,
   };
 }

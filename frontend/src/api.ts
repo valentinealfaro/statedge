@@ -1544,6 +1544,16 @@ export type RawMlbSlateLine = {
   opposingPitcherId?: number;
 };
 
+export type MlbPublicBiasTag =
+  | 'STAR_TAX'
+  | 'STREAK_INFLATION'
+  | 'PUBLIC_OVER'
+  | 'NARRATIVE_RISK'
+  | 'CONTRARIAN_VALUE'
+  | 'STRUCTURAL_EDGE';
+
+export type MlbEdgeDurability = 'stable' | 'mixed' | 'fragile';
+
 export type MlbSlateLeg = {
   playerId: number;
   playerName: string;
@@ -1564,6 +1574,14 @@ export type MlbSlateLeg = {
   isPitcher: boolean;
   gamePk: number | null;
   bookableSide: 'over' | 'under' | 'both';
+  // Phase 101 — Market Intelligence Engine. Optional for legacy
+  // snapshots that pre-date this layer; renderers fall back gracefully.
+  marketImpliedProb?: number;
+  lineInflationScore?: number;
+  publicBiasTags?: MlbPublicBiasTag[];
+  sharpnessScore?: number;
+  edgeDurability?: MlbEdgeDurability;
+  whyMarketWrong?: string | null;
 };
 
 export type MlbComboCorrelationRisk =

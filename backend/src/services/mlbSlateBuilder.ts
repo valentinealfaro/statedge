@@ -135,6 +135,17 @@ export type MlbComboLeg = {
   isPitcher: boolean;
   gamePk: number | null;
   bookableSide: 'over' | 'under' | 'both';
+
+  // Phase 101 — Market Intelligence fields. See marketIntel.ts. Every
+  // slate leg now carries explicit market-implied probability, public-
+  // bias tags, line-inflation, sharpness, durability, and the
+  // 'why market is wrong' narrative.
+  marketImpliedProb: number;
+  lineInflationScore: number;
+  publicBiasTags: string[];        // PublicBiasTag[] — string for JSON
+  sharpnessScore: number;
+  edgeDurability: 'stable' | 'mixed' | 'fragile';
+  whyMarketWrong: string | null;
 };
 
 export type MlbComboCorrelationRisk =
@@ -775,6 +786,13 @@ function toComboLeg(l: ResolvedMlbLine): MlbComboLeg {
     isPitcher: l.isPitcher,
     gamePk: l.gamePk,
     bookableSide: l.bookableSide,
+    // Phase 101 — pass through market intel fields from the projection.
+    marketImpliedProb: l.projection.marketImpliedProb,
+    lineInflationScore: l.projection.lineInflationScore,
+    publicBiasTags: l.projection.publicBiasTags,
+    sharpnessScore: l.projection.sharpnessScore,
+    edgeDurability: l.projection.edgeDurability,
+    whyMarketWrong: l.projection.whyMarketWrong,
   };
 }
 

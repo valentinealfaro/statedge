@@ -64,6 +64,14 @@ type UnifiedEdge = {
   fragilityTier: string | null;
   momentumScore: number | null;
   riskScore: number | null;
+  // Phase 101 — Market Intelligence Engine. Currently MLB-only on the
+  // backend; NBA + WNBA fall back to derived/null values until wired.
+  marketImpliedProb: number | null;
+  lineInflationScore: number | null;
+  publicBiasTags: string[];
+  sharpnessScore: number | null;
+  edgeDurability: 'stable' | 'mixed' | 'fragile' | null;
+  whyMarketWrong: string | null;
   href: string;
 };
 
@@ -318,6 +326,13 @@ function collectEdges(
           fragilityTier: l.fragilityTier ?? null,
           momentumScore: null,
           riskScore: l.risk ?? null,
+          // NBA — Phase 101 fields not yet wired upstream.
+          marketImpliedProb: null,
+          lineInflationScore: null,
+          publicBiasTags: [],
+          sharpnessScore: null,
+          edgeDurability: null,
+          whyMarketWrong: null,
           href: `/nba/compare?m=last10&pid=${l.playerId}`,
         });
       }
@@ -349,6 +364,14 @@ function collectEdges(
           fragilityTier: l.fragilityTier ?? null,
           momentumScore: l.momentumExpansionScore ?? null,
           riskScore: l.riskScore ?? null,
+          // MLB — Phase 101 fields wired. Fall back to null for legacy
+          // snapshots that pre-date the marketIntel layer.
+          marketImpliedProb: l.marketImpliedProb ?? null,
+          lineInflationScore: l.lineInflationScore ?? null,
+          publicBiasTags: l.publicBiasTags ?? [],
+          sharpnessScore: l.sharpnessScore ?? null,
+          edgeDurability: l.edgeDurability ?? null,
+          whyMarketWrong: l.whyMarketWrong ?? null,
           href: `/mlb/player/${l.playerId}`,
         });
       }
@@ -378,6 +401,13 @@ function collectEdges(
         fragilityTier: null,
         momentumScore: l.momentumScore ?? null,
         riskScore: null,
+        // WNBA — Phase 101 fields not yet wired upstream.
+        marketImpliedProb: null,
+        lineInflationScore: null,
+        publicBiasTags: [],
+        sharpnessScore: null,
+        edgeDurability: null,
+        whyMarketWrong: null,
         href: `/wnba/compare?aid=${encodeURIComponent(l.athleteId)}`,
       });
     }
@@ -398,10 +428,14 @@ function dislocationScore(e: UnifiedEdge): number {
   return edgeStrength * 0.7 + distanceFromCoinflip * 0.3;
 }
 
-// Sportsbook implied break-even. Edge = our_prob − implied; therefore
-// implied = our_prob − edge. Clamped [1, 99] to prevent display
-// artifacts on extreme edges.
+// Sportsbook implied break-even. Phase 101: prefer the backend's
+// computed marketImpliedProb (which is the same math but authoritative);
+// fall back to the local derivation for legacy snapshots and sports
+// not yet wired through marketIntel.ts.
 function marketImplied(e: UnifiedEdge): number {
+  if (e.marketImpliedProb !== null && e.marketImpliedProb !== undefined) {
+    return e.marketImpliedProb;
+  }
   const raw = e.probability - e.edgePercent;
   return Math.max(1, Math.min(99, raw));
 }
@@ -430,17 +464,31 @@ function varianceLabel(e: UnifiedEdge): { label: string; color: string } {
   return         { label: 'EXTREME VARIANCE',   color: '#ef5350' };
 }
 
-// Data quality tags. Surface why this projection is what it is —
-// matchup-driven vs momentum-driven vs market-driven. The Phase 100
-// spec directive: "create realism."
+// Data quality tags. Phase 101: when the backend marketIntel layer
+// emitted explicit publicBiasTags, those WIN over derived ones (more
+// authoritative). Falls back to derivation for sports not yet wired.
 function qualityTags(e: UnifiedEdge): string[] {
   const tags: string[] = [];
-  if ((e.momentumScore ?? 0) >= 70)              tags.push('MOMENTUM DRIVEN');
-  if ((e.fragilityScore ?? 50) >= 60)            tags.push('VOLATILE ROLE');
-  if (e.trapScore >= 60)                          tags.push('PUBLIC HEAVY');
-  if (Math.abs(e.edgePercent) >= 20)              tags.push('MARKET DIVERGENT');
-  if (e.reasonCodes.some((r) => /matchup|opponent|park|weather/i.test(r))) tags.push('MATCHUP DRIVEN');
-  if (e.reasonCodes.some((r) => /thin sample|low.*conf/i.test(r))) tags.push('LOW SAMPLE');
+
+  // Backend-emitted bias tags — render verbatim. These are
+  // authoritative and humanized (STAR_TAX → "STAR TAX").
+  for (const t of e.publicBiasTags) {
+    tags.push(t.replace(/_/g, ' '));
+  }
+
+  // Edge durability — surface explicitly when present.
+  if (e.edgeDurability === 'stable')   tags.push('STABLE EDGE');
+  if (e.edgeDurability === 'fragile')  tags.push('FRAGILE EDGE');
+
+  // Fallback heuristics for legs without backend tags (NBA + WNBA).
+  if (e.publicBiasTags.length === 0) {
+    if ((e.momentumScore ?? 0) >= 70)              tags.push('MOMENTUM DRIVEN');
+    if ((e.fragilityScore ?? 50) >= 60)            tags.push('VOLATILE ROLE');
+    if (e.trapScore >= 60)                          tags.push('PUBLIC HEAVY');
+    if (Math.abs(e.edgePercent) >= 20)              tags.push('MARKET DIVERGENT');
+    if (e.reasonCodes.some((r) => /matchup|opponent|park|weather/i.test(r))) tags.push('MATCHUP DRIVEN');
+    if (e.reasonCodes.some((r) => /thin sample|low.*conf/i.test(r))) tags.push('LOW SAMPLE');
+  }
   return tags;
 }
 
@@ -808,6 +856,30 @@ function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }
         </div>
       </div>
 
+      {/* "Why the market may be wrong" — Phase 101 moat narrative.
+          Backend-generated single sentence that explains the
+          structural read on this edge. Renders ABOVE the engine
+          reasons because it's the highest-signal layer. */}
+      {edge.whyMarketWrong && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: '8px 10px',
+            background: 'rgba(255, 213, 79, 0.06)',
+            border: '1px solid rgba(255, 213, 79, 0.2)',
+            borderLeft: '2px solid #ffd54f',
+            borderRadius: 4,
+            fontSize: 11,
+            lineHeight: 1.5,
+          }}
+        >
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: '#ffd54f', marginRight: 6 }}>
+            WHY MARKET MAY BE WRONG
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.9)' }}>{edge.whyMarketWrong}</span>
+        </div>
+      )}
+
       {/* WHY THIS EDGE EXISTS */}
       {reasons.length > 0 && (
         <div style={{ marginBottom: 8 }}>
@@ -833,7 +905,7 @@ function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }
       )}
 
       {/* Tag row */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
         <span
           style={{
             fontSize: 9,
@@ -848,6 +920,29 @@ function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }
         >
           {variance.label}
         </span>
+        {/* Sharpness — Phase 101. Sharpness ≥ 65 = institutional-grade
+            edge robustness; ≤ 35 = thin support, watch for fragility. */}
+        {edge.sharpnessScore !== null && (
+          <span
+            title="Sharpness 0-100. Composite of low fragility, low trap, reason-code richness, and conviction distance from coin-flip. Higher = edge has stronger underlying support."
+            style={{
+              fontSize: 9,
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              padding: '2px 6px',
+              background: edge.sharpnessScore >= 65 ? 'rgba(102,187,106,0.12)'
+                : edge.sharpnessScore >= 45 ? 'rgba(122,162,255,0.12)'
+                : 'rgba(255,183,77,0.12)',
+              color: edge.sharpnessScore >= 65 ? '#66bb6a'
+                : edge.sharpnessScore >= 45 ? '#7aa2ff'
+                : '#ffb74d',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 3,
+            }}
+          >
+            SHARP {edge.sharpnessScore}
+          </span>
+        )}
         {tags.map((t, i) => (
           <span
             key={i}

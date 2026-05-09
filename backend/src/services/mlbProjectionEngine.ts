@@ -74,6 +74,11 @@ import {
   computeCalibrationStrength,
   getCalibrationFeedbackCached,
 } from './mlbCalibrationFeedback.js';
+import {
+  computeMarketIntel,
+  type EdgeDurability,
+  type PublicBiasTag,
+} from './marketIntel.js';
 
 // -----------------------------------------------------------------
 // Inputs / outputs
@@ -300,6 +305,19 @@ export type ProjectionResult = {
   // null when last10.stddev is degenerate (zero or missing) — we
   // don't fabricate spread.
   monteCarlo: MonteCarloResult | null;
+
+  // ---- Phase 101 — Market Intelligence Engine ----
+  // The "sportsbook disagreement" layer. Every leg surfaces explicit
+  // market-implied probability, public-bias tags, line-inflation
+  // score, sharpness composite, edge durability tier, and a single-
+  // sentence "why the market may be wrong" narrative. See
+  // ./marketIntel.ts for the full contract.
+  marketImpliedProb: number;
+  lineInflationScore: number;
+  publicBiasTags: PublicBiasTag[];
+  sharpnessScore: number;
+  edgeDurability: EdgeDurability;
+  whyMarketWrong: string | null;
 };
 
 // -----------------------------------------------------------------
@@ -396,6 +414,13 @@ function emptyResult(
     originalProbability: null,
     lineRaised: false,
     lineRaiseReason: null,
+    // Phase 101 — neutral defaults for empty result.
+    marketImpliedProb: 50,
+    lineInflationScore: 0,
+    publicBiasTags: [],
+    sharpnessScore: 0,
+    edgeDurability: 'fragile',
+    whyMarketWrong: null,
   };
 }
 
@@ -1205,6 +1230,23 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
       raise.originalProbability !== null ? round1(raise.originalProbability) : null,
     lineRaised: raise.lineRaised,
     lineRaiseReason: raise.lineRaiseReason,
+    // Phase 101 market intelligence layer. Pure-function wrap of the
+    // already-computed signals — no DB, no extra cost. Surfaces the
+    // disagreement engine output alongside the projection.
+    ...computeMarketIntel({
+      probability: round1(finalProbability),
+      edgePercent: finalEdgePercent,
+      projection: round2(projection),
+      line: raise.line,
+      seasonAvg: inputs.seasonAverage ?? 0,
+      l5Avg: inputs.last10.last5Average,
+      l10Avg: inputs.last10.last10Average,
+      fragilityScore: fragility.fragility,
+      trapScore: Math.round(trapScore),
+      reasonCodes,
+      direction: inputs.direction,
+      statKey: inputs.statKey,
+    }),
   };
 }
 
