@@ -6,8 +6,10 @@
 // templates without waiting for the slate publish).
 
 import { Router } from 'express';
+import { listRecentSnapshots, type RawSnapshotRow } from '../market/snapshots.js';
 import { fetchEspnAthleteBio } from '../news/espnBio.js';
 import { fetchGoogleNewsHeadlines } from '../news/externalNews.js';
+import type { EdgeLeg } from '../news/templates.js';
 import {
   generateBigGameArticles,
   generateDailyClvRecaps,
@@ -288,16 +290,18 @@ newsRouter.get('/cron/clv-recap', async (req, res) => {
   }
 });
 
-// GET /api/news/cron/edge-preview — morning ET. Re-frames the day's
-// dislocations as a forward-looking preview. Edges aren't recomputed
-// here — caller should POST /api/news/generate with bundle=edge-preview
-// from the slate publish path. This cron only runs if there are no
-// edge_preview articles for today already (covers slates that publish
-// before the edge_preview cadence kicks in).
+// GET /api/news/cron/edge-preview — morning ET. Pulls the most-recent
+// PrizePicks market snapshots from the last 12 hours, converts them
+// to the EdgeLeg shape the templates consume, and fires the morning
+// preview articles per sport. Articles are slug-deduped on date+sport
+// so re-running merges with anything the slate-publish flow already
+// produced.
 //
-// For now this endpoint is a no-op when no edges are passed. Wiring
-// a "fetch latest edges from DB" helper is a small follow-up; keeping
-// the cron path live so the scheduler entry is stable.
+// edgePercent / projection / trapScore are not available from market
+// data alone — this cron emits the "shape of the board" preview (line
+// counts, sport breakdown, names of top market lines). The slate-
+// publish auto-fire (104f) does the same but with our model projections
+// when available.
 newsRouter.get('/cron/edge-preview', async (req, res) => {
   const authErr = requireCronAuth(req);
   if (authErr) {
@@ -306,17 +310,64 @@ newsRouter.get('/cron/edge-preview', async (req, res) => {
   }
   try {
     const date = (req.query.date as string | undefined) ?? todayEt();
-    const articles = await generateDailyEdgePreviews({ edges: [], date });
+    const edges = await loadLatestEdgesFromSnapshots();
+    const articles = await generateDailyEdgePreviews({ edges, date });
     res.json({
       ok: true,
       date,
+      edgesLoaded: edges.length,
+      bySport: countBySport(edges),
       articlesGenerated: articles.length,
-      note: articles.length === 0
-        ? 'no-op: edges store fetcher pending; slate-publish flow already auto-generates'
-        : undefined,
+      articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
     });
   } catch (err) {
     console.error('cron/edge-preview failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+// Pull the latest 12 hours of market_snapshots per sport and convert
+// each row into the EdgeLeg shape templates accept. Implied probability
+// from the bookmaker is the only probability signal we have; edgePercent
+// + projection + trapScore default to zero (templates handle gracefully).
+async function loadLatestEdgesFromSnapshots(): Promise<EdgeLeg[]> {
+  // listRecentSnapshots returns rows DESC by captured_at; we keep
+  // the latest row per (sport, playerId, statKey, line, direction)
+  // so a single morning preview reflects the freshest market state.
+  const sports: Array<'mlb' | 'nba' | 'wnba'> = ['mlb', 'nba', 'wnba'];
+  const out: EdgeLeg[] = [];
+  for (const sport of sports) {
+    const rows = await listRecentSnapshots({ sport, hours: 12, limit: 500 });
+    const dedup = new Map<string, RawSnapshotRow>();
+    for (const r of rows) {
+      const key = `${r.internal_player_id ?? r.raw_player_name}::${r.stat_key}::${r.line_value}::${r.direction}`;
+      if (!dedup.has(key)) dedup.set(key, r);
+    }
+    for (const r of dedup.values()) {
+      const playerId = r.internal_player_id ?? r.raw_player_name;
+      if (!playerId) continue;
+      const direction = r.direction.toUpperCase() === 'UNDER' ? 'UNDER' : 'OVER';
+      out.push({
+        sport,
+        playerId,
+        playerName: r.raw_player_name,
+        team: r.team,
+        statLabel: r.stat_key,
+        line: Number(r.line_value),
+        direction,
+        probability: r.implied_probability ? Number(r.implied_probability) * 100 : 50,
+        edgePercent: 0,         // unknown without projections; filled in when slate-publish runs
+        trapScore: 0,
+        projection: Number(r.line_value),
+        marketImpliedProb: r.implied_probability ? Number(r.implied_probability) * 100 : null,
+      });
+    }
+  }
+  return out;
+}
+
+function countBySport(edges: EdgeLeg[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of edges) out[e.sport] = (out[e.sport] ?? 0) + 1;
+  return out;
+}
