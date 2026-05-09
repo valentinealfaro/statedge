@@ -443,27 +443,34 @@ function isInstitutionalGrade(leg: ResolvedMlbLine): boolean {
     && p.trapScore    <= 35;
 }
 
-// Hard slate-wide exposure cap. Standard picks max out at 4 of the 6
-// possible card slots (Best 2/3/4/5/6 + Wild Card). Institutional
-// picks may extend to 5. NEVER 6 — the spec is explicit about this.
+// Hard slate-wide exposure cap. Tightened in response to a real
+// failure mode: same player on multiple cards meant one missed line
+// took down every ticket simultaneously. New caps: standard picks
+// max 2 cards, institutional max 3. The Phase 58 spec ceiling
+// (4 / 5) was too permissive in practice — concentration risk from
+// reused players outweighs the small EV gain from picking the same
+// strong leg twice.
 function maxCardAppearances(leg: ResolvedMlbLine): number {
-  return isInstitutionalGrade(leg) ? 5 : 4;
+  return isInstitutionalGrade(leg) ? 3 : 2;
 }
 
 // Soft penalty applied to legScore when picking subsequent cards.
-// Heavily punishes the 4th+ appearance of a non-institutional player;
-// also discourages stat-family monoculture and same-game/team stacks
-// that span multiple cards.
+// Tightened: 2nd appearance is now meaningfully expensive so the
+// optimizer prefers a fresh player even when the duplicate has
+// slightly higher raw edge. Diversification beats marginal edge
+// because correlated misses compound — losing 4 cards to one missed
+// line is much worse than losing 1.
 function exposurePenalty(leg: ResolvedMlbLine, exp: SlateExposure): number {
   let penalty = 0;
-  // Player exposure — the dominant signal. Spec schedule: 1st free,
-  // 2nd small, 3rd moderate, 4th heavy, 5th near-prohibitive (the
-  // hard cap blocks it anyway, but penalty keeps it from leading).
+  // Player exposure — the dominant signal. New schedule starts the
+  // penalty immediately on the 2nd appearance. The hard cap blocks
+  // entries past index 2/3, but the schedule still keeps the
+  // optimizer leaning toward different players.
   const playerPrior = exp.player.get(leg.playerId) ?? 0;
   const isInst = isInstitutionalGrade(leg);
   const playerSchedule = isInst
-    ? [0, 0, 4,  10, 30, 1000]
-    : [0, 0, 8,  22, 60, 1000];
+    ? [0,  6, 24,   60, 1000, 1000]
+    : [0, 12, 40, 1000, 1000, 1000];
   penalty += playerSchedule[Math.min(playerPrior, 5)] ?? 1000;
 
   // Game exposure — same-game across cards = environmental fragility

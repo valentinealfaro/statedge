@@ -301,22 +301,26 @@ describe('buildMlbSlate — same-player + correlation rules (Phase 28+32)', () =
     }
   });
 
-  test('Same player allowed across multiple cards (no NBA-style cross-card block)', () => {
-    // Per the 2026-05-08 MLB Slate Engine spec: NBA's same-player-
-    // across-cards rule is wrong for MLB. Elite matchup leverage
-    // justifies repeated exposure.
+  test('Phase 130: same player capped at 2 cards (3 institutional) for diversification', () => {
+    // Tightened cap. Production failure mode: same player on every
+    // card meant one missed line wiped out every ticket. New rule:
+    // a player can appear on at most 2 cards (3 if institutional-grade).
+    // Trade marginal repeat-edge for portfolio diversification.
     const slate = strongSlate(6);
     const r = buildMlbSlate(slate, 'balanced');
-    const allCardIds: number[][] = [];
+    const playerCardCounts = new Map<number, number>();
     for (const slot of r.combos) {
-      if (slot.combo) allCardIds.push(slot.combo.legs.map((l) => l.playerId));
+      if (!slot.combo) continue;
+      const seenInThisCard = new Set<number>();
+      for (const leg of slot.combo.legs) {
+        if (seenInThisCard.has(leg.playerId)) continue;
+        seenInThisCard.add(leg.playerId);
+        playerCardCounts.set(leg.playerId, (playerCardCounts.get(leg.playerId) ?? 0) + 1);
+      }
     }
-    // The top player (id 100) should appear in MULTIPLE cards because
-    // each card-size pick is independent and the strict-subset chain
-    // means Best 6 ⊃ Best 5 ⊃ ... ⊃ Best 2 — same player IS in all.
-    if (allCardIds.length >= 2) {
-      const overlapPresent = allCardIds[0]!.some((id) => allCardIds[1]!.includes(id));
-      expect(overlapPresent).toBe(true);
+    // No player should appear on more than 3 cards (institutional ceiling).
+    for (const [, count] of playerCardCounts) {
+      expect(count).toBeLessThanOrEqual(3);
     }
   });
 
