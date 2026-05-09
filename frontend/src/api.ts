@@ -2105,6 +2105,33 @@ export async function getCalibrationSummary(opts?: { windowDays?: number }): Pro
   return (await res.json()) as CrossSportCalibration;
 }
 
+export type CalibrationRecentRow = {
+  sport: 'mlb' | 'wnba';
+  gameDate: string;
+  playerId: string;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  lineValue: number;
+  probability: number;
+  resultValue: number | null;
+  hitOrMiss: boolean;
+  gradedAt: string | null;
+};
+export async function getCalibrationRecent(opts?: { limit?: number; windowDays?: number }): Promise<{
+  rows: CalibrationRecentRow[];
+  count: number;
+  windowDays: number;
+}> {
+  const p = new URLSearchParams();
+  if (opts?.limit) p.set('limit', String(opts.limit));
+  if (opts?.windowDays) p.set('windowDays', String(opts.windowDays));
+  const res = await fetch(`${API_BASE}/api/calibration/recent?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { rows: CalibrationRecentRow[]; count: number; windowDays: number };
+}
+
 // Engine status (Phase 122)
 export type EngineCategoryStats = {
   last24h: number;

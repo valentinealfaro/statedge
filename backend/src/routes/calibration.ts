@@ -10,6 +10,7 @@
 // Per-sport detail is preserved so the UI can drill down by sport.
 
 import { Router } from 'express';
+import { getPool, isDbConfigured } from '../db.js';
 import { computeMlbCalibration } from '../services/mlbCalibration.js';
 import { computeWnbaCalibration } from '../wnba/projectionHistory.js';
 
@@ -153,6 +154,126 @@ calibrationRouter.get('/summary', async (req, res) => {
     } satisfies CrossSportCalibration);
   } catch (err) {
     console.error('calibration/summary failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/calibration/recent?limit=25&windowDays=30
+//
+// Cross-sport recent graded projections for the calibration audit
+// page. Different from /api/market/clv/recent-props (which surfaces
+// "did we beat the close" — process accuracy). This shows "did we
+// get the probability right" — model accuracy. Each row carries the
+// predicted probability and the binary hit/miss verdict. Pushes
+// (hit_or_miss IS NULL) are excluded — they're not hits or misses.
+calibrationRouter.get('/recent', async (req, res) => {
+  try {
+    if (!isDbConfigured()) {
+      res.json({ rows: [], count: 0 });
+      return;
+    }
+    const limit = req.query.limit
+      ? Math.max(1, Math.min(100, Number(req.query.limit)))
+      : 25;
+    const windowDays = req.query.windowDays
+      ? Math.max(1, Math.min(365, Number(req.query.windowDays)))
+      : 30;
+
+    const pool = getPool();
+    // UNION ALL across the two sports' projection_history tables.
+    // Each side projects to the common shape; we sort + cap in JS
+    // for simplicity (limit at most 100 each before merge keeps the
+    // query light).
+    const [mlbRows, wnbaRows] = await Promise.all([
+      pool.query<{
+        game_date: Date;
+        player_id: number;
+        player_name: string | null;
+        team: string | null;
+        stat_key: string;
+        direction: string;
+        line_value: string;
+        probability: string;
+        result_value: string | null;
+        hit_or_miss: boolean;
+        graded_at: Date | null;
+      }>(`
+        SELECT h.game_date, h.player_id, p.full_name AS player_name, NULL::text AS team,
+               h.selected_stat AS stat_key, h.direction, h.line_value::text,
+               h.probability::text,
+               h.result_value::text, h.hit_or_miss, h.graded_at
+          FROM mlb_projection_history h
+     LEFT JOIN mlb_players p ON p.player_id = h.player_id
+         WHERE h.hit_or_miss IS NOT NULL
+           AND h.game_date >= (CURRENT_DATE - $1::int)
+         ORDER BY h.game_date DESC, h.id DESC
+         LIMIT 100
+      `, [windowDays]).catch(() => ({ rows: [] })),
+      pool.query<{
+        game_date: Date;
+        athlete_id: string;
+        player_name: string;
+        team: string | null;
+        stat_key: string;
+        direction: string;
+        line_value: string;
+        probability: string;
+        result_value: string | null;
+        hit_or_miss: boolean;
+        graded_at: Date | null;
+      }>(`
+        SELECT game_date, athlete_id, player_name, team,
+               stat_key, direction, line_value::text,
+               probability::text, result_value::text, hit_or_miss, graded_at
+          FROM wnba_projection_history
+         WHERE hit_or_miss IS NOT NULL
+           AND game_date >= (CURRENT_DATE - $1::int)
+         ORDER BY game_date DESC, id DESC
+         LIMIT 100
+      `, [windowDays]).catch(() => ({ rows: [] })),
+    ]);
+
+    const merged = [
+      ...mlbRows.rows.map((r) => ({
+        sport: 'mlb' as const,
+        gameDate: r.game_date.toISOString().slice(0, 10),
+        playerId: String(r.player_id),
+        playerName: r.player_name ?? `Player ${r.player_id}`,
+        team: r.team,
+        statKey: r.stat_key,
+        direction: r.direction === 'UNDER' ? 'UNDER' : 'OVER',
+        lineValue: Number(r.line_value),
+        probability: Number(r.probability),
+        resultValue: r.result_value !== null ? Number(r.result_value) : null,
+        hitOrMiss: r.hit_or_miss,
+        gradedAt: r.graded_at ? r.graded_at.toISOString() : null,
+      })),
+      ...wnbaRows.rows.map((r) => ({
+        sport: 'wnba' as const,
+        gameDate: r.game_date.toISOString().slice(0, 10),
+        playerId: r.athlete_id,
+        playerName: r.player_name,
+        team: r.team,
+        statKey: r.stat_key,
+        direction: r.direction === 'UNDER' ? 'UNDER' : 'OVER',
+        lineValue: Number(r.line_value),
+        probability: Number(r.probability),
+        resultValue: r.result_value !== null ? Number(r.result_value) : null,
+        hitOrMiss: r.hit_or_miss,
+        gradedAt: r.graded_at ? r.graded_at.toISOString() : null,
+      })),
+    ];
+    merged.sort((a, b) => {
+      // gradedAt DESC (most-recently-graded first), then gameDate as tiebreaker
+      const ag = a.gradedAt ?? a.gameDate;
+      const bg = b.gradedAt ?? b.gameDate;
+      return bg.localeCompare(ag);
+    });
+    const top = merged.slice(0, limit);
+
+    res.json({ rows: top, count: top.length, windowDays });
+  } catch (err) {
+    console.error('calibration/recent failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

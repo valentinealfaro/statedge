@@ -13,7 +13,13 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getCalibrationSummary, type CrossSportCalibration, type CrossSportProbabilityBucket } from './api';
+import {
+  getCalibrationRecent,
+  getCalibrationSummary,
+  type CalibrationRecentRow,
+  type CrossSportCalibration,
+  type CrossSportProbabilityBucket,
+} from './api';
 import { BeatRateTrend } from './BeatRateTrend';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -31,6 +37,7 @@ export function CalibrationAudit() {
   const [data, setData] = useState<CrossSportCalibration | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState(30);
+  const [recent, setRecent] = useState<CalibrationRecentRow[] | null>(null);
 
   useEffect(() => {
     setData(null);
@@ -38,6 +45,9 @@ export function CalibrationAudit() {
     getCalibrationSummary({ windowDays })
       .then(setData)
       .catch((e: Error) => setError(e.message));
+    getCalibrationRecent({ limit: 25, windowDays })
+      .then((r) => setRecent(r.rows))
+      .catch(() => setRecent([]));
   }, [windowDays]);
 
   return (
@@ -196,6 +206,81 @@ export function CalibrationAudit() {
                       </Link>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recent graded projections (Phase 129) — companion to
+                /clv's Recent Graded Props but for probability accuracy:
+                each row shows what we predicted (probability) vs what
+                happened (hit/miss). The concrete trail behind the
+                top-line calibration number. */}
+            {recent && recent.length > 0 && (
+              <section style={{ marginBottom: 24 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
+                  Recent Graded Projections
+                </h2>
+                <p className="muted small" style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.5 }}>
+                  Most recent {recent.length} graded projections. Predicted column is what the model said the probability was; Result is what actually happened. Hit/miss is verdict per the direction we projected.
+                </p>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
+                        <th style={thStyle}>Sport</th>
+                        <th style={thStyle}>Game Date</th>
+                        <th style={thStyle}>Player</th>
+                        <th style={thStyle}>Stat</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Predicted</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Result</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Verdict</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recent.map((r, idx) => (
+                        <tr key={`${r.sport}-${r.gameDate}-${r.playerId}-${r.statKey}-${idx}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={tdStyle}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 800, letterSpacing: '0.05em',
+                              color: SPORT_COLOR[r.sport] ?? 'rgba(255,255,255,0.6)',
+                              textTransform: 'uppercase',
+                            }}>
+                              {r.sport}
+                            </span>
+                          </td>
+                          <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.6)' }}>
+                            {r.gameDate}
+                          </td>
+                          <td style={tdStyle}>
+                            {r.playerName}
+                            {r.team && <span className="muted small" style={{ marginLeft: 4, fontSize: 10 }}>{r.team}</span>}
+                          </td>
+                          <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.85)' }}>
+                            {r.statKey}
+                            <span style={{
+                              marginLeft: 4, fontSize: 10, fontWeight: 800,
+                              color: r.direction === 'OVER' ? '#66bb6a' : '#ef5350',
+                            }}>
+                              {r.direction === 'OVER' ? '↑' : '↓'} {r.lineValue}
+                            </span>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
+                            {Math.round(r.probability)}%
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: 'rgba(255,255,255,0.65)' }}>
+                            {r.resultValue !== null ? r.resultValue : '—'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            {r.hitOrMiss ? (
+                              <span style={{ fontSize: 11, fontWeight: 800, color: '#66bb6a' }}>✓ HIT</span>
+                            ) : (
+                              <span style={{ fontSize: 11, fontWeight: 800, color: '#ef5350' }}>✗ MISS</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             )}
