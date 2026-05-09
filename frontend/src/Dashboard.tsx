@@ -229,7 +229,7 @@ function collectEdges(
           probability: l.probability,
           edgePercent: l.edgePercent ?? 0,
           trapScore: l.trapScore ?? 0,
-          href: '/nba/slate',
+          href: `/nba/compare?m=last10&pid=${l.playerId}`,
         });
       }
     }
@@ -254,7 +254,7 @@ function collectEdges(
           probability: l.probability,
           edgePercent: l.edgePercent,
           trapScore: l.trapScore,
-          href: '/mlb/slate',
+          href: `/mlb/player/${l.playerId}`,
         });
       }
     }
@@ -277,7 +277,7 @@ function collectEdges(
         probability: l.probability,
         edgePercent: l.edgePercent,
         trapScore: l.trapScore,
-        href: '/wnba/slate',
+        href: `/wnba/compare?aid=${encodeURIComponent(l.athleteId)}`,
       });
     }
   }
