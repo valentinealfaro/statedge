@@ -20,6 +20,7 @@ import {
 } from './api';
 import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar } from './Avatar';
 import { NavBar } from './NavBar';
+import { PastElitePlays } from './PastElitePlays';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
@@ -193,6 +194,10 @@ export function Elite() {
         {data && !ticket && (
           <NoTicketCard reason={data.reason ?? 'no qualifying edge today'} candidates={candidatesScanned} />
         )}
+
+        {/* Track record — every prior Elite play the engine has
+            published. Self-hides if no historical articles exist. */}
+        <PastElitePlays />
 
         <section style={{
           marginTop: 28, padding: 16,
