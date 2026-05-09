@@ -5,6 +5,7 @@ import { Dashboard } from './Dashboard';
 import { CalibrationAudit } from './CalibrationAudit';
 import { ClvAudit } from './ClvAudit';
 import { ErrorBoundary } from './ErrorBoundary';
+import { Methodology } from './Methodology';
 import { EspnGameDetail } from './EspnGameDetail';
 import { GameDetail } from './GameDetail';
 import { MlbCalibration } from './MlbCalibration';
@@ -47,6 +48,7 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/clv" element={<ClvAudit />} />
           <Route path="/calibration" element={<CalibrationAudit />} />
+          <Route path="/methodology" element={<Methodology />} />
 
           {/* NBA — sport-grouped */}
           <Route path="/nba/compare" element={<Compare />} />

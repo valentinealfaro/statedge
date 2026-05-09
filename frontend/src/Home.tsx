@@ -135,6 +135,15 @@ export function Home() {
 
       <footer className="footer">
         <p>
+          <Link to="/methodology" className="footer-link">How StatEdge works</Link>
+          {' · '}
+          <Link to="/clv" className="footer-link">CLV report</Link>
+          {' · '}
+          <Link to="/calibration" className="footer-link">Calibration</Link>
+          {' · '}
+          <Link to="/news" className="footer-link">News</Link>
+        </p>
+        <p>
           <Link to="/nba/standings" className="footer-link">NBA standings</Link>
           {' · '}
           <Link to="/mlb/standings" className="footer-link">MLB standings</Link>

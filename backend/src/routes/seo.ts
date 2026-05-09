@@ -26,6 +26,9 @@ const SITE_URL = (process.env.SITE_URL ?? 'https://statedge-frontend.vercel.app'
 const STATIC_PATHS: Array<{ path: string; changefreq: string; priority: number }> = [
   { path: '/',                    changefreq: 'daily',  priority: 1.0 },
   { path: '/news',                changefreq: 'hourly', priority: 0.9 },
+  { path: '/methodology',         changefreq: 'monthly', priority: 0.8 },
+  { path: '/clv',                 changefreq: 'daily',  priority: 0.8 },
+  { path: '/calibration',         changefreq: 'daily',  priority: 0.8 },
   { path: '/pricing',             changefreq: 'monthly', priority: 0.5 },
   { path: '/nba/compare',         changefreq: 'daily',  priority: 0.7 },
   { path: '/nba/slate',           changefreq: 'hourly', priority: 0.8 },
@@ -33,6 +36,8 @@ const STATIC_PATHS: Array<{ path: string; changefreq: string; priority: number }
   { path: '/mlb/compare',         changefreq: 'daily',  priority: 0.7 },
   { path: '/mlb/slate',           changefreq: 'hourly', priority: 0.8 },
   { path: '/mlb/standings',       changefreq: 'daily',  priority: 0.6 },
+  { path: '/mma/scoreboard',      changefreq: 'daily',  priority: 0.7 },
+  { path: '/mma/slate',           changefreq: 'daily',  priority: 0.7 },
 ];
 
 seoRouter.get('/sitemap.xml', async (_req, res) => {
