@@ -625,6 +625,10 @@ mlbRouter.post('/slate/today', async (req, res) => {
     // market_snapshots. Within weeks of usage, this builds proprietary
     // line-history that no paid feed can sell us. Best-effort —
     // snapshot failure shouldn't fail the publish.
+    //
+    // Phase 103c enrichment: enrich each snapshot with the resolved
+    // internal_player_id from parsedLines so CLV can join cleanly
+    // (mlb_projection_history.player_id ↔ market_snapshots.internal_player_id).
     if (body.text) {
       try {
         const props = prizepicksProvider.parse({
@@ -633,7 +637,36 @@ mlbRouter.post('/slate/today', async (req, res) => {
           league: 'MLB',
           gameDate: out.date,
         });
-        await writeMarketSnapshots(props);
+        // Build a multi-key index so we can match by playerName +
+        // (statKey, line, direction). Without playerName in the key,
+        // two different players sharing (stat, line, side) collide.
+        // Keys are folded (lowercase + non-alnum stripped) so paste
+        // formatting nits don't break matches.
+        const fold = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const idByCompound = new Map<string, number>();
+        for (const l of parsedLines) {
+          if (!l.playerName) continue;
+          const k = `${fold(l.playerName)}::${l.statKey}::${l.line}::${(l.direction ?? 'both').toUpperCase()}`;
+          idByCompound.set(k, l.playerId);
+        }
+        const enriched = props.map((p) => {
+          const k = `${fold(p.rawPlayerName)}::${p.statKey}::${p.line}::${p.direction}`;
+          const id = idByCompound.get(k);
+          if (id !== undefined) {
+            return { ...p, internalPlayerId: id };
+          }
+          // Fallback: name-only when the directional/line variant
+          // wasn't an exact match (e.g. PrizePicks 'BOTH' vs parsed
+          // 'OVER').
+          const nameKey = fold(p.rawPlayerName);
+          for (const [compoundKey, id2] of idByCompound) {
+            if (compoundKey.startsWith(`${nameKey}::${p.statKey}::`)) {
+              return { ...p, internalPlayerId: id2 };
+            }
+          }
+          return p;
+        });
+        await writeMarketSnapshots(enriched);
       } catch (err) {
         console.warn('mlb/slate market snapshot failed:', (err as Error).message);
       }

@@ -18,13 +18,24 @@
 //
 // Sport-agnostic. NBA / MLB / WNBA all call the same function.
 
+// Phase 103d — vocabulary aligned with the team's spec. Old tag names
+// (STAR_TAX, STREAK_INFLATION, PUBLIC_OVER) get the spec-canonical
+// versions. New tags (PARLAY_MAGNET, SOCIAL_HYPE, PRIME_TIME_INFLATION)
+// add slots for future heuristics — PRIME_TIME_INFLATION is a real
+// stub (needs TV-schedule data we don't have yet) and will only fire
+// when that pipeline lands. Internal-only tags (CONTRARIAN_VALUE,
+// STRUCTURAL_EDGE) remain because they're useful diagnostics that
+// don't fit the public-bias framing.
 export type PublicBiasTag =
-  | 'STAR_TAX'           // big-name premium — line above season baseline + thin model edge
-  | 'STREAK_INFLATION'   // L5 spike + line walked up — typical recency-bias pattern
-  | 'PUBLIC_OVER'        // OVER side + line above season + thin edge + trap risk
-  | 'NARRATIVE_RISK'     // reasonCodes mention spike/streak/surge — line priced to story
-  | 'CONTRARIAN_VALUE'   // we agree with the UNDER / under-the-radar side
-  | 'STRUCTURAL_EDGE';   // matchup/park/weather/usage signals — edge has real legs
+  | 'STAR_PLAYER_TAX'         // line walks high but model edge thin — name premium
+  | 'HOT_STREAK_OVERREACTION' // L5 spike + line walked up — typical recency-bias pattern
+  | 'PUBLIC_OVER_MAGNET'      // OVER side + line above season + thin edge + trap risk
+  | 'PARLAY_MAGNET'           // popular stat type + popular player + standard line — proxy for parlay frequency
+  | 'SOCIAL_HYPE'             // momentum spike + line inflation + thin edge regardless of direction
+  | 'PRIME_TIME_INFLATION'    // STUB — fires only when TV-schedule data is wired
+  | 'NARRATIVE_RISK'          // reasonCodes mention spike/streak/surge
+  | 'CONTRARIAN_VALUE'        // we agree with UNDER / unloved side
+  | 'STRUCTURAL_EDGE';        // matchup/park/weather/usage signals — edge has real legs
 
 export type EdgeDurability = 'stable' | 'mixed' | 'fragile';
 
@@ -94,22 +105,35 @@ export function computeMarketIntel(i: MarketIntelInputs): MarketIntelResult {
   const lineInflationScore = Math.round(Math.min(100, inflationVsSeason * 200));
 
   // 3. Public bias tags — heuristic categorizations.
+  // Phase 103d vocabulary: STAR_PLAYER_TAX / HOT_STREAK_OVERREACTION /
+  // PUBLIC_OVER_MAGNET / PARLAY_MAGNET / SOCIAL_HYPE /
+  // PRIME_TIME_INFLATION / NARRATIVE_RISK / CONTRARIAN_VALUE /
+  // STRUCTURAL_EDGE.
   const tags: PublicBiasTag[] = [];
 
-  // STAR_TAX: line walks high but our model edge is thin. Pattern:
-  // sportsbook is pricing the player's name (rep + media presence),
-  // not a structural mispricing.
+  // Stat-popularity proxy for PARLAY_MAGNET: counting stats that
+  // disproportionately appear in DFS parlays (points, hits, HR, K).
+  // No real parlay-frequency feed; this is a heuristic.
+  const POPULAR_STATS = new Set([
+    'points', 'rebounds', 'assists', 'three_pt_made', 'pra',
+    'hits', 'home_runs', 'total_bases', 'rbis',
+    'pitcher_strikeouts', 'strikeouts',
+  ]);
+
+  // STAR_PLAYER_TAX: line walks high but our model edge is thin.
+  // Pattern: sportsbook is pricing the player's name (rep + media
+  // presence), not a structural mispricing.
   if (
     i.seasonAvg > 0 &&
     i.line >= i.seasonAvg &&
     i.projection >= i.seasonAvg * 1.05 &&
     Math.abs(i.edgePercent) < 5
   ) {
-    tags.push('STAR_TAX');
+    tags.push('STAR_PLAYER_TAX');
   }
 
-  // STREAK_INFLATION: L5 average ≥20% above season baseline AND line
-  // also walked up + non-zero trap signal. Classic recency-bias trap.
+  // HOT_STREAK_OVERREACTION: L5 average ≥20% above season baseline +
+  // line walked up + non-zero trap signal. Classic recency-bias trap.
   if (
     i.l5Avg !== null &&
     i.seasonAvg > 0 &&
@@ -117,12 +141,12 @@ export function computeMarketIntel(i: MarketIntelInputs): MarketIntelResult {
     i.line >= i.seasonAvg * 1.10 &&
     i.trapScore >= 40
   ) {
-    tags.push('STREAK_INFLATION');
+    tags.push('HOT_STREAK_OVERREACTION');
   }
 
-  // PUBLIC_OVER: OVER + line walked above season + edge thin + trap
-  // signal. The classic public-hammer pattern — line is priced for
-  // public action, not actual distribution.
+  // PUBLIC_OVER_MAGNET: OVER + line walked above season + edge thin +
+  // trap signal. Classic public-hammer — line priced for public
+  // action, not actual distribution.
   if (
     i.direction === 'OVER' &&
     i.seasonAvg > 0 &&
@@ -130,8 +154,43 @@ export function computeMarketIntel(i: MarketIntelInputs): MarketIntelResult {
     Math.abs(i.edgePercent) < 8 &&
     i.trapScore >= 30
   ) {
-    tags.push('PUBLIC_OVER');
+    tags.push('PUBLIC_OVER_MAGNET');
   }
+
+  // PARLAY_MAGNET: popular stat type (points/hits/HR/K) + line is
+  // walking high vs season + thin edge. Proxy for "this is the kind
+  // of leg DFS users stack into parlays without auditing the line."
+  if (
+    POPULAR_STATS.has(i.statKey) &&
+    i.seasonAvg > 0 &&
+    i.line >= i.seasonAvg * 1.05 &&
+    Math.abs(i.edgePercent) < 6
+  ) {
+    tags.push('PARLAY_MAGNET');
+  }
+
+  // SOCIAL_HYPE: momentum spike + line inflation + thin edge,
+  // direction-agnostic. Different from HOT_STREAK_OVERREACTION which
+  // requires the OVER side; SOCIAL_HYPE captures cases where the
+  // market is reacting to a viral narrative regardless of direction.
+  if (
+    i.l5Avg !== null &&
+    i.seasonAvg > 0 &&
+    i.l5Avg >= i.seasonAvg * 1.25 &&            // sharp recent spike
+    i.line >= i.seasonAvg * 1.15 &&             // line walked
+    Math.abs(i.edgePercent) < 8 &&              // thin model conviction
+    i.reasonCodes.some((r) => NARRATIVE_RE.test(r))
+  ) {
+    tags.push('SOCIAL_HYPE');
+  }
+
+  // PRIME_TIME_INFLATION: STUB. Real fire requires TV-schedule data
+  // (national broadcast → public-attention spike → line inflation).
+  // Currently never fires; the slot exists so renderers + downstream
+  // archetype training have the vocabulary ready.
+  // No-op: leave commented to make the gap explicit.
+  //
+  // if (isPrimeTimeGame(...)) tags.push('PRIME_TIME_INFLATION');
 
   // NARRATIVE_RISK: reasonCodes explicitly call out spike/streak/surge.
   // Even when other tags don't fire, this flags edges built on a
@@ -188,12 +247,16 @@ export function computeMarketIntel(i: MarketIntelInputs): MarketIntelResult {
   // 101 spec: "this becomes the platform moat."
   let whyMarketWrong: string | null = null;
   if (Math.abs(i.edgePercent) >= 8) {
-    if (tags.includes('STREAK_INFLATION') && i.l5Avg !== null) {
+    if (tags.includes('SOCIAL_HYPE') && i.l5Avg !== null) {
+      whyMarketWrong = `Social-hype pattern: market reacting to viral L5 spike (${i.l5Avg.toFixed(1)} vs season ${i.seasonAvg.toFixed(1)}) without model conviction. Line is paying narrative tax.`;
+    } else if (tags.includes('HOT_STREAK_OVERREACTION') && i.l5Avg !== null) {
       whyMarketWrong = `Market overweighting recent L5 (${i.l5Avg.toFixed(1)}) — model anchored to ${i.seasonAvg.toFixed(1)} season baseline rebalances toward true distribution.`;
-    } else if (tags.includes('PUBLIC_OVER')) {
+    } else if (tags.includes('PUBLIC_OVER_MAGNET')) {
       whyMarketWrong = `Line walked to ${i.line} for public OVER action — model projects ${i.projection.toFixed(1)}, market is paying the public-hammer premium.`;
-    } else if (tags.includes('STAR_TAX')) {
-      whyMarketWrong = `Line priced for player reputation, not distribution. Star-tax inflation typical on name-recognition props.`;
+    } else if (tags.includes('STAR_PLAYER_TAX')) {
+      whyMarketWrong = `Line priced for player reputation, not distribution. Star-player-tax inflation typical on name-recognition props.`;
+    } else if (tags.includes('PARLAY_MAGNET')) {
+      whyMarketWrong = `Popular DFS-parlay leg with thin model conviction — line is priced for the user demand, not the underlying distribution.`;
     } else if (tags.includes('CONTRARIAN_VALUE')) {
       whyMarketWrong = `Public is hammering the OVER; book is leaning into it. Model says the unloved UNDER has ${Math.abs(i.edgePercent).toFixed(0)}% edge.`;
     } else if (tags.includes('STRUCTURAL_EDGE')) {

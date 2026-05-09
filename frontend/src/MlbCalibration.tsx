@@ -11,6 +11,7 @@ import {
   type MlbCalibrationBucket,
   type MlbCalibrationReport,
 } from './api';
+import { ClvPanel } from './ClvPanel';
 import { LossForensics } from './LossForensics';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -116,6 +117,8 @@ function CalibrationView({ report }: { report: MlbCalibrationReport }) {
       <BucketTable title="By stat type"             buckets={report.byStatType} />
       <BucketTable title="By risk tier"             buckets={report.byRiskTier} />
       <BucketTable title="By card type"             buckets={report.byCardType} />
+
+      <ClvPanel sport="mlb" />
 
       <LossForensics
         archetypes={report.failureArchetypes}

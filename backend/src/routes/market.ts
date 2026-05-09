@@ -11,6 +11,7 @@
 //   POST /provider/:source/ingest — webhook for paid feeds
 
 import { Router } from 'express';
+import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import {
   getSnapshotsHealth,
   listRecentSnapshots,
@@ -40,6 +41,42 @@ marketRouter.get('/health', async (_req, res) => {
 // Diagnostic feed of recent snapshots. Bounded by hours window so
 // big tables stay queryable. Defaults: 24 hours, 500 rows. All
 // filters optional; combined with AND.
+// GET /api/market/clv?sport=mlb&windowDays=30&limit=500
+//
+// Closing Line Value engine. Joins each published projection against
+// the latest later market snapshot for the same prop and computes
+// direction-aware "did we beat the close?" stats. The first REAL
+// truth metric for the platform — independent of game-outcome variance.
+marketRouter.get('/clv', async (req, res) => {
+  try {
+    const sport = String(req.query.sport ?? 'mlb').toLowerCase();
+    const windowDays = req.query.windowDays
+      ? Math.max(1, Math.min(365, Number(req.query.windowDays)))
+      : 30;
+    const limit = req.query.limit
+      ? Math.max(1, Math.min(2000, Number(req.query.limit)))
+      : 500;
+    if (sport !== 'mlb' && sport !== 'wnba') {
+      res.status(400).json({ error: 'sport must be mlb or wnba' });
+      return;
+    }
+    const summary = sport === 'mlb'
+      ? await computeMlbClv({ windowDays, limit })
+      : await computeWnbaClv({ windowDays, limit });
+    // Trim rows to first 100 in the response payload — full set is
+    // available via larger limit if needed. Summary aggregates already
+    // included.
+    res.json({
+      ...summary,
+      rows: summary.rows.slice(0, 100),
+      rowsTrimmed: summary.rows.length > 100,
+    });
+  } catch (err) {
+    console.error('market/clv failed', err);
+    res.status(500).json({ error: 'market clv failed' });
+  }
+});
+
 marketRouter.get('/snapshots/recent', async (req, res) => {
   try {
     const hours = req.query.hours ? Math.max(1, Math.min(168, Number(req.query.hours))) : 24;

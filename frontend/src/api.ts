@@ -1553,13 +1553,25 @@ export type RawMlbSlateLine = {
   opposingPitcherId?: number;
 };
 
+// Phase 103d — vocabulary aligned with the team's spec. Older values
+// (STAR_TAX / STREAK_INFLATION / PUBLIC_OVER) kept as accepted strings
+// so legacy snapshots don't break — backend emits the new names going
+// forward.
 export type MlbPublicBiasTag =
-  | 'STAR_TAX'
-  | 'STREAK_INFLATION'
-  | 'PUBLIC_OVER'
+  | 'STAR_PLAYER_TAX'
+  | 'HOT_STREAK_OVERREACTION'
+  | 'PUBLIC_OVER_MAGNET'
+  | 'PARLAY_MAGNET'
+  | 'SOCIAL_HYPE'
+  | 'PRIME_TIME_INFLATION'
   | 'NARRATIVE_RISK'
   | 'CONTRARIAN_VALUE'
-  | 'STRUCTURAL_EDGE';
+  | 'STRUCTURAL_EDGE'
+  // Legacy names — backend stopped emitting after Phase 103d but
+  // historical rows in projection_history still carry them.
+  | 'STAR_TAX'
+  | 'STREAK_INFLATION'
+  | 'PUBLIC_OVER';
 
 export type MlbEdgeDurability = 'stable' | 'mixed' | 'fragile';
 
@@ -2677,6 +2689,63 @@ export async function getMlbCalibration(windowDays = 30): Promise<MlbCalibration
   const res = await fetch(`${API_BASE}/api/mlb/calibration?windowDays=${windowDays}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as MlbCalibrationReport;
+}
+
+// =============================================================
+// Phase 103c — CLV (Closing Line Value) summary
+// =============================================================
+
+export type ClvByStatType = {
+  stat: string;
+  samples: number;
+  withClosing: number;
+  beatMarket: number;
+  beatRate: number | null;
+  averageLineDelta: number | null;
+};
+
+export type ClvRow = {
+  projectionId: number;
+  gameDate: string;
+  rawPlayerName: string | null;
+  team: string | null;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  cardType: string | null;
+  publishLine: number;
+  publishedAt: string;
+  closingLine: number | null;
+  closingAt: string | null;
+  snapshotsSeenAfter: number;
+  lineDelta: number | null;
+  beatMarket: boolean | null;
+  beatMagnitude: number | null;
+  hoursToClosing: number | null;
+};
+
+export type ClvSummary = {
+  sport: string;
+  windowDays: number;
+  total: number;
+  withClosing: number;
+  beatMarket: number;
+  matchedMarket: number;
+  lostToMarket: number;
+  beatRate: number | null;
+  averageLineDelta: number | null;
+  averageBeatMagnitude: number | null;
+  averageHoursToClosing: number | null;
+  byStatType: ClvByStatType[];
+  rows: ClvRow[];
+  rowsTrimmed?: boolean;
+};
+
+export async function getClv(opts: { sport: 'mlb' | 'wnba'; windowDays?: number }): Promise<ClvSummary> {
+  const params = new URLSearchParams({ sport: opts.sport });
+  if (opts.windowDays) params.set('windowDays', String(opts.windowDays));
+  const res = await fetch(`${API_BASE}/api/market/clv?${params.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as ClvSummary;
 }
 
 export async function getMlbHealth(): Promise<MlbHealth> {

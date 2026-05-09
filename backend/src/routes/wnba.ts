@@ -443,6 +443,10 @@ wnbaRouter.post('/slate/today', async (req, res) => {
     // Phase 103a — Market Brain snapshot. Same pattern as MLB: treat
     // the admin paste as our first-party PrizePicks feed. Best-effort
     // — failure shouldn't fail the publish.
+    //
+    // Phase 103c enrichment: use resolved athleteId from `stored` so
+    // CLV can join cleanly (wnba_projection_history.athlete_id ↔
+    // market_snapshots.internal_player_id).
     try {
       const props = prizepicksProvider.parse({
         text: rawText,
@@ -450,7 +454,16 @@ wnbaRouter.post('/slate/today', async (req, res) => {
         league: 'WNBA',
         gameDate: result.date,
       });
-      await writeMarketSnapshots(props);
+      const fold = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const idByName = new Map<string, string>();
+      for (const l of stored) {
+        idByName.set(fold(l.playerName), l.athleteId);
+      }
+      const enriched = props.map((p) => {
+        const id = idByName.get(fold(p.rawPlayerName));
+        return id ? { ...p, internalPlayerId: id } : p;
+      });
+      await writeMarketSnapshots(enriched);
     } catch (err) {
       console.warn('wnba/slate market snapshot failed:', (err as Error).message);
     }
