@@ -18,9 +18,45 @@ import {
   type EliteResponse,
   type EliteTicket,
 } from './api';
+import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar } from './Avatar';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
+
+// Stat-key sets for sport detection — same logic the backend uses to
+// route legs through the right normalizer. Mirrors collectSports() in
+// crossSportEliteBuilder.ts.
+const MLB_STAT_KEYS = new Set([
+  'home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis',
+  'walks', 'stolen_bases', 'strikeouts', 'doubles', 'triples', 'ks',
+  'pitcher_outs', 'innings_pitched', 'earned_runs_allowed',
+  'hits_allowed', 'walks_allowed', 'home_runs_allowed',
+]);
+const MMA_STAT_KEYS = new Set([
+  'sig_strikes', 'rd1_sig_strikes', 'takedowns', 'rd1_takedowns',
+  'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time',
+]);
+
+function detectLegSport(leg: EliteLeg): 'mlb' | 'nba' | 'mma' {
+  if (MMA_STAT_KEYS.has(leg.statKey)) return 'mma';
+  if (MLB_STAT_KEYS.has(leg.statKey)) return 'mlb';
+  return 'nba';
+}
+
+// Render the right avatar component for the leg's sport. UFC legs
+// have non-numeric playerIds (forced to 0 by the cross-sport
+// normalizer), so they go to the initials fallback — that's fine
+// until we plumb ESPN athlete IDs through the EliteLeg shape.
+function LegAvatar({ leg }: { leg: EliteLeg }) {
+  const sport = detectLegSport(leg);
+  if (sport === 'mlb') {
+    return <MlbPlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />;
+  }
+  if (sport === 'mma') {
+    return <UfcFighterAvatar athleteId={leg.playerId || ''} name={leg.playerName} size="md" />;
+  }
+  return <PlayerAvatar playerId={leg.playerId} name={leg.playerName} size="md" />;
+}
 
 type EliteView = 'cross' | 'mlb' | 'nba';
 
@@ -299,6 +335,8 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTic
 
 function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
   const dirColor = leg.direction === 'OVER' ? '#66bb6a' : '#ef5350';
+  const sport = detectLegSport(leg);
+  const sportColor = sport === 'mlb' ? '#66bb6a' : sport === 'mma' ? '#ef5350' : '#7aa2ff';
   return (
     <div style={{
       padding: 12,
@@ -307,48 +345,61 @@ function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
       borderLeft: `3px solid ${dirColor}`,
       borderRadius: 6,
     }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-        <div>
-          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.5)', marginRight: 6 }}>
-            LEG {index + 1}
-          </span>
-          <span style={{ fontSize: 14, fontWeight: 800 }}>
-            {leg.playerName}
-          </span>
-          {leg.team && <span className="muted small" style={{ fontSize: 11, marginLeft: 6 }}>{leg.team}</span>}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flexShrink: 0 }}>
+          <LegAvatar leg={leg} />
         </div>
-        <span style={{
-          fontSize: 13, fontWeight: 800,
-          color: dirColor,
-        }}>
-          {leg.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'} {leg.line}
-        </span>
-      </div>
-      <div style={{ marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-        {STAT_LABEL[leg.statKey] ?? leg.statLabel}
-      </div>
-      <div className="muted small" style={{ fontSize: 11, marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <span><strong style={{ color: '#fff' }}>{leg.probability.toFixed(1)}%</strong> model</span>
-        {leg.marketImpliedProb !== null && (
-          <span>{Math.round(leg.marketImpliedProb)}% market</span>
-        )}
-        <span><strong style={{ color: '#66bb6a' }}>+{leg.edgePercent.toFixed(1)}pp</strong> edge</span>
-        <span>trap {leg.trapScore} · fragility {leg.fragilityScore}</span>
-        {leg.edgeDurability && (
-          <span>durability <strong style={{ color: leg.edgeDurability === 'stable' ? '#66bb6a' : leg.edgeDurability === 'mixed' ? '#ffd54f' : '#ef5350' }}>{leg.edgeDurability}</strong></span>
-        )}
-      </div>
-      <div style={{
-        marginTop: 8, display: 'inline-block',
-        fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
-        padding: '2px 8px',
-        background: 'rgba(122,162,255,0.1)',
-        border: '1px solid rgba(122,162,255,0.3)',
-        borderRadius: 3,
-        color: '#7aa2ff',
-        textTransform: 'uppercase',
-      }}>
-        {EDGE_LABEL[leg.qualifyingEdge]}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <div>
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.5)', marginRight: 6 }}>
+                LEG {index + 1}
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                color: sportColor, marginRight: 6,
+              }}>
+                {sport.toUpperCase()}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 800 }}>
+                {leg.playerName}
+              </span>
+              {leg.team && <span className="muted small" style={{ fontSize: 11, marginLeft: 6 }}>{leg.team}</span>}
+            </div>
+            <span style={{
+              fontSize: 13, fontWeight: 800,
+              color: dirColor,
+            }}>
+              {leg.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'} {leg.line}
+            </span>
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+            {STAT_LABEL[leg.statKey] ?? leg.statLabel}
+          </div>
+          <div className="muted small" style={{ fontSize: 11, marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <span><strong style={{ color: '#fff' }}>{leg.probability.toFixed(1)}%</strong> model</span>
+            {leg.marketImpliedProb !== null && (
+              <span>{Math.round(leg.marketImpliedProb)}% market</span>
+            )}
+            <span><strong style={{ color: '#66bb6a' }}>+{leg.edgePercent.toFixed(1)}pp</strong> edge</span>
+            <span>trap {leg.trapScore} · fragility {leg.fragilityScore}</span>
+            {leg.edgeDurability && (
+              <span>durability <strong style={{ color: leg.edgeDurability === 'stable' ? '#66bb6a' : leg.edgeDurability === 'mixed' ? '#ffd54f' : '#ef5350' }}>{leg.edgeDurability}</strong></span>
+            )}
+          </div>
+          <div style={{
+            marginTop: 8, display: 'inline-block',
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+            padding: '2px 8px',
+            background: 'rgba(122,162,255,0.1)',
+            border: '1px solid rgba(122,162,255,0.3)',
+            borderRadius: 3,
+            color: '#7aa2ff',
+            textTransform: 'uppercase',
+          }}>
+            {EDGE_LABEL[leg.qualifyingEdge]}
+          </div>
+        </div>
       </div>
     </div>
   );
