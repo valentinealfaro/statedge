@@ -1823,10 +1823,29 @@ export type PlayerSearchLink = {
   url: string;
   kind: 'social' | 'reference';
 };
+export type PlayerBio = {
+  id: string;
+  fullName: string;
+  displayName: string;
+  jersey: string | null;
+  position: string | null;
+  team: { id: string; abbreviation: string; displayName: string } | null;
+  headshotUrl: string | null;
+  heightInches: number | null;
+  heightDisplay: string | null;
+  weightLbs: number | null;
+  birthDate: string | null;
+  age: number | null;
+  birthPlace: string | null;
+  experience: string | null;
+  college: string | null;
+  draft: { year: number; round: number; pick: number } | null;
+};
 export type PlayerProfileBundle = {
   sport: string;
   playerId: string;
   playerName: string | null;
+  bio: PlayerBio | null;
   articles: Article[];
   externalHeadlines: ExternalHeadline[];
   searchLinks: PlayerSearchLink[];

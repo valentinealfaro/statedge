@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getPlayerNewsBundle, type PlayerProfileBundle } from './api';
+import { getPlayerNewsBundle, type PlayerBio, type PlayerProfileBundle } from './api';
 
 type Props = {
   sport: 'mlb' | 'nba' | 'wnba' | 'mma';
@@ -37,10 +37,14 @@ export function PlayerNewsSection({ sport, playerId, playerName }: Props) {
   const hasArticles = bundle.articles.length > 0;
   const hasExternal = bundle.externalHeadlines.length > 0;
   const hasLinks = bundle.searchLinks.length > 0;
-  if (!hasArticles && !hasExternal && !hasLinks) return null;
+  const hasBio = !!bundle.bio;
+  if (!hasArticles && !hasExternal && !hasLinks && !hasBio) return null;
 
   return (
-    <section style={{ marginTop: 24, padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8 }}>
+    <section style={{ marginTop: 24 }}>
+      {bundle.bio && <BioCard bio={bundle.bio} />}
+
+      <div style={{ marginTop: bundle.bio ? 16 : 0, padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8 }}>
       <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
         News & Links
       </h2>
@@ -114,7 +118,80 @@ export function PlayerNewsSection({ sport, playerId, playerName }: Props) {
           </div>
         </div>
       </div>
+      </div>
     </section>
+  );
+}
+
+function BioCard({ bio }: { bio: PlayerBio }) {
+  const facts: Array<{ label: string; value: string }> = [];
+  if (bio.position) facts.push({ label: 'Position', value: bio.position });
+  if (bio.jersey) facts.push({ label: 'Jersey', value: `#${bio.jersey}` });
+  if (bio.heightDisplay || bio.heightInches) {
+    facts.push({ label: 'Height', value: bio.heightDisplay ?? `${bio.heightInches}"` });
+  }
+  if (bio.weightLbs) facts.push({ label: 'Weight', value: `${bio.weightLbs} lbs` });
+  if (bio.age) facts.push({ label: 'Age', value: String(bio.age) });
+  if (bio.experience) facts.push({ label: 'Experience', value: bio.experience });
+  if (bio.college) facts.push({ label: 'College', value: bio.college });
+  if (bio.draft) {
+    facts.push({
+      label: 'Draft',
+      value: `${bio.draft.year} R${bio.draft.round} #${bio.draft.pick}`,
+    });
+  }
+  if (bio.birthPlace) facts.push({ label: 'Birthplace', value: bio.birthPlace });
+
+  if (facts.length === 0 && !bio.headshotUrl) return null;
+
+  return (
+    <div style={{
+      padding: 16,
+      background: 'rgba(255,255,255,0.02)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 8,
+      display: 'flex',
+      gap: 16,
+      alignItems: 'flex-start',
+    }}>
+      {bio.headshotUrl && (
+        <img
+          src={bio.headshotUrl}
+          alt=""
+          loading="lazy"
+          style={{
+            width: 80,
+            height: 80,
+            objectFit: 'cover',
+            borderRadius: 6,
+            background: 'rgba(255,255,255,0.05)',
+            flexShrink: 0,
+          }}
+        />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.45)', marginBottom: 8 }}>
+          Bio
+        </div>
+        <dl style={{
+          margin: 0,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          gap: '6px 16px',
+        }}>
+          {facts.map((f) => (
+            <div key={f.label} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <dt style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>
+                {f.label}
+              </dt>
+              <dd style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.92)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {f.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
   );
 }
 

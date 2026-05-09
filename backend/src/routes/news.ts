@@ -6,6 +6,7 @@
 // templates without waiting for the slate publish).
 
 import { Router } from 'express';
+import { fetchEspnAthleteBio } from '../news/espnBio.js';
 import { fetchGoogleNewsHeadlines } from '../news/externalNews.js';
 import {
   generateBigGameArticles,
@@ -55,9 +56,19 @@ newsRouter.get('/player/:sport/:id', async (req, res) => {
     const id = req.params.id;
     const playerName = (req.query.name as string | undefined) ?? '';
 
-    const [articles, headlines] = await Promise.all([
+    // ESPN bio enrichment — only when the id makes sense for ESPN.
+    // NBA + WNBA player ids in our system ARE ESPN athlete ids (we
+    // ingest from ESPN). MLB ids are MLB Stats API ids, so the
+    // ESPN endpoint won't recognize them — skip those.
+    const espnSlug =
+      sport === 'nba'  ? 'basketball/nba'
+      : sport === 'wnba' ? 'basketball/wnba'
+      : null;
+
+    const [articles, headlines, bio] = await Promise.all([
       listArticles({ playerId: id, limit: 12 }),
       playerName ? fetchGoogleNewsHeadlines(playerName, { limit: 8 }) : Promise.resolve([]),
+      espnSlug ? fetchEspnAthleteBio(id, espnSlug) : Promise.resolve(null),
     ]);
 
     // Per-sport reference URL templates. Pure templates — frontend
@@ -70,6 +81,7 @@ newsRouter.get('/player/:sport/:id', async (req, res) => {
       sport,
       playerId: id,
       playerName: playerName || null,
+      bio,
       articles,
       externalHeadlines: headlines,
       searchLinks,
