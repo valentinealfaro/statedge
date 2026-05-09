@@ -63,6 +63,7 @@ export function Dashboard() {
   const [wnbaCal, setWnbaCal] = useState<WnbaCalibrationReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +102,8 @@ export function Dashboard() {
     };
   }, []);
 
-  const edges = collectEdges(nba, mlb, wnba);
+  const allEdges = collectEdges(nba, mlb, wnba);
+  const edges = sportFilter === 'all' ? allEdges : allEdges.filter((e) => e.sport === sportFilter);
   const traps = edges
     .filter((e) => e.trapScore >= 60)
     .sort((a, b) => b.trapScore - a.trapScore)
@@ -143,6 +145,13 @@ export function Dashboard() {
           </div>
         ) : (
           <>
+            <SportFilterTabs value={sportFilter} onChange={setSportFilter} counts={{
+              all:  allEdges.length,
+              nba:  allEdges.filter((e) => e.sport === 'nba').length,
+              mlb:  allEdges.filter((e) => e.sport === 'mlb').length,
+              wnba: allEdges.filter((e) => e.sport === 'wnba').length,
+            }} />
+
             <SectionHeader
               title="Tonight's strongest edges"
               hint="Top legs by model edge across every sport. Edge = our model probability − sportsbook implied probability."
@@ -305,6 +314,53 @@ function computeSlateStrength(
 }
 
 // ---------- components ----------
+
+function SportFilterTabs({
+  value,
+  onChange,
+  counts,
+}: {
+  value: Sport | 'all';
+  onChange: (v: Sport | 'all') => void;
+  counts: { all: number; nba: number; mlb: number; wnba: number };
+}) {
+  const TABS: Array<{ key: Sport | 'all'; label: string; color: string }> = [
+    { key: 'all',  label: 'All',  color: '#cccccc' },
+    { key: 'nba',  label: 'NBA',  color: SPORT_COLOR.nba },
+    { key: 'mlb',  label: 'MLB',  color: SPORT_COLOR.mlb },
+    { key: 'wnba', label: 'WNBA', color: SPORT_COLOR.wnba },
+  ];
+  return (
+    <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      {TABS.map((t) => {
+        const active = value === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.key)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 4,
+              border: `1px solid ${active ? t.color : 'rgba(255,255,255,0.1)'}`,
+              background: active ? `${t.color}1a` : 'transparent',
+              color: active ? t.color : 'rgba(255,255,255,0.65)',
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+            }}
+          >
+            {t.label}
+            <span style={{ marginLeft: 6, opacity: 0.6, fontWeight: 500 }}>{counts[t.key]}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function SectionHeader({ title, hint }: { title: string; hint: string }) {
   return (
