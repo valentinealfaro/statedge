@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { EnginePulseStrip } from './EnginePulseStrip';
+import { HomeHero } from './HomeHero';
 import { LatestNewsRail } from './LatestNewsRail';
 import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
@@ -14,34 +15,7 @@ import { TrendingTeams } from './TrendingTeams';
 export function Home() {
   return (
     <div className="home">
-      <header className="hero">
-        <img src="/statedge-logo.png" alt="StatEdge" className="hero-logo" />
-        <p className="hero-tag">
-          Quantitative sports intelligence. <br />
-          NBA + MLB + UFC · projections, fragility, calibration.
-        </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link
-            className="cta primary"
-            to="/dashboard"
-            style={{ background: 'linear-gradient(135deg, #7aa2ff 0%, #66bb6a 50%, #ef5350 100%)', color: '#0d1117' }}
-          >
-            Command Center →
-          </Link>
-          <Link className="cta primary" to="/nba/compare">
-            NBA Compare →
-          </Link>
-          <Link className="cta primary" to="/mlb/slate" style={{ background: '#1f7a3a' }}>
-            MLB Slate →
-          </Link>
-          <Link className="cta primary" to="/mma/scoreboard" style={{ background: '#c62828' }}>
-            UFC Scoreboard →
-          </Link>
-        </div>
-        <p className="disclaimer">
-          We provide statistics and analysis only. No betting advice.
-        </p>
-      </header>
+      <HomeHero />
 
       {/* Compact engine pulse — Bloomberg-feel ticker showing
           live activity. Self-hides until at least one engine
