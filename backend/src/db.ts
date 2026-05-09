@@ -1056,6 +1056,87 @@ export async function clearMlbDailySlateFromDb(): Promise<void> {
 }
 
 // -----------------------------------------------------------------
+// WNBA daily slate (mirror of MLB's). Phase 77 — admin-published
+// daily lines that the projection helper grades against ESPN gamelogs.
+// -----------------------------------------------------------------
+
+export type WnbaStoredDailyLine = {
+  athleteId: string;        // ESPN player id (string per ESPN convention)
+  playerName: string;
+  team: string | null;
+  statKey: string;          // points / rebounds / assists / etc
+  line: number;
+  direction?: 'over' | 'under' | 'both';
+  rawText?: string;
+};
+
+async function ensureWnbaDailySlateTable(): Promise<void> {
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS wnba_daily_slate (
+      slate_date DATE PRIMARY KEY,
+      lines JSONB NOT NULL,
+      raw_text TEXT,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+export async function getWnbaDailySlateFromDb(): Promise<{
+  date: string;
+  lines: WnbaStoredDailyLine[];
+  rawText: string | null;
+  updatedAt: string;
+} | null> {
+  await ensureWnbaDailySlateTable();
+  const date = todayEt();
+  const { rows } = await getPool().query<{
+    slate_date: string;
+    lines: WnbaStoredDailyLine[];
+    raw_text: string | null;
+    updated_at: Date;
+  }>(
+    `SELECT slate_date::text, lines, raw_text, updated_at
+       FROM wnba_daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    date: r.slate_date,
+    lines: r.lines,
+    rawText: r.raw_text,
+    updatedAt: r.updated_at.toISOString(),
+  };
+}
+
+export async function setWnbaDailySlateInDb(opts: {
+  lines: WnbaStoredDailyLine[];
+  rawText: string | null;
+}): Promise<{ date: string; count: number }> {
+  await ensureWnbaDailySlateTable();
+  const date = todayEt();
+  await getPool().query(
+    `INSERT INTO wnba_daily_slate (slate_date, lines, raw_text, updated_at)
+     VALUES ($1, $2::jsonb, $3, NOW())
+     ON CONFLICT (slate_date) DO UPDATE
+       SET lines = EXCLUDED.lines,
+           raw_text = EXCLUDED.raw_text,
+           updated_at = NOW()`,
+    [date, JSON.stringify(opts.lines), opts.rawText],
+  );
+  return { date, count: opts.lines.length };
+}
+
+export async function clearWnbaDailySlateFromDb(): Promise<void> {
+  await ensureWnbaDailySlateTable();
+  const date = todayEt();
+  await getPool().query(
+    `DELETE FROM wnba_daily_slate WHERE slate_date = $1`,
+    [date],
+  );
+}
+
+// -----------------------------------------------------------------
 // MLB resolved-slate cache (cross-instance via Postgres).
 //
 // In-memory caching doesn't work on Vercel because each request can

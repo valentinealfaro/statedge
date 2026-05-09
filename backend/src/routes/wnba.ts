@@ -4,6 +4,13 @@
 
 import { Router } from 'express';
 import {
+  clearWnbaDailySlateFromDb,
+  getWnbaDailySlateFromDb,
+  isDbConfigured,
+  setWnbaDailySlateInDb,
+  type WnbaStoredDailyLine,
+} from '../db.js';
+import {
   fetchWnbaGameSummary,
   fetchWnbaPlayerGameLog,
   fetchWnbaPlayerSearch,
@@ -11,6 +18,12 @@ import {
   fetchWnbaStandings,
   fetchWnbaTeams,
 } from '../wnba/espn.js';
+import {
+  isValidWnbaStatKey,
+  listWnbaStatKeys,
+  projectWnbaLine,
+  type ProjectedWnbaLine,
+} from '../wnba/projection.js';
 
 export const wnbaRouter: Router = Router();
 
@@ -153,6 +166,250 @@ wnbaRouter.get('/player/:athleteId/gamelog', async (req, res) => {
     console.error('wnba/player/gamelog failed', err);
     res.status(502).json({ error: 'wnba gamelog failed' });
   }
+});
+
+// ---------- Slate (Phase 77 — top-edges; Best 2-6 cards in 77b) ----------
+
+const SLATE_ADMIN_HEADER = 'x-admin-secret';
+
+function isSlateAdmin(req: import('express').Request): boolean {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) return false;
+  const header = req.header(SLATE_ADMIN_HEADER);
+  return !!header && header === expected;
+}
+
+// Pipe-format parser. Same shape as MLB:
+//   Player Name|TEAM|stat_key|line|direction
+// Tolerant of spaces, blank lines, comments (#), and trailing pipes.
+type ParsedRawLine = {
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  line: number;
+  direction: 'over' | 'under' | 'both';
+  rawText: string;
+};
+
+function parseWnbaSlateText(text: string): {
+  lines: ParsedRawLine[];
+  errors: Array<{ line: string; reason: string }>;
+} {
+  const lines: ParsedRawLine[] = [];
+  const errors: Array<{ line: string; reason: string }> = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const parts = trimmed.split('|').map((p) => p.trim());
+    if (parts.length < 4) {
+      errors.push({ line: trimmed, reason: 'Expected at least 4 fields: name|team|stat|line[|direction]' });
+      continue;
+    }
+    const [playerName, team, statKey, lineStr, dirRaw] = parts;
+    if (!playerName || !statKey) {
+      errors.push({ line: trimmed, reason: 'Player name and stat key required.' });
+      continue;
+    }
+    if (!isValidWnbaStatKey(statKey)) {
+      errors.push({ line: trimmed, reason: `Unknown stat key '${statKey}'. Valid keys: ${listWnbaStatKeys().map((s) => s.key).join(', ')}` });
+      continue;
+    }
+    const line = Number(lineStr);
+    if (!Number.isFinite(line)) {
+      errors.push({ line: trimmed, reason: `Line value '${lineStr}' is not numeric.` });
+      continue;
+    }
+    const direction: 'over' | 'under' | 'both' =
+      dirRaw === 'over' ? 'over'
+      : dirRaw === 'under' ? 'under'
+      : 'both';
+    lines.push({
+      playerName,
+      team: team || null,
+      statKey,
+      line,
+      direction,
+      rawText: trimmed,
+    });
+  }
+  return { lines, errors };
+}
+
+// GET /api/wnba/slate/today
+//
+// Returns the published slate (raw lines + projections). Uses ESPN
+// gamelogs (cached) so first hit per slate publish is slow; subsequent
+// hits hit a 5-min in-memory projection cache.
+type WnbaSlateProjectionCache = { fetchedAt: number; data: unknown };
+let wnbaSlateProjectionCache: WnbaSlateProjectionCache | null = null;
+const WNBA_SLATE_TTL = 5 * 60_000;
+
+wnbaRouter.get('/slate/today', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ slate: null, resolved: null });
+    return;
+  }
+  try {
+    const stored = await getWnbaDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ slate: null, resolved: null });
+      return;
+    }
+    const cacheKey = `${stored.date}::${stored.updatedAt}`;
+    if (wnbaSlateProjectionCache && Date.now() - wnbaSlateProjectionCache.fetchedAt < WNBA_SLATE_TTL) {
+      res.json(wnbaSlateProjectionCache.data);
+      return;
+    }
+
+    // Resolve athleteIds — stored lines carry them already from the
+    // publish step. Just call projectWnbaLine for each.
+    const projected: ProjectedWnbaLine[] = [];
+    const unresolved: Array<{ raw: WnbaStoredDailyLine; reason: string }> = [];
+
+    // Parallel batch — limit to 10 in flight to be polite to ESPN.
+    const BATCH = 10;
+    for (let i = 0; i < stored.lines.length; i += BATCH) {
+      const batch = stored.lines.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async (l) => {
+          const dir: 'OVER' | 'UNDER' = l.direction === 'under' ? 'UNDER' : 'OVER';
+          const proj = await projectWnbaLine(l.athleteId, l.playerName, l.team, l.statKey, l.line, dir);
+          if (!proj) throw new Error(`Failed to project ${l.playerName} ${l.statKey}`);
+          return proj;
+        }),
+      );
+      for (let j = 0; j < results.length; j++) {
+        const r = results[j]!;
+        if (r.status === 'fulfilled') projected.push(r.value);
+        else unresolved.push({ raw: batch[j]!, reason: (r.reason as Error)?.message ?? 'unknown' });
+      }
+    }
+
+    // Sort by edge desc — top edges first.
+    projected.sort((a, b) => b.edgePercent - a.edgePercent);
+
+    const payload = {
+      slate: {
+        date: stored.date,
+        count: stored.lines.length,
+        rawText: stored.rawText,
+        updatedAt: stored.updatedAt,
+      },
+      resolved: {
+        lines: projected,
+        unresolved,
+        lineCount: projected.length,
+        disclaimer: WNBA_DISCLAIMER,
+      },
+    };
+    wnbaSlateProjectionCache = { fetchedAt: Date.now(), data: payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/slate/today GET failed', err);
+    res.status(500).json({ error: 'wnba slate today fetch failed' });
+  }
+});
+
+// POST /api/wnba/slate/today — admin only.
+// Body: { rawText, lines? }. If `lines` provided, use directly;
+// otherwise parse rawText. Each parsed line still needs an athleteId
+// resolved via ESPN search before storing.
+wnbaRouter.post('/slate/today', async (req, res) => {
+  if (!isSlateAdmin(req)) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'WNBA requires DB' });
+    return;
+  }
+  try {
+    const body = (req.body ?? {}) as { rawText?: string };
+    const rawText = String(body.rawText ?? '');
+    if (!rawText.trim()) {
+      res.status(400).json({ error: 'rawText required' });
+      return;
+    }
+    const { lines: parsed, errors } = parseWnbaSlateText(rawText);
+    if (parsed.length === 0) {
+      res.status(400).json({ error: 'no parseable lines', parseErrors: errors });
+      return;
+    }
+
+    // Resolve each parsed line's player → athleteId via ESPN search.
+    // Cache resolutions across batch so duplicate names hit ESPN once.
+    const nameCache = new Map<string, string | null>();
+    const resolveAthleteId = async (name: string): Promise<string | null> => {
+      const key = name.toLowerCase();
+      if (nameCache.has(key)) return nameCache.get(key) ?? null;
+      const results = await fetchWnbaPlayerSearch(name).catch(() => []);
+      const exact = results.find((r) => r.displayName.toLowerCase() === key);
+      const id = exact?.id ?? results[0]?.id ?? null;
+      nameCache.set(key, id);
+      return id;
+    };
+
+    const stored: WnbaStoredDailyLine[] = [];
+    const unresolved: Array<{ rawText: string; reason: string }> = [];
+    for (const p of parsed) {
+      const athleteId = await resolveAthleteId(p.playerName);
+      if (!athleteId) {
+        unresolved.push({ rawText: p.rawText, reason: `Player not found: ${p.playerName}` });
+        continue;
+      }
+      stored.push({
+        athleteId,
+        playerName: p.playerName,
+        team: p.team,
+        statKey: p.statKey,
+        line: p.line,
+        direction: p.direction,
+        rawText: p.rawText,
+      });
+    }
+
+    const result = await setWnbaDailySlateInDb({
+      lines: stored,
+      rawText,
+    });
+
+    // Invalidate projection cache so the next GET re-projects.
+    wnbaSlateProjectionCache = null;
+
+    res.json({
+      ok: true,
+      ...result,
+      parseErrors: errors,
+      unresolved,
+    });
+  } catch (err) {
+    console.error('wnba/slate/today POST failed', err);
+    res.status(500).json({ error: 'wnba slate today write failed' });
+  }
+});
+
+wnbaRouter.delete('/slate/today', async (req, res) => {
+  if (!isSlateAdmin(req)) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'WNBA requires DB' });
+    return;
+  }
+  try {
+    await clearWnbaDailySlateFromDb();
+    wnbaSlateProjectionCache = null;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('wnba/slate/today DELETE failed', err);
+    res.status(500).json({ error: 'wnba slate today clear failed' });
+  }
+});
+
+// Public stat catalog so the frontend admin form can show valid keys.
+wnbaRouter.get('/slate/stats', (_req, res) => {
+  res.json({ stats: listWnbaStatKeys() });
 });
 
 wnbaRouter.get('/today', async (req, res) => {

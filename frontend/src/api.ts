@@ -2314,6 +2314,88 @@ export async function getWnbaPlayerGameLog(athleteId: string): Promise<WnbaGameL
   return (await res.json()) as WnbaGameLogResponse;
 }
 
+// ============================================================
+// WNBA Slate (Phase 77 v1) — admin paste + public top-edges view
+// ============================================================
+
+export type WnbaProjectedLine = {
+  athleteId: string;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  projection: number;
+  probability: number;
+  edgePercent: number;
+  l5Avg: number;
+  l10Avg: number;
+  seasonAvg: number;
+  l10HitRate: number;
+  l10HitCount: number;
+  trapScore: number;
+  fragilityScore: number;
+  momentumScore: number;
+  reasonCodes: string[];
+};
+
+export type WnbaSlateResponse = {
+  slate: {
+    date: string;
+    count: number;
+    rawText: string | null;
+    updatedAt: string;
+  } | null;
+  resolved: {
+    lines: WnbaProjectedLine[];
+    unresolved: Array<{ raw: { playerName: string; statKey: string }; reason: string }>;
+    lineCount: number;
+    disclaimer: string;
+  } | null;
+};
+
+export async function getWnbaSlate(): Promise<WnbaSlateResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/slate/today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaSlateResponse;
+}
+
+export async function publishWnbaSlate(opts: {
+  rawText: string;
+  adminSecret: string;
+}): Promise<{ ok: boolean; date: string; count: number; parseErrors: Array<{ line: string; reason: string }>; unresolved: Array<{ rawText: string; reason: string }> }> {
+  const res = await fetch(`${API_BASE}/api/wnba/slate/today`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-admin-secret': opts.adminSecret,
+    },
+    body: JSON.stringify({ rawText: opts.rawText }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as { ok: boolean; date: string; count: number; parseErrors: Array<{ line: string; reason: string }>; unresolved: Array<{ rawText: string; reason: string }> };
+}
+
+export async function clearWnbaSlate(opts: { adminSecret: string }): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/wnba/slate/today`, {
+    method: 'DELETE',
+    headers: { 'x-admin-secret': opts.adminSecret },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export type WnbaStatMeta = { key: string; label: string };
+export async function getWnbaSlateStats(): Promise<WnbaStatMeta[]> {
+  const res = await fetch(`${API_BASE}/api/wnba/slate/stats`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { stats: WnbaStatMeta[] };
+  return data.stats;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {

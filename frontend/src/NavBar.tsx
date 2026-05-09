@@ -52,9 +52,10 @@ const MLB_SUBNAV: SubnavItem[] = [
 
 // WNBA subnav grows as Phase 74-78 ship each surface. Only the items
 // that ACTUALLY exist appear here per the mission's "no fake
-// completeness" rule. Slate / Calibration land in their own phases.
+// completeness" rule. Calibration lands in Phase 78.
 const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/wnba/compare' },
+  { label: 'Slate', path: '/wnba/slate' },
   { label: 'Standings', path: '/wnba/standings' },
 ];
 
