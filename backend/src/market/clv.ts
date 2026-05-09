@@ -109,6 +109,18 @@ export type ClvTrustScore = {
     beatMarket: number;
     beatRate: number | null;
   }>;
+  // Per-(sport, stat) breakdown so the audit page can show WHERE
+  // our process has edge. Sorted by abs(beatRate − 50) DESC so the
+  // most-discriminating stats surface first.
+  byStat: Array<{
+    sport: string;
+    stat: string;
+    samples: number;
+    withClosing: number;
+    beatMarket: number;
+    beatRate: number | null;
+    averageLineDelta: number | null;
+  }>;
 };
 
 export async function computeTrustScore(opts: { windowDays: number }): Promise<ClvTrustScore> {
@@ -122,6 +134,7 @@ export async function computeTrustScore(opts: { windowDays: number }): Promise<C
   let beatMarket = 0;
   let lostToMarket = 0;
   const bySport: ClvTrustScore['bySport'] = [];
+  const byStat: ClvTrustScore['byStat'] = [];
   for (const s of summaries) {
     withClosing += s.withClosing;
     beatMarket  += s.beatMarket;
@@ -134,7 +147,30 @@ export async function computeTrustScore(opts: { windowDays: number }): Promise<C
         beatRate: s.beatRate,
       });
     }
+    // Flatten per-sport byStatType into a single (sport, stat) list.
+    for (const st of s.byStatType) {
+      if (st.withClosing === 0) continue;
+      byStat.push({
+        sport: s.sport,
+        stat: st.stat,
+        samples: st.samples,
+        withClosing: st.withClosing,
+        beatMarket: st.beatMarket,
+        beatRate: st.beatRate,
+        averageLineDelta: st.averageLineDelta,
+      });
+    }
   }
+
+  // Rank by how far from 50% the beat rate is — both directions are
+  // signal. A 38% beat rate is just as informative as a 62%; both
+  // tell us the model has a directional read on that stat type.
+  byStat.sort((a, b) => {
+    const ad = a.beatRate === null ? -1 : Math.abs(a.beatRate - 50);
+    const bd = b.beatRate === null ? -1 : Math.abs(b.beatRate - 50);
+    return bd - ad;
+  });
+
   const beatRate = withClosing === 0
     ? null
     : Math.round((beatMarket / withClosing) * 1000) / 10;
@@ -146,6 +182,7 @@ export async function computeTrustScore(opts: { windowDays: number }): Promise<C
     lostToMarket,
     beatRate,
     bySport,
+    byStat,
   };
 }
 

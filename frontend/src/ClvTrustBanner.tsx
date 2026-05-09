@@ -72,7 +72,7 @@ export function ClvTrustBanner() {
           </h2>
         </div>
         <Link
-          to="/dashboard"
+          to="/clv"
           style={{ fontSize: 12, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none' }}
         >
           Full CLV report →

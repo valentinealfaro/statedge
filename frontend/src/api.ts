@@ -1953,6 +1953,15 @@ export type ClvTrustWindow = {
     beatMarket: number;
     beatRate: number | null;
   }>;
+  byStat: Array<{
+    sport: string;
+    stat: string;
+    samples: number;
+    withClosing: number;
+    beatMarket: number;
+    beatRate: number | null;
+    averageLineDelta: number | null;
+  }>;
 };
 export type ClvTrustScoreResponse = {
   window7d: ClvTrustWindow;
