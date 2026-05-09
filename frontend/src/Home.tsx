@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { EnginePulseStrip } from './EnginePulseStrip';
+import { HomeEliteTeaser } from './HomeEliteTeaser';
 import { HomeHero } from './HomeHero';
 import { LatestNewsRail } from './LatestNewsRail';
 import { LiveDeck } from './LiveDeck';
@@ -22,6 +23,11 @@ export function Home() {
           source has data; click-through to /methodology for the
           full operational view. */}
       <EnginePulseStrip />
+
+      {/* Today's Elite play — cross-sport ticket teaser. The
+          institutional-grade card front-and-center on Home so
+          users see the headline pick before scrolling for context. */}
+      <HomeEliteTeaser />
 
       {/* CLV truth metric — the institutional credential. Pinned high
           so the data-first promise is visible, not buried. Banner
