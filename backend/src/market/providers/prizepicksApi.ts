@@ -51,9 +51,15 @@ const PP_BASE = 'https://api.prizepicks.com';
 // Browser-like headers. PrizePicks' Cloudflare blocks generic bots;
 // this set mirrors what a real Chrome session sends to api.prizepicks.com
 // when the iOS / web app pulls projections.
+//
+// Phase 103g-bis: added sec-ch-ua client-hints + priority + dnt after
+// initial deploy hit 403 from Vercel's datacenter IPs. Cloudflare
+// fingerprints these headers; a generic UA-only set wasn't enough.
+// If 403s persist, the IP itself is flagged — fall back to the
+// browser-side capture pattern (user's residential IP isn't blocked).
 const BROWSER_HEADERS: Record<string, string> = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json',
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.156 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
   'Accept-Language': 'en-US,en;q=0.9',
   'Accept-Encoding': 'gzip, deflate, br',
   'Origin': 'https://app.prizepicks.com',
@@ -61,6 +67,16 @@ const BROWSER_HEADERS: Record<string, string> = {
   'Sec-Fetch-Site': 'same-site',
   'Sec-Fetch-Mode': 'cors',
   'Sec-Fetch-Dest': 'empty',
+  // Client hints — Chrome sends these on every fetch from app.*
+  'sec-ch-ua': '"Google Chrome";v="124", "Chromium";v="124", "Not-A.Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"macOS"',
+  // Priority hint — modern Chrome sets this on XHR / fetch.
+  'priority': 'u=1, i',
+  'dnt': '1',
+  // Cache + connection hints that real browsers send. Cache-Control
+  // unset lets the server decide; if-none-match wouldn't apply here.
+  'Connection': 'keep-alive',
 };
 
 // ---------- JSON:API response shape ----------
