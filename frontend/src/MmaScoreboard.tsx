@@ -15,6 +15,7 @@ import {
   type UfcMoneylineEvent,
   type UfcScoreboardResponse,
 } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -107,6 +108,8 @@ export function MmaScoreboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {events.map((e) => <EventCard key={e.id} event={e} moneylineByFighter={moneylineByFighter} />)}
         </div>
+
+        <LatestNewsRail sport="mma" limit={4} heading="UFC News & Recaps" />
       </div>
     </div>
   );

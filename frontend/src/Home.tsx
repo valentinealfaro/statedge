@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LatestNewsRail } from './LatestNewsRail';
 import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
 import { RecentsRail } from './RecentsRail';
@@ -48,6 +49,8 @@ export function Home() {
       <section className="home-recents">
         <RecentsRail heading="Pick up where you left off" />
       </section>
+
+      <LatestNewsRail limit={4} />
 
       <TodayGames />
       <SlateTeaser />
