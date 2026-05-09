@@ -151,6 +151,13 @@ export function NavBar() {
             >
               News
             </Link>
+            <Link
+              to="/clv"
+              className={pathname === '/clv' || pathname === '/calibration' || pathname === '/methodology' ? 'navlink active' : 'navlink'}
+              title="Truth metric: CLV + Calibration + Methodology"
+            >
+              Truth
+            </Link>
           </div>
         ) : (
           <div className="nav-links">
@@ -177,6 +184,13 @@ export function NavBar() {
               className={pathname.startsWith('/news') ? 'navlink active' : 'navlink'}
             >
               News
+            </Link>
+            <Link
+              to="/clv"
+              className={pathname === '/clv' || pathname === '/calibration' || pathname === '/methodology' ? 'navlink active' : 'navlink'}
+              title="Truth metric: CLV + Calibration + Methodology"
+            >
+              Truth
             </Link>
             <Link to="/pricing" className={pathname.startsWith('/pricing') ? 'navlink active' : 'navlink'}>
               Upgrade

@@ -25,6 +25,7 @@ import {
   type WnbaSlateResponse,
 } from './api';
 import { ClvTrustBanner } from './ClvTrustBanner';
+import { EngineStatus } from './EngineStatus';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -294,6 +295,10 @@ export function Dashboard() {
             </div>
           </>
         )}
+
+        {/* Operational pulse — counters showing the engine is
+            actively running. Institutional command-center context. */}
+        <EngineStatus />
 
         {/* Cross-sport latest articles — closes the Command Center
             with auto-content surfaced where the institutional user
