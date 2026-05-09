@@ -33,6 +33,7 @@ import {
   type PrizepicksIngestResult,
   type RawMlbSlateLine,
 } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
@@ -826,6 +827,9 @@ export function MlbSlate() {
         <div style={{ marginTop: 24 }}>
           <MlbTodaysGames />
         </div>
+
+        {/* Auto-generated MLB news rail at the foot of the page. */}
+        <LatestNewsRail sport="mlb" limit={4} heading="MLB News & Analysis" />
       </div>
     </div>
   );

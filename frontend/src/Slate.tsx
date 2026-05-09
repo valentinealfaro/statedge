@@ -23,6 +23,7 @@ import {
 import { PlayerAvatar, TeamLogo } from './Avatar';
 import { edgeScore } from './edgeScore';
 import { useFavorites, type FavoritesAPI } from './favorites';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { NbaPlayerDrilldown, type NbaDrilldownPlayer } from './NbaPlayerDrilldown';
 import { WhyPickPanel } from './WhyPickPanel';
@@ -415,6 +416,10 @@ export function Slate() {
           canAnalyze={isPro}
         />
       )}
+
+      {/* News rail at the foot of the slate so users see auto-recaps
+          + edge analysis articles in the sport context they're shopping. */}
+      <LatestNewsRail sport="nba" limit={4} heading="NBA News & Analysis" />
     </div>
   );
 }
