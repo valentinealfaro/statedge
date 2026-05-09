@@ -2322,12 +2322,18 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .best-picks-rail {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr) so grid items can shrink below their min-content
+     (default is min-content). Without this, the WhyPickPanel + Phase
+     100 'WHY MARKET MAY BE WRONG' callout text causes columns to
+     expand past the .mlb-compare-shell max-width and uncentre the
+     whole rail. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
+.best-picks-rail > * { min-width: 0; }
 @media (max-width: 980px) {
   .best-picks-rail {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 620px) {
