@@ -12,6 +12,7 @@ import {
   generateDailyEdgePreviews,
   generateSlatePublishArticles,
 } from '../news/generator.js';
+import { fetchMlbBigGameInputs } from '../news/mlbBigGameFetcher.js';
 import {
   getArticleBySlug,
   listArticles,
@@ -108,6 +109,125 @@ newsRouter.post('/generate', async (req, res) => {
     res.json({ ok: true, bundle: body.bundle, articles });
   } catch (err) {
     console.error('news/generate failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ---------- Vercel Cron handlers (Phase 104i) ----------
+//
+// Vercel Cron only fires GET requests. Each cron path validates the
+// Authorization Bearer header against CRON_SECRET. Schedules live in
+// backend/vercel.json.
+
+function requireCronAuth(req: Parameters<Parameters<typeof newsRouter.get>[1]>[0]): string | null {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return 'CRON_SECRET not configured';
+  const authHeader = req.header('authorization') ?? '';
+  if (authHeader !== `Bearer ${cronSecret}`) return 'cron auth required';
+  return null;
+}
+
+// ET-date helper (matches generator.ts). News cadence is anchored to
+// the user's perceived "today" (Eastern Time), not UTC.
+function todayEt(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+function yesterdayEt(): string {
+  // Step back one ET day. Using the local date arithmetic is safe
+  // because we only care about a YYYY-MM-DD string.
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}
+
+// GET /api/news/cron/big-game — fires several times during evening ET.
+// Pulls today's completed MLB games, runs detector, persists articles.
+// NBA + WNBA detection added when their boxscore fetchers are wired.
+newsRouter.get('/cron/big-game', async (req, res) => {
+  const authErr = requireCronAuth(req);
+  if (authErr) {
+    res.status(authErr.includes('configured') ? 503 : 401).json({ error: authErr });
+    return;
+  }
+  try {
+    const date = (req.query.date as string | undefined) ?? todayEt();
+    const inputs = await fetchMlbBigGameInputs(date);
+    const articles = await generateBigGameArticles({ inputs });
+    res.json({
+      ok: true,
+      date,
+      sport: 'mlb',
+      gamesScanned: new Set(inputs.map((i) => i.game.eventId)).size,
+      playersScanned: inputs.length,
+      articlesGenerated: articles.length,
+      articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
+    });
+  } catch (err) {
+    console.error('cron/big-game failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/news/cron/clv-recap — daily morning ET. Reads yesterday's
+// CLV summary from the market_snapshots × projection_history join,
+// persists per-sport articles. No external data — fully wired.
+newsRouter.get('/cron/clv-recap', async (req, res) => {
+  const authErr = requireCronAuth(req);
+  if (authErr) {
+    res.status(authErr.includes('configured') ? 503 : 401).json({ error: authErr });
+    return;
+  }
+  try {
+    const date = (req.query.date as string | undefined) ?? yesterdayEt();
+    const articles = await generateDailyClvRecaps({ date });
+    res.json({
+      ok: true,
+      date,
+      articlesGenerated: articles.length,
+      articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
+    });
+  } catch (err) {
+    console.error('cron/clv-recap failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/news/cron/edge-preview — morning ET. Re-frames the day's
+// dislocations as a forward-looking preview. Edges aren't recomputed
+// here — caller should POST /api/news/generate with bundle=edge-preview
+// from the slate publish path. This cron only runs if there are no
+// edge_preview articles for today already (covers slates that publish
+// before the edge_preview cadence kicks in).
+//
+// For now this endpoint is a no-op when no edges are passed. Wiring
+// a "fetch latest edges from DB" helper is a small follow-up; keeping
+// the cron path live so the scheduler entry is stable.
+newsRouter.get('/cron/edge-preview', async (req, res) => {
+  const authErr = requireCronAuth(req);
+  if (authErr) {
+    res.status(authErr.includes('configured') ? 503 : 401).json({ error: authErr });
+    return;
+  }
+  try {
+    const date = (req.query.date as string | undefined) ?? todayEt();
+    const articles = await generateDailyEdgePreviews({ edges: [], date });
+    res.json({
+      ok: true,
+      date,
+      articlesGenerated: articles.length,
+      note: articles.length === 0
+        ? 'no-op: edges store fetcher pending; slate-publish flow already auto-generates'
+        : undefined,
+    });
+  } catch (err) {
+    console.error('cron/edge-preview failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });

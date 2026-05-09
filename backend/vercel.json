@@ -9,5 +9,18 @@
       "memory": 1024
     }
   },
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/news/cron/big-game",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/news/cron/clv-recap",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/news/cron/edge-preview",
+      "schedule": "0 15 * * *"
+    }
+  ]
 }
