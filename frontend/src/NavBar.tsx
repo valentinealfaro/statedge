@@ -41,6 +41,7 @@ const NBA_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/nba/compare' },
   { label: 'Slate', path: '/nba/slate' },
   { label: 'Standings', path: '/nba/standings' },
+  { label: 'Calibration', path: '/nba/calibration' },
 ];
 
 const MLB_SUBNAV: SubnavItem[] = [

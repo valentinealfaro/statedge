@@ -12,6 +12,7 @@ import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
 import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
+import { NbaCalibration } from './NbaCalibration';
 import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
@@ -40,6 +41,7 @@ export function App() {
           <Route path="/nba/compare" element={<Compare />} />
           <Route path="/nba/slate" element={<Slate />} />
           <Route path="/nba/standings" element={<Standings />} />
+          <Route path="/nba/calibration" element={<NbaCalibration />} />
           <Route path="/nba/player/:playerId" element={<PlayerLog />} />
 
           {/* MLB — already mostly sport-grouped; canonical path
