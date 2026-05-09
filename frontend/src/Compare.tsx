@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { NavBar } from './NavBar';
 import { PlayerSearch } from './PlayerSearch';
 import { TeamPicker } from './TeamPicker';
@@ -225,6 +226,12 @@ export function Compare() {
       <NavBar />
       <FreshnessBanner />
       <PlanGate />
+
+      {/* NBA-scoped truth metric — when users are deciding to trust
+          a player projection, our beat rate on this sport is the
+          credential that matters. Self-hides until graded volume
+          accumulates (NBA projection_history is currently sparse). */}
+      <ClvTrustBanner sport="nba" />
 
       <div className="mode-tabs">
         {visibleModes.map((m) => (

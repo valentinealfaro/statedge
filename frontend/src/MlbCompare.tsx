@@ -19,6 +19,7 @@ import {
   type MlbSearchPlayer,
   type MlbStatMeta,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { MlbPlayersByGame } from './MlbPlayersByGame';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
@@ -182,6 +183,10 @@ export function MlbCompare() {
           the most recent 10 games with average, median, range,
           consistency, and hit rate against your line.
         </p>
+
+        {/* MLB-scoped truth metric — research surface deserves the
+            same accuracy receipt as the slate. */}
+        <ClvTrustBanner sport="mlb" />
 
         {!dbReady && health && (
           <div className="mlb-info-banner">

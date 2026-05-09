@@ -18,6 +18,7 @@ import {
   type WnbaGameLogResponse,
   type WnbaSearchPlayer,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { WnbaTodaysGames } from './WnbaTodaysGames';
@@ -81,6 +82,9 @@ export function WnbaCompare() {
           across every standard prop stat. Pulled live from ESPN's
           gamelog feed; cached 5 min per player.
         </p>
+
+        {/* WNBA-scoped truth metric. */}
+        <ClvTrustBanner sport="wnba" />
 
         <PlayerSearch onSelect={setSelected} selected={selected} />
 
