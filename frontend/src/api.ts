@@ -1941,6 +1941,55 @@ export async function getUfcMoneylines(): Promise<UfcMoneylinesResponse> {
   return (await res.json()) as UfcMoneylinesResponse;
 }
 
+// StatEdge Elite — institutional 3-leg ticket (Phase 131)
+export type EliteEdgeReason =
+  | 'market_disagreement'
+  | 'model_disagreement'
+  | 'clv_opportunity'
+  | 'role_expansion'
+  | 'public_overreaction'
+  | 'matchup_asymmetry'
+  | 'historical_archetype';
+export type EliteLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  edgePercent: number;
+  trapScore: number;
+  fragilityScore: number;
+  marketImpliedProb: number | null;
+  publicBiasTags: string[];
+  sharpnessScore: number | null;
+  edgeDurability: 'stable' | 'mixed' | 'fragile' | null;
+  qualifyingEdge: EliteEdgeReason;
+};
+export type EliteTicket = {
+  legs: [EliteLeg, EliteLeg, EliteLeg];
+  combinedProbability: number;
+  combinedFairPayout: number;
+  combinedEdgePercent: number;
+  dislocationScore: number;
+  grade: 'A+' | 'A' | 'B';
+  rationale: string[];
+};
+export type EliteResponse = {
+  date?: string;
+  candidatesScanned?: number;
+  ticket: EliteTicket | null;
+  reason: string | null;
+  disclaimer?: string;
+};
+export async function getMlbEliteToday(): Promise<EliteResponse> {
+  const res = await fetch(`${API_BASE}/api/mlb/elite/today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as EliteResponse;
+}
+
 // Per-player projection history (Phase 128)
 export type MlbPlayerProjection = {
   gameDate: string;

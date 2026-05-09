@@ -100,6 +100,14 @@ export function NavBar() {
         {isPro ? (
           <div className="nav-links">
             <Link
+              to="/elite"
+              className={pathname === '/elite' ? 'navlink active' : 'navlink'}
+              style={{ color: pathname === '/elite' ? '#0d1117' : '#ffd54f', background: pathname === '/elite' ? 'linear-gradient(135deg, #ffd54f 0%, #f9a825 100%)' : undefined, fontWeight: 800 }}
+              title="Institutional 3-leg service"
+            >
+              ★ Elite
+            </Link>
+            <Link
               to="/dashboard"
               className={pathname === '/dashboard' ? 'navlink active' : 'navlink'}
             >

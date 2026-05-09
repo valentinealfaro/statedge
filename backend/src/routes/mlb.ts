@@ -39,6 +39,7 @@ import {
 } from '../services/mlbLast10Engine.js';
 import { projectMlbStat } from '../services/mlbProjectionEngine.js';
 import { resolveMlbSlate, type RawMlbLine } from '../services/mlbSlatePipeline.js';
+import { buildMlbElite } from '../services/mlbEliteBuilder.js';
 import { buildMlbSlate, type MlbSlateMode } from '../services/mlbSlateBuilder.js';
 import {
   listMlbProjections,
@@ -486,6 +487,50 @@ async function purgeMlbSlateCache(): Promise<void> {
 //
 // "Today" is the US Eastern calendar date; matches the NBA flow so
 // MLB's daily-slate semantics are consistent.
+// GET /api/mlb/elite/today
+//
+// StatEdge Elite institutional 3-leg ticket. Pulls today's published
+// slate, resolves + projects every line, runs the strict Elite filter
+// + 3-leg combo optimizer, returns at most ONE ticket. Returns null
+// when no qualifying combination exists — the spec's "publish nothing"
+// rule is enforced at the response level.
+mlbRouter.get('/elite/today', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ ticket: null, reason: 'database not configured' });
+    return;
+  }
+  try {
+    const stored = await getMlbDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ ticket: null, reason: 'no slate published yet' });
+      return;
+    }
+    const { lines: resolvedLines } = await resolveMlbSlate(
+      stored.lines.map((l) => ({
+        playerId: l.playerId,
+        statKey: l.statKey as MlbStatKey,
+        line: l.line,
+        direction: l.direction,
+        gamePk: l.gamePk,
+        opponentTeamId: l.opponentTeamId,
+        isHome: l.isHome,
+        opposingPitcherId: l.opposingPitcherId,
+      })),
+    );
+    const ticket = buildMlbElite(resolvedLines);
+    res.json({
+      date: stored.date,
+      candidatesScanned: resolvedLines.length,
+      ticket,
+      reason: ticket === null ? 'no 3-leg combination cleared the institutional filter today' : null,
+      disclaimer: MLB_DISCLAIMER,
+    });
+  } catch (err) {
+    console.error('mlb/elite/today failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 mlbRouter.get('/slate/today', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });
