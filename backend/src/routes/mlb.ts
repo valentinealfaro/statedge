@@ -308,6 +308,66 @@ mlbRouter.get('/player/:playerId/last-10', async (req, res) => {
   }
 });
 
+// GET /api/mlb/player/:playerId/projection-history?statKey=&windowDays=
+//
+// Per-player + per-stat projection trail — every prior projection
+// we shipped on this player's stat, with our projected value, the
+// line we projected against, the actual outcome (when graded), and
+// the hit/miss verdict. The deepest possible truth-metric surface
+// scoped to a single decision: "what has the model said about
+// THIS player on THIS stat, and how often was it right?"
+//
+// Defaults: 90-day window, graded rows only (you can't draw a
+// chart of ungraded projections meaningfully).
+mlbRouter.get('/player/:playerId/projection-history', async (req, res) => {
+  try {
+    const playerId = Number(req.params.playerId);
+    if (!Number.isFinite(playerId) || playerId <= 0) {
+      res.status(400).json({ error: 'Invalid playerId.' });
+      return;
+    }
+    const statKey = (req.query.statKey as string | undefined) ?? null;
+    const windowDays = req.query.windowDays
+      ? Math.max(7, Math.min(365, Number(req.query.windowDays)))
+      : 90;
+    const includeUngraded = req.query.includeUngraded === '1' || req.query.includeUngraded === 'true';
+
+    const all = await listMlbProjections({
+      windowDays,
+      graded: includeUngraded ? 'all' : 'graded',
+    });
+    const filtered = all.filter((p) => {
+      if (p.playerId !== playerId) return false;
+      if (statKey && p.selectedStat !== statKey) return false;
+      return true;
+    });
+    // Oldest → newest so the chart reads left-to-right chronologically.
+    filtered.sort((a, b) => a.gameDate.localeCompare(b.gameDate));
+
+    res.json({
+      playerId,
+      statKey,
+      windowDays,
+      count: filtered.length,
+      projections: filtered.map((p) => ({
+        gameDate: p.gameDate,
+        selectedStat: p.selectedStat,
+        lineValue: p.lineValue,
+        direction: p.direction,
+        projectionValue: p.projectionValue,
+        probability: p.probability,
+        cardType: p.cardType,
+        resultValue: p.resultValue,
+        hitOrMiss: p.hitOrMiss,
+        gradedAt: p.gradedAt,
+      })),
+    });
+  } catch (err) {
+    console.error('mlb/player/:id/projection-history failed', err);
+    res.status(500).json({ error: 'projection-history failed' });
+  }
+});
+
 // GET /api/mlb/projection?playerId=&stat=&line=&direction=&opponentTeamId=&isHome=
 //
 // Single-leg projection. Returns the model's projected value, the

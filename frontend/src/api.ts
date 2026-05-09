@@ -1941,6 +1941,47 @@ export async function getUfcMoneylines(): Promise<UfcMoneylinesResponse> {
   return (await res.json()) as UfcMoneylinesResponse;
 }
 
+// Per-player projection history (Phase 128)
+export type MlbPlayerProjection = {
+  gameDate: string;
+  selectedStat: string;
+  lineValue: number;
+  direction: 'OVER' | 'UNDER';
+  projectionValue: number;
+  probability: number;
+  cardType: string | null;
+  resultValue: number | null;
+  hitOrMiss: boolean | null;
+  gradedAt: string | null;
+};
+export async function getMlbPlayerProjectionHistory(opts: {
+  playerId: number;
+  statKey?: string;
+  windowDays?: number;
+  includeUngraded?: boolean;
+}): Promise<{
+  playerId: number;
+  statKey: string | null;
+  windowDays: number;
+  count: number;
+  projections: MlbPlayerProjection[];
+}> {
+  const p = new URLSearchParams();
+  if (opts.statKey) p.set('statKey', opts.statKey);
+  if (opts.windowDays) p.set('windowDays', String(opts.windowDays));
+  if (opts.includeUngraded) p.set('includeUngraded', '1');
+  const url = `${API_BASE}/api/mlb/player/${encodeURIComponent(String(opts.playerId))}/projection-history?${p.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as {
+    playerId: number;
+    statKey: string | null;
+    windowDays: number;
+    count: number;
+    projections: MlbPlayerProjection[];
+  };
+}
+
 // CLV Trust Score (Phase 111)
 export type ClvTrustWindow = {
   windowDays: number;

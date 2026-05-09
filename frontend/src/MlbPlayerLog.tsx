@@ -28,6 +28,7 @@ import {
 } from './api';
 import { NavBar } from './NavBar';
 import { PlayerNewsSection } from './PlayerNewsSection';
+import { PlayerProjectionTrail } from './PlayerProjectionTrail';
 import { PlayerStatCalibration } from './PlayerStatCalibration';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -161,6 +162,17 @@ export function MlbPlayerLog() {
                 sport="mlb"
                 playerId={playerId}
                 statKey={selectedStat}
+              />
+            )}
+
+            {/* Per-game projection trail — every prior projection on
+                this player+stat charted vs the actual outcome. The
+                deepest possible drill-down on the truth metric. */}
+            {selectedStat && (
+              <PlayerProjectionTrail
+                playerId={playerId}
+                statKey={selectedStat}
+                statLabel={stats.find((s) => s.key === selectedStat)?.label ?? selectedStat}
               />
             )}
           </section>
