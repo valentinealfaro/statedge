@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
+import { buildNbaElite } from '../services/nbaEliteBuilder.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -397,6 +398,45 @@ async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
 // visitors see tonight's lines without anyone having to publish.
 // We auto-resolve on GET so the response carries fully populated
 // cards (with model probabilities) ready to render.
+// GET /api/slate/elite/today
+//
+// NBA Elite — institutional 3-leg ticket (or 2-leg fallback) for the
+// NBA slate. Mirrors /api/mlb/elite/today's contract so the frontend
+// can render either sport with one component.
+slateRouter.get('/elite/today', async (_req, res) => {
+  if (!isDbConfigured()) {
+    res.json({ ticket: null, reason: 'database not configured' });
+    return;
+  }
+  try {
+    const stored = await getDailySlateFromDb();
+    if (!stored || stored.lines.length === 0) {
+      res.json({ ticket: null, reason: 'no slate published yet' });
+      return;
+    }
+    const raw: RawLine[] = stored.lines.map((l) => ({
+      playerName: l.playerName,
+      statLabel: l.statLabel,
+      line: l.line,
+      team: l.team,
+      opponentAbbr: l.opponentAbbr ?? null,
+      direction: l.direction ?? 'both',
+    }));
+    const resolved = await resolveSlate(raw, 'manual');
+    const ticket = buildNbaElite(resolved.lines);
+    res.json({
+      candidatesScanned: resolved.lines.length,
+      ticket,
+      reason: ticket === null
+        ? 'no 3-leg or 2-leg combination cleared the institutional filter today'
+        : null,
+    });
+  } catch (err) {
+    console.error('slate/elite/today failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 slateRouter.get('/today', async (req, res) => {
   if (!isDbConfigured()) {
     res.json({ slate: null, resolved: null });

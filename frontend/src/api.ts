@@ -1988,10 +1988,19 @@ export type EliteResponse = {
   disclaimer?: string;
 };
 export async function getMlbEliteToday(): Promise<EliteResponse> {
-  const res = await fetch(`${API_BASE}/api/mlb/elite/today`);
+  return getEliteToday('mlb');
+}
+
+export async function getNbaEliteToday(): Promise<EliteResponse> {
+  return getEliteToday('nba');
+}
+
+async function getEliteToday(sport: 'mlb' | 'nba'): Promise<EliteResponse> {
+  const url = sport === 'nba'
+    ? `${API_BASE}/api/slate/elite/today`
+    : `${API_BASE}/api/mlb/elite/today`;
+  const res = await fetch(url);
   if (!res.ok) {
-    // Surface the backend error body so users (and devs in prod) can
-    // see WHY the endpoint failed instead of a generic "HTTP 500".
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json() as { error?: string };

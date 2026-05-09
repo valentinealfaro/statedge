@@ -7,10 +7,17 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMlbEliteToday, type EliteEdgeReason, type EliteLeg, type EliteResponse, type EliteTicket } from './api';
+import { getMlbEliteToday, getNbaEliteToday, type EliteEdgeReason, type EliteLeg, type EliteResponse, type EliteTicket } from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
+
+type EliteSport = 'mlb' | 'nba';
+
+const SPORT_COLOR: Record<EliteSport, string> = {
+  mlb: '#66bb6a',
+  nba: '#7aa2ff',
+};
 
 const EDGE_LABEL: Record<EliteEdgeReason, string> = {
   market_disagreement:    'Market Disagreement',
@@ -42,14 +49,18 @@ const STAT_LABEL: Record<string, string> = {
 
 export function Elite() {
   useTitle(['Elite', '3-Leg Service']);
+  const [sport, setSport] = useState<EliteSport>('mlb');
   const [data, setData] = useState<EliteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getMlbEliteToday()
+    setData(null);
+    setError(null);
+    const fetcher = sport === 'nba' ? getNbaEliteToday : getMlbEliteToday;
+    fetcher()
       .then(setData)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [sport]);
 
   return (
     <div className="app">
@@ -71,6 +82,37 @@ export function Elite() {
             8pp+ edge, sub-35 trap, sub-45 fragility, mandatory edge category).
           </p>
         </header>
+
+        {/* Sport selector — same Elite engine, different slate */}
+        <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          {(['mlb', 'nba'] as const).map((s) => {
+            const active = sport === s;
+            const color = SPORT_COLOR[s];
+            return (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setSport(s)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 4,
+                  border: `1px solid ${active ? color : 'rgba(255,255,255,0.12)'}`,
+                  background: active ? `${color}1a` : 'transparent',
+                  color: active ? color : 'rgba(255,255,255,0.65)',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  letterSpacing: '0.06em',
+                  cursor: 'pointer',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {s.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
 
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
         {!data && !error && (
