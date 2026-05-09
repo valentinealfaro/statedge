@@ -64,15 +64,44 @@ export function Elite() {
           </div>
           <h1 style={{ margin: '4px 0 8px', fontSize: 28 }}>Institutional 3-Leg Service</h1>
           <p className="muted small" style={{ margin: 0, fontSize: 13, lineHeight: 1.6, maxWidth: 720 }}>
-            Low-volume, high-conviction. Every ticket targets a real market dislocation,
-            6× minimum payout, and asymmetric expected value. We never force a ticket — when
-            no qualifying combination exists, the service publishes nothing. Discipline is
-            the product.
+            Low-volume, high-conviction. Spec target is a 3-leg ticket at 6× minimum
+            payout. When no 3-leg combination clears the bar, the engine falls back to
+            the strongest 2-leg pair at 3× payout rather than publish nothing — but
+            only if a pair clears the same per-leg quality gate (60%+ probability,
+            8pp+ edge, sub-35 trap, sub-45 fragility, mandatory edge category).
           </p>
         </header>
 
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
-        {!data && !error && <Skeleton width="100%" height={320} />}
+        {!data && !error && (
+          <div style={{
+            padding: '32px 20px',
+            background: 'rgba(0,0,0,0.25)',
+            border: '1px solid rgba(255,213,79,0.18)',
+            borderRadius: 8,
+            textAlign: 'center',
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: 'rgba(255,213,79,0.85)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              <span style={{
+                display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+                background: '#ffd54f',
+                animation: 'pulse 1.4s ease-in-out infinite',
+              }} />
+              Computing today's institutional ticket
+            </div>
+            <p className="muted small" style={{ marginTop: 10, marginBottom: 0, fontSize: 12, lineHeight: 1.5, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+              Resolving today's slate, projecting every leg, scoring every 3-leg
+              combination against the institutional filter. First load can take 10–20s
+              on a cold backend; subsequent loads are instant.
+            </p>
+            <Skeleton width="100%" height={140} style={{ marginTop: 16 }} />
+            <style>{`@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.4; transform: scale(0.85) } }`}</style>
+          </div>
+        )}
 
         {data && data.ticket && <TicketCard ticket={data.ticket} date={data.date} />}
         {data && !data.ticket && (
@@ -90,11 +119,15 @@ export function Elite() {
           </h3>
           <p className="muted small" style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.6 }}>
             Elite is NOT a daily slate, NOT safest-picks, NOT volume betting. Each ticket
-            must clear: ≥3 different players, ≥3 different games, no correlated stat-family
+            must clear: different players, different games, no correlated stat-family
             stack, every leg ≥60% probability, ≥8pp edge, trap score ≤35, fragility ≤45,
-            combined fair payout ≥6×, and at least one mandatory edge category
-            (market disagreement, model disagreement, CLV opportunity, role expansion,
-            public overreaction, matchup asymmetry, or historical archetype).
+            and at least one mandatory edge category (market disagreement, model
+            disagreement, CLV opportunity, role expansion, public overreaction, matchup
+            asymmetry, or historical archetype).
+          </p>
+          <p className="muted small" style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.6 }}>
+            <strong>Tiers:</strong> 3-leg @ ≥6× combined fair payout (target).
+            2-leg @ ≥3× (fallback when no 3-leg combination qualifies).
           </p>
           <p className="muted small" style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.6 }}>
             <Link to="/methodology" style={{ color: '#7aa2ff' }}>Read the methodology</Link>
@@ -118,8 +151,18 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket; date?: string }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>
-            Today's Elite Ticket {date ? `· ${date}` : ''}
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>Today's Elite Ticket {date ? `· ${date}` : ''}</span>
+            <span style={{
+              padding: '2px 7px',
+              fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+              color: ticket.tier === '3-leg' ? '#ffd54f' : '#7aa2ff',
+              background: ticket.tier === '3-leg' ? 'rgba(255,213,79,0.12)' : 'rgba(122,162,255,0.12)',
+              border: `1px solid ${ticket.tier === '3-leg' ? 'rgba(255,213,79,0.4)' : 'rgba(122,162,255,0.4)'}`,
+              borderRadius: 3,
+            }}>
+              {ticket.tier === '3-leg' ? '3-LEG' : '2-LEG · FALLBACK'}
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 6 }}>
             <span style={{ fontSize: 42, fontWeight: 900, color: gradeColor, lineHeight: 1 }}>
@@ -229,7 +272,8 @@ function NoTicketCard({ reason, candidates }: { reason: string; candidates: numb
       </p>
       {candidates > 0 && (
         <p className="muted small" style={{ margin: 0, fontSize: 12 }}>
-          {candidates} candidates scanned. None cleared the institutional filter.
+          {candidates} candidates scanned. Neither a 3-leg nor a 2-leg combination
+          cleared the institutional filter.
         </p>
       )}
       <p className="muted small" style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, maxWidth: 480, marginLeft: 'auto', marginRight: 'auto', fontStyle: 'italic' }}>

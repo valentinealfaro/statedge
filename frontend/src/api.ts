@@ -1971,7 +1971,8 @@ export type EliteLeg = {
   qualifyingEdge: EliteEdgeReason;
 };
 export type EliteTicket = {
-  legs: [EliteLeg, EliteLeg, EliteLeg];
+  tier: '3-leg' | '2-leg';
+  legs: EliteLeg[];                  // 2 or 3 entries
   combinedProbability: number;
   combinedFairPayout: number;
   combinedEdgePercent: number;

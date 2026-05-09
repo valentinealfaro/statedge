@@ -48,8 +48,11 @@ export type EdgeReason =
   | 'historical_archetype';    // Reserved for similarity matching (Phase 132)
 
 export type EliteTicket = {
-  legs: [EliteLeg, EliteLeg, EliteLeg];
-  // Combined statistics (assumes leg independence — 3-leg correlation
+  // Spec target is 3 legs; fallback to 2 when no 3-leg combo qualifies.
+  // Tier records which path produced the ticket so the UI can label it.
+  tier: '3-leg' | '2-leg';
+  legs: EliteLeg[];                  // 2 or 3 entries
+  // Combined statistics (assumes leg independence — correlation
   // already filtered out by construction rules below)
   combinedProbability: number;       // 0-100
   combinedFairPayout: number;        // 1 / combined_probability
@@ -63,7 +66,8 @@ export type EliteTicket = {
   rationale: string[];
 };
 
-const MIN_FAIR_PAYOUT = 6.0;            // ≥6× per spec
+const MIN_FAIR_PAYOUT_3LEG = 6.0;       // ≥6× per spec for 3-leg
+const MIN_FAIR_PAYOUT_2LEG = 3.0;       // ≥3× for 2-leg fallback
 const MIN_PROBABILITY = 60;             // each leg ≥60% (institutional bar)
 const MAX_TRAP_SCORE = 35;
 const MAX_FRAGILITY = 45;
@@ -73,8 +77,6 @@ export function buildMlbElite(lines: ResolvedMlbLine[]): EliteTicket | null {
   // ---------- 1. Per-leg auto-reject filter ----------
   const eligible: ResolvedMlbLine[] = [];
   for (const l of lines) {
-    // Defensive: an individual line missing a required field shouldn't
-    // 500 the endpoint. Skip the row, keep going.
     try {
       if (!l || !l.projection) continue;
       if (rejectLeg(l)) continue;
@@ -84,7 +86,7 @@ export function buildMlbElite(lines: ResolvedMlbLine[]): EliteTicket | null {
       continue;
     }
   }
-  if (eligible.length < 3) return null;
+  if (eligible.length < 2) return null;
 
   // ---------- 2. Cap to top candidates so we don't combinatorially explode
   // Sort by edge × (1 − trap/100) so the strongest legs lead.
@@ -92,41 +94,66 @@ export function buildMlbElite(lines: ResolvedMlbLine[]): EliteTicket | null {
     try { return legElitenessScore(b) - legElitenessScore(a); }
     catch { return 0; }
   });
-  const candidates = ranked.slice(0, 18);
-  if (candidates.length < 3) return null;
+  const candidates = ranked.slice(0, 24);
+  if (candidates.length < 2) return null;
 
-  // ---------- 3. Generate diversified 3-leg combinations ----------
+  // ---------- 3. Try 3-leg first, then fall back to 2-leg ----------
+  // Spec target is 3-leg @ ≥6× payout. When no 3-leg combination clears
+  // the bar, fall back to a 2-leg @ ≥3× payout so users still get the
+  // best institutional-grade pair the day produced rather than a blank
+  // page. The "publish nothing" rule still applies — both tiers can
+  // return null when nothing qualifies.
+  if (candidates.length >= 3) {
+    const three = bestThreeLeg(candidates);
+    if (three) return three;
+  }
+  return bestTwoLeg(candidates);
+}
+
+function bestThreeLeg(candidates: ResolvedMlbLine[]): EliteTicket | null {
   let best: EliteTicket | null = null;
   let bestScore = -Infinity;
-
   for (let i = 0; i < candidates.length - 2; i++) {
     for (let j = i + 1; j < candidates.length - 1; j++) {
       for (let k = j + 1; k < candidates.length; k++) {
         const a = candidates[i]!;
         const b = candidates[j]!;
         const c = candidates[k]!;
-        // A bad row (unexpected null on a deeply nested field) shouldn't
-        // take down the whole endpoint — skip the combo and keep going.
         try {
-          if (!passesDiversification(a, b, c)) continue;
-          const ticket = scoreTicket(a, b, c);
+          if (!passesDiversificationN([a, b, c])) continue;
+          const ticket = scoreTicket([a, b, c], '3-leg');
           if (!ticket) continue;
-          if (ticket.combinedFairPayout < MIN_FAIR_PAYOUT) continue;
-
-          // Composite ranking: dislocation × payout, weighted by combined edge
+          if (ticket.combinedFairPayout < MIN_FAIR_PAYOUT_3LEG) continue;
           const score = ticket.dislocationScore * Math.log2(ticket.combinedFairPayout) * (1 + ticket.combinedEdgePercent / 100);
-          if (score > bestScore) {
-            bestScore = score;
-            best = ticket;
-          }
+          if (score > bestScore) { bestScore = score; best = ticket; }
         } catch (err) {
-          console.warn('elite combo evaluation failed', (err as Error).message);
-          continue;
+          console.warn('elite 3-leg combo evaluation failed', (err as Error).message);
         }
       }
     }
   }
+  return best;
+}
 
+function bestTwoLeg(candidates: ResolvedMlbLine[]): EliteTicket | null {
+  let best: EliteTicket | null = null;
+  let bestScore = -Infinity;
+  for (let i = 0; i < candidates.length - 1; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const a = candidates[i]!;
+      const b = candidates[j]!;
+      try {
+        if (!passesDiversificationN([a, b])) continue;
+        const ticket = scoreTicket([a, b], '2-leg');
+        if (!ticket) continue;
+        if (ticket.combinedFairPayout < MIN_FAIR_PAYOUT_2LEG) continue;
+        const score = ticket.dislocationScore * Math.log2(ticket.combinedFairPayout) * (1 + ticket.combinedEdgePercent / 100);
+        if (score > bestScore) { bestScore = score; best = ticket; }
+      } catch (err) {
+        console.warn('elite 2-leg combo evaluation failed', (err as Error).message);
+      }
+    }
+  }
   return best;
 }
 
@@ -175,33 +202,37 @@ function legElitenessScore(l: ResolvedMlbLine): number {
 
 // ---------- Diversification ----------
 
-function passesDiversification(a: ResolvedMlbLine, b: ResolvedMlbLine, c: ResolvedMlbLine): boolean {
+// N-leg diversification check (works for 2 and 3 legs).
+function passesDiversificationN(legs: ResolvedMlbLine[]): boolean {
+  if (legs.length < 2) return false;
+
   // No duplicate players
-  const ids = new Set([a.playerId, b.playerId, c.playerId]);
-  if (ids.size < 3) return false;
+  const ids = new Set(legs.map((l) => l.playerId));
+  if (ids.size < legs.length) return false;
 
   // No two legs from the same game (shared environmental risk —
   // weather, blowout script, ump zone all hit simultaneously)
-  const games = [a.gameKey, b.gameKey, c.gameKey].filter((g): g is string => g !== null);
+  const games = legs.map((l) => l.gameKey).filter((g): g is string => g !== null);
   const uniqueGames = new Set(games);
   if (uniqueGames.size < games.length) return false;
 
-  // No two legs with HR-correlated stats on different players that
-  // happen to be in the same game (already blocked above) is fine.
-  // But across legs: don't stack three home_runs OVER bets — that's
-  // weather-correlated. Stat-family monoculture rule.
-  const families = [statFamily(a.statKey), statFamily(b.statKey), statFamily(c.statKey)];
+  // Stat-family monoculture rule: don't let every leg sit on the
+  // same family (e.g. three home_runs OVERS = weather-correlated).
+  // For 3-leg: cap at 2 same-family. For 2-leg: ALL legs same family
+  // is the only invalid case (i.e., 2 of 2). We enforce "no family
+  // accounts for ≥legs.length" — strict same-family ban.
   const familyCounts = new Map<string, number>();
-  for (const f of families) familyCounts.set(f, (familyCounts.get(f) ?? 0) + 1);
+  for (const l of legs) {
+    const f = statFamily(l.statKey);
+    familyCounts.set(f, (familyCounts.get(f) ?? 0) + 1);
+  }
   for (const [, n] of familyCounts) {
-    if (n >= 3) return false;     // all 3 same family = correlated
+    if (n >= legs.length) return false;
   }
 
   // Reuse the existing correlation risk function — if it returns
   // 'High' or 'Very High', the ticket is too correlated for Elite.
-  // Note: computeCorrelationRisk reads team.id off each leg, so pass
-  // the full ResolvedMlbLine objects rather than a thinner adapter.
-  const corr = computeCorrelationRisk([a, b, c]);
+  const corr = computeCorrelationRisk(legs);
   if (corr.tier === 'High' || corr.tier === 'Very High') return false;
 
   return true;
@@ -218,12 +249,9 @@ function statFamily(key: string): string {
 
 // ---------- Ticket scoring ----------
 
-function scoreTicket(a: ResolvedMlbLine, b: ResolvedMlbLine, c: ResolvedMlbLine): EliteTicket | null {
-  const legs: [EliteLeg, EliteLeg, EliteLeg] = [
-    legToElite(a),
-    legToElite(b),
-    legToElite(c),
-  ];
+function scoreTicket(rawLegs: ResolvedMlbLine[], tier: '3-leg' | '2-leg'): EliteTicket | null {
+  if (rawLegs.length < 2) return null;
+  const legs: EliteLeg[] = rawLegs.map(legToElite);
 
   // Combined (assume independence; correlation already filtered)
   const probs = legs.map((l) => l.probability / 100);
@@ -232,7 +260,7 @@ function scoreTicket(a: ResolvedMlbLine, b: ResolvedMlbLine, c: ResolvedMlbLine)
   const combinedFairPayout = combined > 0
     ? Math.round((1 / combined) * 100) / 100
     : 0;
-  const combinedEdgePercent = legs.reduce((s, l) => s + l.edgePercent, 0) / 3;
+  const combinedEdgePercent = legs.reduce((s, l) => s + l.edgePercent, 0) / legs.length;
 
   // Dislocation score per spec
   const dislocationScore = legs.reduce((s, l) => {
@@ -246,11 +274,11 @@ function scoreTicket(a: ResolvedMlbLine, b: ResolvedMlbLine, c: ResolvedMlbLine)
     return s + modelMinusMarket * sharpness * durabilityBonus * publicBiasAdj;
   }, 0);
 
-  const grade = letterGrade({ dislocationScore, combinedFairPayout, combinedEdgePercent });
-
-  const rationale = buildRationale(legs, { combinedFairPayout, dislocationScore, combinedEdgePercent });
+  const grade = letterGrade({ dislocationScore, combinedFairPayout, combinedEdgePercent, tier });
+  const rationale = buildRationale(legs, { combinedFairPayout, dislocationScore, combinedEdgePercent, tier });
 
   return {
+    tier,
     legs,
     combinedProbability,
     combinedFairPayout,
@@ -306,20 +334,32 @@ function classifyEdge(p: ResolvedMlbLine['projection']): EdgeReason {
   return 'model_disagreement';
 }
 
-function letterGrade(s: { dislocationScore: number; combinedFairPayout: number; combinedEdgePercent: number }): 'A+' | 'A' | 'B' {
-  if (s.dislocationScore >= 30 && s.combinedFairPayout >= 8 && s.combinedEdgePercent >= 13) return 'A+';
-  if (s.dislocationScore >= 22 && s.combinedFairPayout >= 6.5 && s.combinedEdgePercent >= 10) return 'A';
+function letterGrade(s: { dislocationScore: number; combinedFairPayout: number; combinedEdgePercent: number; tier: '3-leg' | '2-leg' }): 'A+' | 'A' | 'B' {
+  // Grade thresholds scale with tier: a strong 2-leg pair shouldn't
+  // automatically grade B just because the payout is naturally smaller.
+  if (s.tier === '3-leg') {
+    if (s.dislocationScore >= 30 && s.combinedFairPayout >= 8   && s.combinedEdgePercent >= 13) return 'A+';
+    if (s.dislocationScore >= 22 && s.combinedFairPayout >= 6.5 && s.combinedEdgePercent >= 10) return 'A';
+    return 'B';
+  }
+  // 2-leg: lower payout floor, same edge expectations
+  if (s.dislocationScore >= 22 && s.combinedFairPayout >= 4   && s.combinedEdgePercent >= 13) return 'A+';
+  if (s.dislocationScore >= 16 && s.combinedFairPayout >= 3.2 && s.combinedEdgePercent >= 10) return 'A';
   return 'B';
 }
 
-function buildRationale(legs: [EliteLeg, EliteLeg, EliteLeg], s: { combinedFairPayout: number; dislocationScore: number; combinedEdgePercent: number }): string[] {
+function buildRationale(legs: EliteLeg[], s: { combinedFairPayout: number; dislocationScore: number; combinedEdgePercent: number; tier: '3-leg' | '2-leg' }): string[] {
   const out: string[] = [];
-  out.push(`Combined fair payout ${s.combinedFairPayout.toFixed(1)}× — clears the 6× institutional bar.`);
+  if (s.tier === '3-leg') {
+    out.push(`Combined fair payout ${s.combinedFairPayout.toFixed(1)}× — clears the 6× 3-leg institutional bar.`);
+  } else {
+    out.push(`2-leg fallback · combined fair payout ${s.combinedFairPayout.toFixed(1)}× — no 3-leg combination cleared the 6× bar today, this pair clears the 3× 2-leg fallback.`);
+  }
   out.push(`Mean leg edge ${s.combinedEdgePercent.toFixed(1)}pp; dislocation score ${s.dislocationScore.toFixed(1)}.`);
   const edgeKinds = legs.map((l) => l.qualifyingEdge);
   const uniqueKinds = [...new Set(edgeKinds)];
   out.push(`Qualifying edges: ${uniqueKinds.join(' + ')}.`);
   const games = legs.map((l) => l.team).filter((t): t is string => !!t);
-  out.push(`${new Set(games).size} different teams across 3 different games — environmental risk decorrelated.`);
+  out.push(`${new Set(games).size} different teams across ${legs.length} different games — environmental risk decorrelated.`);
   return out;
 }
