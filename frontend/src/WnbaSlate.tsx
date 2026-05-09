@@ -31,6 +31,7 @@ import {
 } from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
+import { WnbaPlayerDrilldown, type WnbaDrilldownPlayer } from './WnbaPlayerDrilldown';
 import { WnbaTodaysGames } from './WnbaTodaysGames';
 import { useTitle } from './useTitle';
 
@@ -79,6 +80,7 @@ export function WnbaSlate() {
   const [stats, setStats] = useState<WnbaStatMeta[] | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTag>('all');
   const [search, setSearch] = useState('');
+  const [drilldownPlayer, setDrilldownPlayer] = useState<WnbaDrilldownPlayer | null>(null);
 
   // Admin state
   const [adminSecret, setAdminSecret] = useState<string>(() => {
@@ -229,7 +231,11 @@ export function WnbaSlate() {
                 render with their explanatory reason so users see
                 what blocked card construction. */}
             {data.resolved.combos.length > 0 && (
-              <ComboRail combos={data.resolved.combos} resolvedMode={data.resolved.resolvedMode} />
+              <ComboRail
+                combos={data.resolved.combos}
+                resolvedMode={data.resolved.resolvedMode}
+                onPlayerClick={setDrilldownPlayer}
+              />
             )}
 
             <div className="mlb-context-heading" style={{ marginTop: 24, marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
@@ -298,6 +304,17 @@ export function WnbaSlate() {
           <p className="mlb-disclaimer">{data.resolved.disclaimer}</p>
         )}
       </div>
+
+      {drilldownPlayer && data?.resolved && (
+        <WnbaPlayerDrilldown
+          player={drilldownPlayer}
+          combos={data.resolved.combos
+            .map((c) => c.combo)
+            .filter((c): c is WnbaCombo => c !== null)}
+          lines={data.resolved.lines}
+          onClose={() => setDrilldownPlayer(null)}
+        />
+      )}
     </div>
   );
 }
@@ -667,9 +684,11 @@ function useWnbaLiveToday(): WnbaLiveTodayResponse | null {
 function ComboRail({
   combos,
   resolvedMode,
+  onPlayerClick,
 }: {
   combos: Array<{ size: number; label: WnbaCombo['label']; combo: WnbaCombo | null; reason: string }>;
   resolvedMode: string;
+  onPlayerClick: (p: WnbaDrilldownPlayer) => void;
 }) {
   // One shared fetch across all card children — same data, cheaper polling.
   const liveToday = useWnbaLiveToday();
@@ -683,7 +702,7 @@ function ComboRail({
       </div>
       <div className="best-picks-rail">
         {combos.map((slot) => (
-          <ComboCard key={slot.size} slot={slot} liveToday={liveToday} />
+          <ComboCard key={slot.size} slot={slot} liveToday={liveToday} onPlayerClick={onPlayerClick} />
         ))}
       </div>
     </div>
@@ -693,9 +712,11 @@ function ComboRail({
 function ComboCard({
   slot,
   liveToday,
+  onPlayerClick,
 }: {
   slot: { size: number; label: WnbaCombo['label']; combo: WnbaCombo | null; reason: string };
   liveToday: WnbaLiveTodayResponse | null;
+  onPlayerClick: (p: WnbaDrilldownPlayer) => void;
 }) {
   if (!slot.combo) {
     return (
@@ -813,7 +834,13 @@ function ComboCard({
           return (
             <div key={i} className="best-pick-leg-block">
               <div className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onPlayerClick({ athleteId: l.athleteId, playerName: l.playerName, team: l.team })}
+                  className="best-pick-leg-name slate-leg-button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Click for player drilldown"
+                >
                   <WnbaPlayerAvatar playerId={l.athleteId} name={l.playerName} size="md" />
                   {l.playerName}
                   {l.team && (
@@ -822,7 +849,7 @@ function ComboCard({
                       <span>{l.team}</span>
                     </span>
                   )}
-                </span>
+                </button>
                 <span className="best-pick-leg-stat">
                   {l.statLabel} {l.line}
                 </span>

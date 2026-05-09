@@ -24,6 +24,7 @@ import { PlayerAvatar, TeamLogo } from './Avatar';
 import { edgeScore } from './edgeScore';
 import { useFavorites, type FavoritesAPI } from './favorites';
 import { NavBar } from './NavBar';
+import { NbaPlayerDrilldown, type NbaDrilldownPlayer } from './NbaPlayerDrilldown';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
@@ -475,6 +476,8 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
     setSlateMode,
   } = props;
 
+  const [drilldownPlayer, setDrilldownPlayer] = useState<NbaDrilldownPlayer | null>(null);
+
   return (
     <>
       {/* Pinned favorites — your starred players' props at the top
@@ -513,8 +516,17 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
             onLoad={(legs) => setParlay(legs)}
             activeKeys={parlay}
             cardKey={cardKey}
+            onPlayerClick={setDrilldownPlayer}
           />
         </>
+      )}
+
+      {drilldownPlayer && data?.combos && (
+        <NbaPlayerDrilldown
+          player={drilldownPlayer}
+          combos={data.combos}
+          onClose={() => setDrilldownPlayer(null)}
+        />
       )}
 
       {/* Always render — admin panel + today's-games rail + empty
@@ -874,6 +886,7 @@ function BestPicksRail({
   combos,
   onLoad,
   activeKeys,
+  onPlayerClick,
 }: {
   combos: SlateCombo[];
   // Lines kept on the props for a future "click leg → scroll to card"
@@ -882,6 +895,7 @@ function BestPicksRail({
   onLoad: (legs: string[]) => void;
   activeKeys: string[];
   cardKey: (l: SlateResolvedLine) => string;
+  onPlayerClick: (p: NbaDrilldownPlayer) => void;
 }) {
   // Live grading — fetched once at the rail level, threaded into
   // each card. When no games are live, every leg is PENDING and the
@@ -1010,7 +1024,16 @@ function BestPicksRail({
                     {c.closestCandidates.map((l, i) => (
                       <div key={i} className="best-pick-leg-block">
                         <div className="best-pick-leg">
-                          <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onPlayerClick({ playerId: l.playerId, playerName: l.playerName, team: l.team });
+                            }}
+                            className="best-pick-leg-name slate-leg-button"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                            title="Click for player drilldown"
+                          >
                             <PlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
                             {l.playerName}
                             {l.team && (
@@ -1019,7 +1042,7 @@ function BestPicksRail({
                                 <span>{l.team}</span>
                               </span>
                             )}
-                          </span>
+                          </button>
                           <span className="best-pick-leg-stat">
                             {l.statLabel} {l.line}
                           </span>
@@ -1207,7 +1230,16 @@ function BestPicksRail({
                   return (
                   <div key={i} className="best-pick-leg-block">
                     <div className="best-pick-leg">
-                      <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPlayerClick({ playerId: l.playerId, playerName: l.playerName, team: l.team });
+                        }}
+                        className="best-pick-leg-name slate-leg-button"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                        title="Click for player drilldown"
+                      >
                         <PlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
                         {l.playerName}
                         {l.team && (
@@ -1216,7 +1248,7 @@ function BestPicksRail({
                             <span>{l.team}</span>
                           </span>
                         )}
-                      </span>
+                      </button>
                       <span className="best-pick-leg-stat">
                         {l.statLabel}{' '}
                         {l.lineRaised && l.originalLine !== undefined ? (
