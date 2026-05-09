@@ -103,6 +103,15 @@ export type ClvTrustScore = {
   beatMarket: number;
   lostToMarket: number;
   beatRate: number | null;
+  // Phase 118 — Edge Durability metrics. Different question than
+  // beatRate: "how much did the line move at all after we published?"
+  // Together with beatRate they answer the institutional question:
+  // is our process sharper than the market AND is the market
+  // eventually agreeing with us?
+  meanAbsDrift: number | null;     // mean |closing - publish| in stat units
+  stabilityRate: number | null;    // % of graded rows where |delta| < 0.25 (line essentially didn't move)
+  confirmedRate: number | null;    // % where line moved IN OUR FAVOR by >= 0.25 (market validated)
+  erosionRate: number | null;      // % where line moved AGAINST US by >= 0.25 (market disagreed)
   bySport: Array<{
     sport: string;
     withClosing: number;
@@ -175,12 +184,53 @@ export async function computeTrustScore(opts: { windowDays: number }): Promise<C
     ? null
     : Math.round((beatMarket / withClosing) * 1000) / 10;
 
+  // Edge durability — computed across all rows from both summaries.
+  // Direction-aware: an OVER bet is "in our favor" when the line moved
+  // up (we got the lower over); UNDER is the opposite. We re-derive
+  // direction-aware drift here from each row's lineDelta + direction.
+  const allRows = [...mlb.rows, ...wnba.rows];
+  const gradedRows = allRows.filter((r) => r.lineDelta !== null);
+  let meanAbsDrift: number | null = null;
+  let stabilityRate: number | null = null;
+  let confirmedRate: number | null = null;
+  let erosionRate: number | null = null;
+  if (gradedRows.length > 0) {
+    const STABILITY_THRESHOLD = 0.25;
+    let sumAbs = 0;
+    let stable = 0;
+    let confirmed = 0;
+    let eroded = 0;
+    for (const r of gradedRows) {
+      const delta = r.lineDelta!;
+      sumAbs += Math.abs(delta);
+      if (Math.abs(delta) < STABILITY_THRESHOLD) {
+        stable += 1;
+      } else {
+        // Direction-aware: which way is "in our favor"?
+        // OVER beats when line moved UP (delta > 0)
+        // UNDER beats when line moved DOWN (delta < 0)
+        const inFavor = (r.direction === 'OVER' && delta > 0) ||
+                        (r.direction === 'UNDER' && delta < 0);
+        if (inFavor) confirmed += 1;
+        else eroded += 1;
+      }
+    }
+    meanAbsDrift = Math.round((sumAbs / gradedRows.length) * 100) / 100;
+    stabilityRate = Math.round((stable / gradedRows.length) * 1000) / 10;
+    confirmedRate = Math.round((confirmed / gradedRows.length) * 1000) / 10;
+    erosionRate   = Math.round((eroded / gradedRows.length) * 1000) / 10;
+  }
+
   return {
     windowDays: opts.windowDays,
     withClosing,
     beatMarket,
     lostToMarket,
     beatRate,
+    meanAbsDrift,
+    stabilityRate,
+    confirmedRate,
+    erosionRate,
     bySport,
     byStat,
   };

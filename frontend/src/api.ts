@@ -1948,6 +1948,11 @@ export type ClvTrustWindow = {
   beatMarket: number;
   lostToMarket: number;
   beatRate: number | null;
+  // Edge durability (Phase 118)
+  meanAbsDrift: number | null;
+  stabilityRate: number | null;
+  confirmedRate: number | null;
+  erosionRate: number | null;
   bySport: Array<{
     sport: string;
     withClosing: number;

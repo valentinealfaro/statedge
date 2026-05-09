@@ -130,6 +130,55 @@ export function ClvAudit() {
               <WindowTab active={windowKey === 'seasonToDate'} onClick={() => setWindowKey('seasonToDate')}>Season to date</WindowTab>
             </div>
 
+            {/* Edge durability (Phase 118) — different angle on the
+                same data: instead of "did we beat the close" (binary),
+                this measures HOW MUCH the line moved at all. High
+                stability = market kept our line. High confirmation =
+                market validated it by moving in our direction. */}
+            {win && win.meanAbsDrift !== null && (
+              <section style={{ marginBottom: 24 }}>
+                <h2 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
+                  Edge Durability
+                </h2>
+                <p className="muted small" style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.5 }}>
+                  Beyond beat rate: how does the line behave AFTER we publish?
+                  <strong> Stable</strong> = market kept our number (within ±0.25 stat units).
+                  <strong> Confirmed</strong> = line moved <em>in our favor</em> by ≥0.25 (market validated).
+                  <strong> Eroded</strong> = line moved <em>against us</em> by ≥0.25 (market disagreed).
+                  Direction-aware on each row.
+                </p>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 10,
+                }}>
+                  <DurabilityCard
+                    label="Mean Drift"
+                    value={`±${win.meanAbsDrift.toFixed(2)}`}
+                    hint="avg |close − publish| in stat units"
+                  />
+                  <DurabilityCard
+                    label="Stable"
+                    value={win.stabilityRate !== null ? `${win.stabilityRate.toFixed(1)}%` : '—'}
+                    hint="line essentially didn't move"
+                    color="#7aa2ff"
+                  />
+                  <DurabilityCard
+                    label="Confirmed"
+                    value={win.confirmedRate !== null ? `${win.confirmedRate.toFixed(1)}%` : '—'}
+                    hint="market moved in our favor"
+                    color="#66bb6a"
+                  />
+                  <DurabilityCard
+                    label="Eroded"
+                    value={win.erosionRate !== null ? `${win.erosionRate.toFixed(1)}%` : '—'}
+                    hint="market moved against us"
+                    color="#ef5350"
+                  />
+                </div>
+              </section>
+            )}
+
             {/* Per-sport detail */}
             {win && win.bySport.length > 0 && (
               <section style={{ marginBottom: 24 }}>
@@ -323,6 +372,31 @@ export function ClvAudit() {
             </section>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function DurabilityCard({ label, value, hint, color }: { label: string; value: string; hint: string; color?: string }) {
+  return (
+    <div style={{
+      padding: 12,
+      background: 'rgba(0,0,0,0.2)',
+      border: `1px solid ${color ? `${color}33` : 'rgba(255,255,255,0.08)'}`,
+      borderLeft: color ? `3px solid ${color}` : '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 6,
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)',
+      }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, color: color ?? 'inherit', lineHeight: 1 }}>
+        {value}
+      </div>
+      <div className="muted small" style={{ fontSize: 11, marginTop: 4 }}>
+        {hint}
       </div>
     </div>
   );
