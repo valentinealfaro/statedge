@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { listRecentSnapshots, type RawSnapshotRow } from '../market/snapshots.js';
 import { fetchEspnAthleteBio } from '../news/espnBio.js';
 import { fetchGoogleNewsHeadlines } from '../news/externalNews.js';
+import { fetchMlbAthleteBio } from '../news/mlbBio.js';
 import { fetchUfcFightNightInputs } from '../news/mmaFightNightFetcher.js';
 import type { EdgeLeg } from '../news/templates.js';
 import {
@@ -60,20 +61,27 @@ newsRouter.get('/player/:sport/:id', async (req, res) => {
     const id = req.params.id;
     const playerName = (req.query.name as string | undefined) ?? '';
 
-    // ESPN bio enrichment — only when the id makes sense for ESPN.
-    // NBA + WNBA + MMA player ids in our system ARE ESPN athlete ids
-    // (we ingest from ESPN scoreboard). MLB ids are MLB Stats API
-    // ids, so the ESPN endpoint won't recognize them — skip those.
+    // Bio enrichment — sport-routed because IDs aren't shared:
+    //   - NBA / WNBA / MMA player ids in our system ARE ESPN athlete
+    //     ids (we ingest from ESPN scoreboard) → use fetchEspnAthleteBio
+    //   - MLB ids are MLB Stats API ids → use MLB Stats /people endpoint
+    //     directly (109a) which returns the same fields ESPN does, with
+    //     bonus MLB-specific niceties (mlbDebutDate, draft year)
     const espnSlug =
       sport === 'nba'  ? 'basketball/nba' as const
       : sport === 'wnba' ? 'basketball/wnba' as const
       : sport === 'mma'  ? 'mma/ufc' as const
       : null;
 
+    const bioPromise: Promise<unknown> =
+      sport === 'mlb'  ? fetchMlbAthleteBio(id)
+      : espnSlug       ? fetchEspnAthleteBio(id, espnSlug)
+      : Promise.resolve(null);
+
     const [articles, headlines, bio] = await Promise.all([
       listArticles({ playerId: id, limit: 12 }),
       playerName ? fetchGoogleNewsHeadlines(playerName, { limit: 8 }) : Promise.resolve([]),
-      espnSlug ? fetchEspnAthleteBio(id, espnSlug) : Promise.resolve(null),
+      bioPromise,
     ]);
 
     // Per-sport reference URL templates. Pure templates — frontend
