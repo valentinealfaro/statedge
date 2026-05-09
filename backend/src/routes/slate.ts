@@ -9,6 +9,8 @@ import type { MlbStatKey } from '../mlb/stats.js';
 import { getLatestMmaDailySlate } from '../mma/slateStore.js';
 import { getUfcMoneylines } from '../mma/odds.js';
 import { fetchUfcScoreboard } from '../mma/espn.js';
+import { generateElitePlay, type ElitePlayLeg } from '../news/templates.js';
+import { upsertArticle } from '../news/store.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -529,6 +531,45 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
       reason: ticket === null ? 'no qualifying combination found across all fallback tiers' : null,
       candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, mma: mmaCandidates.length, total: totalCandidates },
     };
+
+    // Auto-publish "Today's Elite Play" article when a ticket lands.
+    // Idempotent via slug — re-running on the same date upserts.
+    if (ticket) {
+      try {
+        const today = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/New_York',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date());
+        const MMA_STATS = new Set(['sig_strikes', 'rd1_sig_strikes', 'takedowns', 'rd1_takedowns', 'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time']);
+        const MLB_STATS = new Set(['home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis', 'walks', 'stolen_bases', 'strikeouts', 'doubles', 'triples', 'ks', 'pitcher_outs', 'innings_pitched', 'earned_runs_allowed', 'hits_allowed', 'walks_allowed', 'home_runs_allowed']);
+        const articleLegs: ElitePlayLeg[] = ticket.legs.map((leg) => ({
+          sport: MMA_STATS.has(leg.statKey) ? 'mma' : MLB_STATS.has(leg.statKey) ? 'mlb' : 'nba',
+          playerName: leg.playerName,
+          team: leg.team,
+          statLabel: leg.statLabel,
+          line: leg.line,
+          direction: leg.direction,
+          probability: leg.probability,
+          edgePercent: leg.edgePercent,
+        }));
+        const draft = generateElitePlay({
+          date: today,
+          grade: ticket.grade,
+          tier: ticket.tier,
+          tierName: ticket.tierName,
+          combinedFairPayout: ticket.combinedFairPayout,
+          combinedProbability: ticket.combinedProbability,
+          combinedEdgePercent: ticket.combinedEdgePercent,
+          dislocationScore: ticket.dislocationScore,
+          sportsCovered: ticket.sportsCovered,
+          legs: articleLegs,
+          rationale: ticket.rationale,
+        });
+        if (draft) await upsertArticle(draft);
+      } catch (err) {
+        console.warn('elite play article generation failed:', (err as Error).message);
+      }
+    }
     // Cache the response. TTL is generous (10 min) since the
     // invalidation is keyed off slate updatedAt timestamps — a
     // republish breaks the key automatically.

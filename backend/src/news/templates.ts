@@ -537,6 +537,93 @@ export function generateBigGame(opts: {
   };
 }
 
+// ---------- Elite Play (Phase 137) ----------
+//
+// Whenever the cross-sport Elite engine lands a ticket, we
+// auto-generate an article so users browsing /news see today's
+// institutional play alongside the rest of the auto-content. The
+// article body links directly to /elite for the full breakdown.
+
+export type ElitePlayLeg = {
+  sport: 'mlb' | 'nba' | 'mma';
+  playerName: string;
+  team: string | null;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;        // 0-100
+  edgePercent: number;
+};
+
+export function generateElitePlay(opts: {
+  date: string;            // YYYY-MM-DD ET
+  grade: 'A+' | 'A' | 'B';
+  tier: '3-leg' | '2-leg';
+  tierName: string;
+  combinedFairPayout: number;
+  combinedProbability: number;
+  combinedEdgePercent: number;
+  dislocationScore: number;
+  sportsCovered: ('mlb' | 'nba' | 'mma')[];
+  legs: ElitePlayLeg[];
+  rationale: string[];
+}): ArticleDraft | null {
+  if (opts.legs.length < 2) return null;
+  const slug = articleSlug({ kind: 'elite_play', date: opts.date });
+  const sportsLabel = opts.sportsCovered.length === 1
+    ? opts.sportsCovered[0]!.toUpperCase()
+    : opts.sportsCovered.map((s) => s.toUpperCase()).join(' + ');
+  const summary =
+    `${opts.grade} grade ${opts.tier} — ${opts.combinedFairPayout.toFixed(1)}× fair payout · ` +
+    `${opts.combinedProbability.toFixed(1)}% combined hit · ${sportsLabel}.`;
+
+  const lines: string[] = [];
+  lines.push(`# Today's Elite Play · ${opts.grade} · ${humanDate(opts.date)}`);
+  lines.push('');
+  lines.push(summary);
+  lines.push('');
+  lines.push(`**Tier:** ${opts.tierName}  · **Sports:** ${sportsLabel}  · **Dislocation:** ${opts.dislocationScore.toFixed(1)}.`);
+  lines.push('');
+
+  lines.push('## Legs');
+  lines.push('');
+  lines.push('| # | Sport | Player | Stat | Line | Direction | Probability | Edge |');
+  lines.push('|---|---|---|---|---|---|---|---|');
+  opts.legs.forEach((l, i) => {
+    const arrow = l.direction === 'OVER' ? '↑ Over' : '↓ Under';
+    lines.push(
+      `| ${i + 1} | ${l.sport.toUpperCase()} | ${l.playerName}${l.team ? ` (${l.team})` : ''} ` +
+      `| ${l.statLabel} | ${l.line} | ${arrow} | ${l.probability.toFixed(1)}% | +${l.edgePercent.toFixed(1)}pp |`,
+    );
+  });
+  lines.push('');
+
+  if (opts.rationale.length > 0) {
+    lines.push('## Why this play');
+    lines.push('');
+    for (const r of opts.rationale) lines.push(`- ${r}`);
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('');
+  lines.push(`*Open the [full Elite breakdown](/elite) for the model probability, market implied probability, and fragility/trap detail on each leg. Past Elite tickets and the truth-metric receipts live on [/clv](/clv).*`);
+
+  return {
+    slug,
+    kind: 'elite_play',
+    sport: opts.sportsCovered.length === 1 ? opts.sportsCovered[0]! : 'cross',
+    title: `Today's Elite Play · ${opts.grade} · ${opts.combinedFairPayout.toFixed(1)}× ${sportsLabel}`,
+    summary,
+    bodyMd: lines.join('\n'),
+    heroImageUrl: null,
+    videoYoutubeId: null,
+    relatedPlayerId: null,
+    relatedGameKey: null,
+    expiresAt: endOfDayIso(opts.date),
+  };
+}
+
 // ---------- Power Rankings (Phase 115) ----------
 //
 // Weekly auto-generated per-sport ranking. Pure power ranking by

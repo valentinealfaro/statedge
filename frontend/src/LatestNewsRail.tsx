@@ -31,6 +31,7 @@ const KIND_LABEL: Record<string, string> = {
   fight_night:        'Fight Night',
   line_steam:         'Line Steam',
   power_rankings:     'Power Rankings',
+  elite_play:         '★ Elite Play',
   situation_report:   'Situation Report',
 };
 

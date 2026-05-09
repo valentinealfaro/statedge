@@ -1773,6 +1773,7 @@ export type Article = {
     | 'fight_night'
     | 'line_steam'
     | 'power_rankings'
+    | 'elite_play'
     | 'situation_report';
   sport: 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';
   title: string;
