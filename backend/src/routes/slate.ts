@@ -11,12 +11,14 @@ import { ocrPropBoard } from '../services/slateOcr.js';
 import {
   getDailySlateByDateFromDb,
   getDailySlateFromDb,
+  getMlbSlateCache,
   getPlayerGameLogsBulkFromDb,
   getSlateSnapshotFromDb,
   isDbConfigured,
   listDailySlatesMissingSnapshotFromDb,
   listSlateSnapshotsFromDb,
   setDailySlateInDb,
+  setMlbSlateCache,
   setSlateResolvedInDb,
   snapshotSlateCombosInDb,
   type StoredSlateLine,
@@ -416,6 +418,22 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
     return;
   }
   try {
+    // Cache check — cross-sport elite is expensive (resolves both
+    // sports' slates through their projection engines) but the answer
+    // changes only when EITHER slate is republished. Key includes
+    // both slates' updatedAt so a republish auto-invalidates.
+    const [mlbStoredForKey, nbaStoredForKey] = await Promise.all([
+      getMlbDailySlateFromDb().catch(() => null),
+      getDailySlateFromDb().catch(() => null),
+    ]);
+    const cacheKey = `cross-sport-elite::${mlbStoredForKey?.date ?? 'no-mlb'}::${mlbStoredForKey?.updatedAt ?? '0'}::${nbaStoredForKey?.date ?? 'no-nba'}::${nbaStoredForKey?.updatedAt ?? '0'}`;
+    const cached = await getMlbSlateCache(cacheKey).catch(() => null);
+    if (cached !== null) {
+      res.setHeader('X-Elite-Cache', 'HIT');
+      res.json(cached);
+      return;
+    }
+    res.setHeader('X-Elite-Cache', 'MISS');
     // Pull both slates in parallel + resolve each. Each leg passes
     // through the sport's own projection engine before being handed
     // to the cross-sport builder, which normalizes both into a
@@ -459,11 +477,18 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
     }
 
     const ticket = buildCrossSportElite({ mlb: mlbResolved, nba: nbaResolved });
-    res.json({
+    const payload = {
       ticket,
       reason: ticket === null ? 'no qualifying combination found across all fallback tiers' : null,
       candidatesScanned: { nba: nbaResolved.length, mlb: mlbResolved.length, total: totalCandidates },
+    };
+    // Cache the response. TTL is generous (10 min) since the
+    // invalidation is keyed off slate updatedAt timestamps — a
+    // republish breaks the key automatically.
+    await setMlbSlateCache(cacheKey, payload, 10 * 60 * 1000).catch(() => {
+      /* best-effort cache write */
     });
+    res.json(payload);
   } catch (err) {
     console.error('slate/elite/cross-sport/today failed', err);
     res.status(500).json({ error: (err as Error).message });
