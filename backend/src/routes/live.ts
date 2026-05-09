@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getPool, isDbConfigured } from '../db.js';
 import { getScoreboardForDate, isConfigured, todayDateUtc } from '../nba/balldontlie.js';
 import { fetchGameSummary, fetchScoreboard, type EspnPlayerLine } from '../nba/espn.js';
 
@@ -162,16 +163,56 @@ liveRouter.get('/today', async (_req, res) => {
       interesting.map((g) => fetchGameSummary(g.id).then((s) => ({ eventId: g.id, summary: s }))),
     );
 
-    const byPlayer: Record<string, NbaLiveTodayPlayer> = {};
+    // Collect every (athleteId, displayName, eventId) triple from the
+    // summaries. The byPlayer map needs to be keyed by stats.nba.com
+    // playerId (because that's what the slate uses when it stores
+    // resolved legs) — NOT by ESPN's athleteId. We translate by
+    // joining on name against the local nba_players table. Without
+    // this translation, every NBA live grading silently fails because
+    // the ID systems don't overlap.
+    type RawLine = { line: EspnPlayerLine; eventId: string };
+    const rawLines: RawLine[] = [];
     for (const result of summaryResults) {
       if (result.status !== 'fulfilled') continue;
       const { eventId, summary } = result.value;
       for (const side of [summary.away, summary.home]) {
         for (const p of [...side.starters, ...side.bench]) {
           if (!p.athleteId) continue;
-          byPlayer[p.athleteId] = projectLivePlayer(p, eventId);
+          rawLines.push({ line: p, eventId });
         }
       }
+    }
+
+    // Build name → stats.nba.com playerId map. One DB round-trip for
+    // every active player who appeared on a roster tonight.
+    const nameToStatsId = new Map<string, number>();
+    if (isDbConfigured() && rawLines.length > 0) {
+      const names = [...new Set(rawLines.map((r) => r.line.displayName).filter(Boolean))];
+      try {
+        const { rows } = await getPool().query<{ id: number; full_name: string }>(
+          `SELECT id, full_name FROM players WHERE full_name = ANY($1::text[])`,
+          [names],
+        );
+        for (const r of rows) nameToStatsId.set(r.full_name.toLowerCase(), r.id);
+      } catch (err) {
+        // Table missing or DB hiccup — fall back to athleteId keys
+        // below. Better to ship something than 500.
+        console.warn('nba live/today: name→playerId lookup failed:', (err as Error).message);
+      }
+    }
+
+    const byPlayer: Record<string, NbaLiveTodayPlayer> = {};
+    for (const { line: p, eventId } of rawLines) {
+      const stats = projectLivePlayer(p, eventId);
+      // Primary key — stats.nba.com playerId (what slate uses).
+      const statsId = nameToStatsId.get(p.displayName.toLowerCase());
+      if (statsId !== undefined) {
+        byPlayer[String(statsId)] = stats;
+      }
+      // Also key by ESPN athleteId for callers that still want it
+      // (e.g. EspnGameDetail starters table), and as a fallback when
+      // the name lookup fails. Two keys, one object — cheap and safe.
+      byPlayer[p.athleteId] = stats;
     }
 
     const payload = {
