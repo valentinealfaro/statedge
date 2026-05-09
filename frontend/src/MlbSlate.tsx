@@ -34,6 +34,7 @@ import {
   type RawMlbSlateLine,
 } from './api';
 import { ClvTrustBanner } from './ClvTrustBanner';
+import { HomeEliteTeaser } from './HomeEliteTeaser';
 import { LatestNewsRail } from './LatestNewsRail';
 import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
 import { MlbTodaysGames } from './MlbTodaysGames';
@@ -527,6 +528,11 @@ export function MlbSlate() {
             with their accuracy receipt. Sport-scoped to MLB so the
             banner reports the MLB-specific beat rate, not aggregate. */}
         <ClvTrustBanner sport="mlb" />
+
+        {/* Today's cross-sport Elite teaser — surfaces the
+            institutional play when MLB legs are part of it.
+            Self-hides if no qualifying combination exists. */}
+        <HomeEliteTeaser />
 
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (

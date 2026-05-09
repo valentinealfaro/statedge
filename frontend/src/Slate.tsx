@@ -24,6 +24,7 @@ import { PlayerAvatar, TeamLogo } from './Avatar';
 import { edgeScore } from './edgeScore';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { useFavorites, type FavoritesAPI } from './favorites';
+import { HomeEliteTeaser } from './HomeEliteTeaser';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { NbaPlayerDrilldown, type NbaDrilldownPlayer } from './NbaPlayerDrilldown';
@@ -343,6 +344,11 @@ export function Slate() {
           Sport-scoped to NBA so the banner reports tonight's-sport
           beat rate, not cross-sport noise. */}
       <ClvTrustBanner sport="nba" />
+
+      {/* Cross-sport Elite teaser — surfaces today's play even on
+          the NBA-specific slate page. Self-hides if no qualifying
+          combination. */}
+      <HomeEliteTeaser />
 
       {/* Tonight's NBA games — sits at the top so users orient on
           the actual game context before scanning the pre-built
