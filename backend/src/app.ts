@@ -95,6 +95,12 @@ export function createApp(): Express {
       deployedAt: process.env.VERCEL_DEPLOYMENT_CREATED_AT ?? null,
       hasGeminiKey: !!process.env.GEMINI_API_KEY,
       hasDb: !!process.env.DATABASE_URL,
+      // Phase 103a — env-var status for the Market Brain provider
+      // pipeline. Boolean only — never echoes the actual key value.
+      hasOddsApiKey: !!process.env.ODDS_API_KEY,
+      oddsApiMonthlyCredits: process.env.ODDS_API_MONTHLY_CREDITS
+        ? Number(process.env.ODDS_API_MONTHLY_CREDITS)
+        : null,
     });
   });
 
