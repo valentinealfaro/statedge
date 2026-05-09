@@ -72,24 +72,8 @@ const MMA_SUBNAV: SubnavItem[] = [
 ];
 
 // Toggle the sport prefix in the current URL. /nba/slate ↔ /mlb/slate
-// swaps the prefix while preserving the rest of the path. Lands on
-// the sport's "compare" page when the current page doesn't have a
-// counterpart in the other sport (e.g. /mlb/calibration → /nba/compare
-// because NBA calibration lives inside /nba/slate as a tab).
-function switchSportPath(currentPath: string, target: SportKey): string {
-  const tail = currentPath.replace(/^\/(nba|mlb|wnba|mma)\//, '');
-  const targetSubnav =
-    target === 'nba'  ? NBA_SUBNAV
-    : target === 'mlb' ? MLB_SUBNAV
-    : target === 'wnba' ? WNBA_SUBNAV
-    : MMA_SUBNAV;
-  const matched = targetSubnav.find((it) => it.path.endsWith(`/${tail}`));
-  // Sport-specific landing fallback when the current page has no
-  // counterpart (e.g. /mlb/calibration doesn't exist for MMA).
-  // Default landing is each sport's primary page.
-  if (matched) return matched.path;
-  return target === 'mma' ? '/mma/scoreboard' : `/${target}/compare`;
-}
+// (sport-switcher pill removed — main nav already has sport links;
+// the secondary pill row was redundant.)
 
 export function NavBar() {
   const { pathname } = useLocation();
@@ -199,42 +183,6 @@ export function NavBar() {
         )}
 
         <NavSearch />
-
-        {/* Sport-switcher pill — only renders when on a sport page,
-            and only for Pro users. Toggles between NBA and MLB at the
-            same conceptual depth (slate → slate, compare → compare). */}
-        {sport && isPro && (
-          <div className="sport-switcher" role="tablist" aria-label="Sport">
-            <Link
-              to={switchSportPath(pathname, 'nba')}
-              className={`sport-pill ${sport === 'nba' ? 'active sport-nba' : ''}`}
-              aria-selected={sport === 'nba'}
-            >
-              NBA
-            </Link>
-            <Link
-              to={switchSportPath(pathname, 'mlb')}
-              className={`sport-pill ${sport === 'mlb' ? 'active sport-mlb' : ''}`}
-              aria-selected={sport === 'mlb'}
-            >
-              MLB
-            </Link>
-            <Link
-              to={switchSportPath(pathname, 'mma')}
-              className={`sport-pill ${sport === 'mma' ? 'active sport-mma' : ''}`}
-              aria-selected={sport === 'mma'}
-            >
-              MMA
-            </Link>
-            <Link
-              to={switchSportPath(pathname, 'wnba')}
-              className={`sport-pill ${sport === 'wnba' ? 'active sport-wnba' : ''}`}
-              aria-selected={sport === 'wnba'}
-            >
-              WNBA
-            </Link>
-          </div>
-        )}
 
         <UserMenu />
       </nav>
