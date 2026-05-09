@@ -98,6 +98,12 @@ export function NavBar() {
         {isPro ? (
           <div className="nav-links">
             <Link
+              to="/dashboard"
+              className={pathname === '/dashboard' ? 'navlink active' : 'navlink'}
+            >
+              Dashboard
+            </Link>
+            <Link
               to="/nba/compare"
               className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
             >
@@ -118,6 +124,12 @@ export function NavBar() {
           </div>
         ) : (
           <div className="nav-links">
+            <Link
+              to="/dashboard"
+              className={pathname === '/dashboard' ? 'navlink active' : 'navlink'}
+            >
+              Dashboard
+            </Link>
             <Link
               to="/nba/compare"
               className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}

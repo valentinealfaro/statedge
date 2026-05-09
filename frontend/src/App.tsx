@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
 import { Compare } from './Compare';
+import { Dashboard } from './Dashboard';
 import { ErrorBoundary } from './ErrorBoundary';
 import { EspnGameDetail } from './EspnGameDetail';
 import { GameDetail } from './GameDetail';
@@ -33,6 +34,7 @@ export function App() {
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<Dashboard />} />
 
           {/* NBA — sport-grouped */}
           <Route path="/nba/compare" element={<Compare />} />
