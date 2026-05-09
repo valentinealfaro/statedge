@@ -35,6 +35,7 @@ import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
+import { WhyPickPanel } from './WhyPickPanel';
 
 // Admin secret stored in localStorage so the publish flow doesn't
 // re-prompt every page load. Only writers need it; readers (the
@@ -1342,6 +1343,24 @@ function WildCardCard({
                 )}
               </div>
               <div className="best-pick-wild-evidence">{l.wildCardReason}</div>
+              <WhyPickPanel
+                sportColor="#66bb6a"
+                leg={{
+                  playerName: l.playerName,
+                  statLabel: l.statLabel,
+                  line: l.line,
+                  direction: l.direction,
+                  probability: l.probability,
+                  edgePercent: l.edgePercent,
+                  projection: l.projection,
+                  reasonCodes: l.reasonCodes,
+                  trapScore: l.trapScore,
+                  fragilityScore: l.fragilityScore,
+                  fragilityTier: l.fragilityTier,
+                  momentumScore: l.momentumExpansionScore,
+                  riskScore: l.riskScore,
+                }}
+              />
             </div>
           );
         })}
@@ -1626,6 +1645,24 @@ function ComboCard({
                   </span>
                 )}
               </div>
+              <WhyPickPanel
+                sportColor="#66bb6a"
+                leg={{
+                  playerName: l.playerName,
+                  statLabel: l.statLabel,
+                  line: l.line,
+                  direction: l.direction,
+                  probability: l.probability,
+                  edgePercent: l.edgePercent,
+                  projection: l.projection,
+                  reasonCodes: l.reasonCodes,
+                  trapScore: l.trapScore,
+                  fragilityScore: l.fragilityScore,
+                  fragilityTier: l.fragilityTier,
+                  momentumScore: l.momentumExpansionScore,
+                  riskScore: l.riskScore,
+                }}
+              />
             </div>
           );
         })}

@@ -31,6 +31,7 @@ import {
 } from './api';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
+import { WhyPickPanel } from './WhyPickPanel';
 import { WnbaPlayerDrilldown, type WnbaDrilldownPlayer } from './WnbaPlayerDrilldown';
 import { WnbaTodaysGames } from './WnbaTodaysGames';
 import { useTitle } from './useTitle';
@@ -886,6 +887,27 @@ function ComboCard({
                   </span>
                 )}
               </div>
+              <WhyPickPanel
+                sportColor="#b388ff"
+                leg={{
+                  playerName: l.playerName,
+                  statLabel: l.statLabel,
+                  line: l.line,
+                  direction: l.direction,
+                  probability: l.probability,
+                  edgePercent: l.edgePercent,
+                  projection: l.projection,
+                  reasonCodes: l.reasonCodes,
+                  trapScore: l.trapScore,
+                  fragilityScore: l.fragilityScore,
+                  momentumScore: l.momentumScore,
+                  l5Avg: l.l5Avg,
+                  l10Avg: l.l10Avg,
+                  seasonAvg: l.seasonAvg,
+                  l10HitRate: l.l10HitRate,
+                  l10HitCount: l.l10HitCount,
+                }}
+              />
             </div>
           );
         })}

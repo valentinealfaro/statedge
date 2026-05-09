@@ -25,6 +25,7 @@ import { edgeScore } from './edgeScore';
 import { useFavorites, type FavoritesAPI } from './favorites';
 import { NavBar } from './NavBar';
 import { NbaPlayerDrilldown, type NbaDrilldownPlayer } from './NbaPlayerDrilldown';
+import { WhyPickPanel } from './WhyPickPanel';
 import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
@@ -1332,6 +1333,27 @@ function BestPicksRail({
                         ↑ raised line · model still favors {l.direction.toLowerCase()}
                       </div>
                     )}
+                    <WhyPickPanel
+                      sportColor="#7aa2ff"
+                      leg={{
+                        playerName: l.playerName,
+                        statLabel: l.statLabel,
+                        line: l.line,
+                        direction: l.direction,
+                        probability: l.probability,
+                        edgePercent: l.edgePercent ?? 0,
+                        projection: l.projection,
+                        trapScore: l.trapScore,
+                        trapTier: l.trapTier,
+                        fragilityScore: l.fragilityScore,
+                        fragilityTier: l.fragilityTier,
+                        riskScore: l.risk,
+                        l10HitCount: l.last10HitCount,
+                        l10HitRate: l.last10HitRate,
+                        vsOpponentHitRate: l.vsOpponentHitRate,
+                        vsOpponentGames: l.vsOpponentGames,
+                      }}
+                    />
                   </div>
                   );
                 })}
