@@ -1,11 +1,13 @@
-// Cross-sport command center — Phase 81. The "Bloomberg Terminal"
-// homepage that aggregates tonight's strongest edges across NBA + MLB
-// + WNBA, plus market trap radar, slate strength, and model health.
+// Cross-sport Command Center — Phase 100 institutional rebuild.
 //
-// Mission alignment: this is the institutional view — one screen that
-// tells a quant operator "where is the edge tonight?" across every
-// sport on the platform. No new endpoints; everything reuses existing
-// slate + calibration aggregations.
+// Mission shift (per Phase 100 spec): stop ranking by hit rate, start
+// ranking by market dislocation. The dashboard is no longer a "best
+// picks" feed — it's a live quantitative war room. Every entry must
+// surface WHY this is mispriced, RISK signals, MARKET context, and
+// honest confidence uncertainty.
+//
+// Composed entirely from existing slate + calibration endpoints; the
+// "intelligence density" upgrade is in framing, not new data.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -40,6 +42,10 @@ const SPORT_LABEL: Record<Sport, string> = {
   wnba: 'WNBA',
 };
 
+// Unified leg shape across all 3 sports. Phase 100 expanded with the
+// fields needed for the dislocation engine — reasonCodes drives the
+// "WHY" bullets, fragility drives confidence bands + variance tier,
+// momentum drives "why tonight."
 type UnifiedEdge = {
   sport: Sport;
   playerId: string | number;
@@ -51,11 +57,18 @@ type UnifiedEdge = {
   probability: number;
   edgePercent: number;
   trapScore: number;
+  // Phase 100 fields:
+  projection: number;
+  reasonCodes: string[];
+  fragilityScore: number | null;
+  fragilityTier: string | null;
+  momentumScore: number | null;
+  riskScore: number | null;
   href: string;
 };
 
 export function Dashboard() {
-  useTitle(['Dashboard']);
+  useTitle(['Command Center']);
   const [nba, setNba]   = useState<SlateResponse | null>(null);
   const [mlb, setMlb]   = useState<MlbDailySlateResponse | null>(null);
   const [wnba, setWnba] = useState<WnbaSlateResponse | null>(null);
@@ -88,11 +101,7 @@ export function Dashboard() {
     }
 
     refresh();
-    // Auto-refresh every 90s. Server-side caches absorb the load
-    // (12-25s slate cache, 5min cal cache) so multiple users tabbing
-    // the dashboard don't multiply backend pressure.
     const interval = setInterval(refresh, 90_000);
-    // Refresh on tab-focus too — Bloomberg vibe: always-fresh data.
     const onFocus = () => refresh();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -104,16 +113,31 @@ export function Dashboard() {
 
   const allEdges = collectEdges(nba, mlb, wnba);
   const edges = sportFilter === 'all' ? allEdges : allEdges.filter((e) => e.sport === sportFilter);
+
+  // Phase 100: rank by dislocation strength (market mispricing) NOT
+  // raw hit probability. Spec directive: "stop prioritizing highest
+  // hit rate, start prioritizing highest market inefficiency."
+  const dislocations = edges
+    .filter((e) => e.edgePercent >= 5)
+    .sort((a, b) => dislocationScore(b) - dislocationScore(a));
+
   const traps = edges
     .filter((e) => e.trapScore >= 60)
     .sort((a, b) => b.trapScore - a.trapScore)
     .slice(0, 8);
-  const topEdges = edges
-    .filter((e) => e.edgePercent >= 5)
-    .sort((a, b) => b.edgePercent - a.edgePercent)
-    .slice(0, 12);
+
+  // Disagreements: where model probability is furthest from sportsbook
+  // implied break-even. Same numeric driver as edge but framed as
+  // divergence rather than "best picks." Top 8.
+  const disagreements = edges
+    .map((e) => ({ edge: e, divergence: Math.abs(e.edgePercent) }))
+    .sort((a, b) => b.divergence - a.divergence)
+    .slice(0, 8)
+    .map((d) => d.edge);
 
   const slateStrength = computeSlateStrength(nba, mlb, wnba);
+  const pressureSignals = computeMarketPressure(allEdges);
+  const analystSummary = buildAnalystSummary(dislocations, traps, disagreements);
 
   return (
     <div className="app">
@@ -132,10 +156,16 @@ export function Dashboard() {
             </span>
           )}
         </div>
-        <p className="muted small" style={{ marginTop: 0, marginBottom: 24 }}>
-          Cross-sport quantitative intelligence. Tonight's strongest edges,
-          trap radar, slate strength, and model health — one screen.
+        <p className="muted small" style={{ marginTop: 0, marginBottom: 16 }}>
+          Live quantitative war room. We rank by market dislocation, not hit rate. Every leg
+          surfaces why it's mispriced, what could break it, and where the market disagrees.
         </p>
+
+        {/* AI Analyst Summary — 1-2 sentence narrative across the
+            entire slate. Phase 100 spec directive #1. */}
+        {!loading && analystSummary && (
+          <AnalystBanner summary={analystSummary} />
+        )}
 
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -152,21 +182,86 @@ export function Dashboard() {
               wnba: allEdges.filter((e) => e.sport === 'wnba').length,
             }} />
 
+            {/* SECTION 1 — Market Dislocations (was: Tonight's
+                strongest edges). Card hierarchy: top 3 = HERO, next
+                6 = MEDIUM, rest compact. */}
             <SectionHeader
-              title="Tonight's strongest edges"
-              hint="Top legs by model edge across every sport. Edge = our model probability − sportsbook implied probability."
+              title="Market Dislocations"
+              hint="Lines where the sportsbook's implied probability is furthest from our model's. Sorted by mispricing severity, not hit rate."
             />
-            {topEdges.length === 0 ? (
-              <EmptyCard text="No high-edge legs detected yet — slates may not be published." />
+            {dislocations.length === 0 ? (
+              <EmptyCard text="No active dislocations detected. Slates may not be published or every line is fairly priced." />
+            ) : (
+              <>
+                {/* Top 3 = hero treatment */}
+                {dislocations.slice(0, 3).length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, marginBottom: 16 }}>
+                    {dislocations.slice(0, 3).map((e, i) => (
+                      <DislocationHeroCard key={`${e.sport}-${e.playerId}-${i}`} edge={e} rank={i + 1} />
+                    ))}
+                  </div>
+                )}
+                {/* Mid 6 = medium treatment */}
+                {dislocations.slice(3, 9).length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 16 }}>
+                    {dislocations.slice(3, 9).map((e, i) => (
+                      <DislocationMediumCard key={`${e.sport}-${e.playerId}-${i + 3}`} edge={e} />
+                    ))}
+                  </div>
+                )}
+                {/* Rest = compact */}
+                {dislocations.slice(9).length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8, marginBottom: 32 }}>
+                    {dislocations.slice(9, 18).map((e, i) => (
+                      <DislocationCompactCard key={`${e.sport}-${e.playerId}-${i + 9}`} edge={e} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Model Disagreements — phase 100 new section. Where the
+                book and our model see the world differently. */}
+            <SectionHeader
+              title="Model Disagreements"
+              hint="Top legs where StatEdge's model probability diverges most from the sportsbook's implied break-even. Pure divergence, regardless of direction."
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 32 }}>
+              {disagreements.map((e, i) => (
+                <DisagreementCard key={`d-${e.sport}-${e.playerId}-${i}`} edge={e} />
+              ))}
+            </div>
+
+            {/* Market Pressure Radar — derived signals from across the
+                slate. Reads like a trading-floor news feed. */}
+            <SectionHeader
+              title="Market Pressure Radar"
+              hint="Aggregated pressure signals across tonight's slate. Derived from trap distribution, fragility clusters, and momentum spread."
+            />
+            {pressureSignals.length === 0 ? (
+              <EmptyCard text="No active pressure signals. Tonight's board reads cleanly across model & market." />
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 32 }}>
-                {topEdges.map((e, i) => <EdgeCard key={`${e.sport}-${e.playerId}-${i}`} edge={e} />)}
+                {pressureSignals.map((s, i) => <PressureSignalCard key={i} signal={s} />)}
+              </div>
+            )}
+
+            {/* Trap Watch — upgraded with model-vs-market framing. */}
+            <SectionHeader
+              title="Trap Watch"
+              hint="Lines where recent surface stats triggered the trap detector. Each card shows our model probability vs the market's implied break-even — gaps in the WRONG direction are public-facing traps."
+            />
+            {traps.length === 0 ? (
+              <EmptyCard text="No high-trap legs across tonight's slates. Clean board." />
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginBottom: 32 }}>
+                {traps.map((t, i) => <TrapCard key={`${t.sport}-${t.playerId}-${i}`} edge={t} />)}
               </div>
             )}
 
             <SectionHeader
-              title="Slate strength"
-              hint="Average edge × leg count across each sport's published slate. Higher = more institutional opportunity available tonight."
+              title="Slate Strength"
+              hint="Per-sport leg count, average dislocation, and concentration of high-edge opportunities."
             />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 32 }}>
               <StrengthCard sport="nba"  data={slateStrength.nba} />
@@ -175,20 +270,8 @@ export function Dashboard() {
             </div>
 
             <SectionHeader
-              title="Trap watch"
-              hint="Legs where the line just spiked vs season baseline — possible public-facing trap. Trap score ≥60. Trade carefully."
-            />
-            {traps.length === 0 ? (
-              <EmptyCard text="No high-trap legs across tonight's slates. Clean board." />
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 32 }}>
-                {traps.map((t, i) => <TrapCard key={`${t.sport}-${t.playerId}-${i}`} edge={t} />)}
-              </div>
-            )}
-
-            <SectionHeader
-              title="Model health"
-              hint="How well our probability buckets actually graded out vs predicted. Closer alignment = more trustworthy edge numbers."
+              title="Model Health"
+              hint="Predicted vs observed accuracy across the rolling window. Closer alignment = more trustworthy edge numbers."
             />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 32 }}>
               <HealthCard sport="mlb"  cal={mlbCal} />
@@ -202,7 +285,7 @@ export function Dashboard() {
   );
 }
 
-// ---------- helpers ----------
+// ---------- Data layer ----------
 
 function collectEdges(
   nba: SlateResponse | null,
@@ -229,6 +312,12 @@ function collectEdges(
           probability: l.probability,
           edgePercent: l.edgePercent ?? 0,
           trapScore: l.trapScore ?? 0,
+          projection: l.projection,
+          reasonCodes: [],
+          fragilityScore: l.fragilityScore ?? null,
+          fragilityTier: l.fragilityTier ?? null,
+          momentumScore: null,
+          riskScore: l.risk ?? null,
           href: `/nba/compare?m=last10&pid=${l.playerId}`,
         });
       }
@@ -254,6 +343,12 @@ function collectEdges(
           probability: l.probability,
           edgePercent: l.edgePercent,
           trapScore: l.trapScore,
+          projection: l.projection,
+          reasonCodes: l.reasonCodes ?? [],
+          fragilityScore: l.fragilityScore ?? null,
+          fragilityTier: l.fragilityTier ?? null,
+          momentumScore: l.momentumExpansionScore ?? null,
+          riskScore: l.riskScore ?? null,
           href: `/mlb/player/${l.playerId}`,
         });
       }
@@ -277,6 +372,12 @@ function collectEdges(
         probability: l.probability,
         edgePercent: l.edgePercent,
         trapScore: l.trapScore,
+        projection: l.projection,
+        reasonCodes: l.reasonCodes ?? [],
+        fragilityScore: l.fragilityScore ?? null,
+        fragilityTier: null,
+        momentumScore: l.momentumScore ?? null,
+        riskScore: null,
         href: `/wnba/compare?aid=${encodeURIComponent(l.athleteId)}`,
       });
     }
@@ -285,10 +386,211 @@ function collectEdges(
   return out;
 }
 
+// ---------- Quant helpers ----------
+
+// Dislocation strength = how mispriced is this line, weighted by
+// distance from coin-flip. Edge alone isn't enough — a +25% edge on a
+// 51% pick is real but small relative to a +20% edge on a 70% pick
+// where conviction is higher and the line is bookable.
+function dislocationScore(e: UnifiedEdge): number {
+  const distanceFromCoinflip = Math.abs(e.probability - 50) / 50;  // 0-1
+  const edgeStrength = Math.abs(e.edgePercent) / 30;               // 0-1+ at +30%
+  return edgeStrength * 0.7 + distanceFromCoinflip * 0.3;
+}
+
+// Sportsbook implied break-even. Edge = our_prob − implied; therefore
+// implied = our_prob − edge. Clamped [1, 99] to prevent display
+// artifacts on extreme edges.
+function marketImplied(e: UnifiedEdge): number {
+  const raw = e.probability - e.edgePercent;
+  return Math.max(1, Math.min(99, raw));
+}
+
+// Confidence band: surface honest uncertainty as a ± range. We don't
+// have a true posterior so we synthesize a band from fragility.
+// Fragile legs get wider bands (±10), solid legs get tight bands (±3).
+// Mission directive: "reduce fake perfectness."
+function confidenceBand(e: UnifiedEdge): { low: number; high: number; width: number } {
+  const f = e.fragilityScore ?? 50;
+  const halfWidth = Math.max(2.5, Math.min(11, f / 10 + 2));
+  return {
+    low: Math.max(1, e.probability - halfWidth),
+    high: Math.min(99, e.probability + halfWidth),
+    width: halfWidth,
+  };
+}
+
+// Variance label from fragility. Mirrors the Phase 100 spec
+// directive: "real institutional models show variance."
+function varianceLabel(e: UnifiedEdge): { label: string; color: string } {
+  const f = e.fragilityScore ?? 50;
+  if (f <= 30) return { label: 'LOW VARIANCE',  color: '#66bb6a' };
+  if (f <= 55) return { label: 'MED VARIANCE',  color: '#7aa2ff' };
+  if (f <= 75) return { label: 'HIGH VARIANCE', color: '#ffb74d' };
+  return         { label: 'EXTREME VARIANCE',   color: '#ef5350' };
+}
+
+// Data quality tags. Surface why this projection is what it is —
+// matchup-driven vs momentum-driven vs market-driven. The Phase 100
+// spec directive: "create realism."
+function qualityTags(e: UnifiedEdge): string[] {
+  const tags: string[] = [];
+  if ((e.momentumScore ?? 0) >= 70)              tags.push('MOMENTUM DRIVEN');
+  if ((e.fragilityScore ?? 50) >= 60)            tags.push('VOLATILE ROLE');
+  if (e.trapScore >= 60)                          tags.push('PUBLIC HEAVY');
+  if (Math.abs(e.edgePercent) >= 20)              tags.push('MARKET DIVERGENT');
+  if (e.reasonCodes.some((r) => /matchup|opponent|park|weather/i.test(r))) tags.push('MATCHUP DRIVEN');
+  if (e.reasonCodes.some((r) => /thin sample|low.*conf/i.test(r))) tags.push('LOW SAMPLE');
+  return tags;
+}
+
+// "Why this edge exists" — humanized signals. Pulls from reasonCodes
+// when present, falls back to derived signals from numeric fields.
+function buildEdgeReasons(e: UnifiedEdge): string[] {
+  const reasons: string[] = [];
+  // Use up to 5 model-generated reasonCodes if available.
+  for (const rc of e.reasonCodes.slice(0, 5)) reasons.push(rc);
+  if (reasons.length >= 3) return reasons.slice(0, 5);
+
+  // Synthesized fallbacks when reasonCodes are sparse:
+  const projGap = e.projection - e.line;
+  if (e.direction === 'OVER' && projGap > 0) {
+    reasons.push(`Projection ${e.projection.toFixed(1)} vs line ${e.line} — ${projGap.toFixed(1)} above the line.`);
+  } else if (e.direction === 'UNDER' && projGap < 0) {
+    reasons.push(`Projection ${e.projection.toFixed(1)} vs line ${e.line} — ${Math.abs(projGap).toFixed(1)} below the line.`);
+  }
+  if (Math.abs(e.edgePercent) >= 15) {
+    reasons.push(`Market implied ${marketImplied(e).toFixed(0)}% — model says ${e.probability.toFixed(0)}%. ${e.edgePercent >= 0 ? 'Underpriced' : 'Overpriced'} by ${Math.abs(e.edgePercent).toFixed(0)}%.`);
+  }
+  if ((e.momentumScore ?? 0) >= 65) {
+    reasons.push(`Momentum signal: recent form well above season baseline.`);
+  }
+  return reasons.slice(0, 5);
+}
+
+// "Why this might fail" — risk side honest surfacing.
+function buildRiskReasons(e: UnifiedEdge): string[] {
+  const out: string[] = [];
+  if (e.trapScore >= 60) {
+    out.push(`Trap score ${Math.round(e.trapScore)} — recent spike + line inflation pattern.`);
+  }
+  if ((e.fragilityScore ?? 0) >= 60) {
+    out.push(`High variance: fragility ${Math.round(e.fragilityScore ?? 0)} — projection is volatile.`);
+  }
+  if ((e.riskScore ?? 0) >= 65) {
+    out.push(`Composite risk score ${Math.round(e.riskScore ?? 0)} — multiple risk factors stacked.`);
+  }
+  if (e.probability < 55 && e.probability > 45) {
+    out.push(`Coin-flip exposure: ${Math.round(e.probability)}% — single outcome carries meaningful downside.`);
+  }
+  return out;
+}
+
+// AI Analyst summary — 1-2 sentence narrative across the entire slate.
+// Synthesized from the strongest dislocations + traps + disagreement
+// patterns. Reads like a trading-desk morning brief.
+function buildAnalystSummary(
+  dislocations: UnifiedEdge[],
+  traps: UnifiedEdge[],
+  disagreements: UnifiedEdge[],
+): string | null {
+  if (dislocations.length === 0 && traps.length === 0) return null;
+  const parts: string[] = [];
+
+  if (dislocations.length > 0) {
+    const top = dislocations[0]!;
+    const bySportCount = new Map<Sport, number>();
+    for (const e of dislocations.slice(0, 10)) bySportCount.set(e.sport, (bySportCount.get(e.sport) ?? 0) + 1);
+    const sportEntries = [...bySportCount.entries()].sort((a, b) => b[1] - a[1]);
+    const dominantSport = sportEntries[0]?.[0];
+    parts.push(
+      `Tonight's strongest dislocation: ${top.playerName} ${top.statLabel} ${top.line} ${top.direction === 'OVER' ? '↑' : '↓'} (${SPORT_LABEL[top.sport]}) — model ${Math.round(top.probability)}% vs market ${Math.round(marketImplied(top))}%, +${Math.abs(top.edgePercent).toFixed(0)}% mispricing.`,
+    );
+    if (sportEntries.length > 1 && dominantSport) {
+      parts.push(
+        `${SPORT_LABEL[dominantSport]} concentration: ${sportEntries[0]![1]} of top 10 dislocations sit in ${SPORT_LABEL[dominantSport]}.`,
+      );
+    }
+  }
+
+  if (traps.length > 0) {
+    const trapTop = traps[0]!;
+    parts.push(
+      `Trap watch: ${trapTop.playerName} ${trapTop.statLabel} ${trapTop.line} flagging score ${Math.round(trapTop.trapScore)} — public-facing inflation pattern, treat with caution.`,
+    );
+  }
+
+  // High-divergence callout when the disagreement leader isn't already
+  // surfaced as the dislocation leader.
+  if (disagreements.length > 0 && dislocations.length > 0) {
+    const leader = disagreements[0]!;
+    const dislocLeader = dislocations[0]!;
+    if (leader.playerId !== dislocLeader.playerId) {
+      parts.push(
+        `Highest market disagreement on the board: ${leader.playerName} (${SPORT_LABEL[leader.sport]}) — ${Math.abs(leader.edgePercent).toFixed(0)}% gap vs market.`,
+      );
+    }
+  }
+
+  return parts.join(' ');
+}
+
+// Market pressure signals derived from the slate distribution. These
+// are NOT line-history signals (we don't have a market feed) — they're
+// inferences from how our model output clusters relative to baselines.
+type PressureSignal = {
+  level: 'critical' | 'elevated' | 'note';
+  title: string;
+  detail: string;
+};
+
+function computeMarketPressure(edges: UnifiedEdge[]): PressureSignal[] {
+  const out: PressureSignal[] = [];
+  if (edges.length === 0) return out;
+
+  const heavyTraps = edges.filter((e) => e.trapScore >= 70).length;
+  if (heavyTraps >= 3) {
+    out.push({
+      level: 'critical',
+      title: 'Trap inflation cluster',
+      detail: `${heavyTraps} legs flagging trap score ≥70 — public-facing recency-spike pattern. Sportsbook is leaning into a narrative the model doesn't agree with.`,
+    });
+  }
+
+  const bigDivergence = edges.filter((e) => Math.abs(e.edgePercent) >= 20).length;
+  if (bigDivergence >= 3) {
+    out.push({
+      level: 'elevated',
+      title: 'Wide model-vs-market gap',
+      detail: `${bigDivergence} legs with ≥20% divergence. Tonight's lines are pricing scenarios the model assigns much lower or higher probability to.`,
+    });
+  }
+
+  const fragileCluster = edges.filter((e) => (e.fragilityScore ?? 0) >= 65).length;
+  if (fragileCluster >= 5) {
+    out.push({
+      level: 'note',
+      title: 'Volatile player pool',
+      detail: `${fragileCluster} legs sit in fragile/volatile-role tier. Variance dominates conviction tonight; size cards smaller.`,
+    });
+  }
+
+  const momentum = edges.filter((e) => (e.momentumScore ?? 0) >= 70).length;
+  if (momentum >= 4) {
+    out.push({
+      level: 'note',
+      title: 'Momentum cluster',
+      detail: `${momentum} legs riding strong recent-form expansion. Watch for trap risk if any of these crossed into "public hammer" territory.`,
+    });
+  }
+
+  return out;
+}
+
 type StrengthData = {
   legs: number;
   avgEdge: number;
-  highEdgeCount: number;  // legs with edge ≥ 10%
+  highEdgeCount: number;
 };
 
 function computeSlateStrength(
@@ -313,7 +615,41 @@ function computeSlateStrength(
   };
 }
 
-// ---------- components ----------
+// ---------- UI components ----------
+
+function AnalystBanner({ summary }: { summary: string }) {
+  return (
+    <div
+      style={{
+        margin: '12px 0 20px',
+        padding: '12px 14px',
+        background: 'linear-gradient(135deg, rgba(122, 162, 255, 0.08) 0%, rgba(102, 187, 106, 0.06) 50%, rgba(179, 136, 255, 0.08) 100%)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderLeft: '3px solid #ffd54f',
+        borderRadius: 6,
+        display: 'flex',
+        gap: 10,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          color: '#ffd54f',
+          padding: '2px 6px',
+          background: 'rgba(255, 213, 79, 0.12)',
+          borderRadius: 3,
+          height: 'fit-content',
+          flexShrink: 0,
+        }}
+      >
+        ANALYST
+      </span>
+      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55 }}>{summary}</p>
+    </div>
+  );
+}
 
 function SportFilterTabs({
   value,
@@ -389,8 +725,158 @@ function EmptyCard({ text }: { text: string }) {
   );
 }
 
-function EdgeCard({ edge }: { edge: UnifiedEdge }) {
+// ---------- Dislocation cards ----------
+
+function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }) {
   const color = SPORT_COLOR[edge.sport];
+  const band = confidenceBand(edge);
+  const variance = varianceLabel(edge);
+  const tags = qualityTags(edge);
+  const reasons = buildEdgeReasons(edge);
+  const risks = buildRiskReasons(edge);
+  const implied = marketImplied(edge);
+
+  return (
+    <Link
+      to={edge.href}
+      style={{
+        display: 'block',
+        background: 'rgba(255,255,255,0.03)',
+        border: `1px solid ${color}55`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 8,
+        padding: '14px 16px',
+        textDecoration: 'none',
+        color: 'inherit',
+        position: 'relative',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 10,
+          right: 12,
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          color: 'rgba(255,255,255,0.4)',
+        }}
+      >
+        #{rank} DISLOCATION
+      </span>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <SportAvatar edge={edge} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>{edge.playerName}</div>
+          <div className="muted small" style={{ fontSize: 11 }}>
+            <span style={{ color, fontWeight: 700 }}>{SPORT_LABEL[edge.sport]}</span>
+            {edge.team && <span> · {edge.team}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700 }}>
+        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      </div>
+
+      {/* Model vs market */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+          padding: '8px 10px',
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: 4,
+          marginBottom: 10,
+        }}
+      >
+        <div>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Model</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#66bb6a' }}>{Math.round(edge.probability)}%</div>
+          <div className="muted small" style={{ fontSize: 10 }}>
+            band {band.low.toFixed(0)}–{band.high.toFixed(0)}%
+          </div>
+        </div>
+        <div>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Market implied</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'rgba(255,255,255,0.65)' }}>{Math.round(implied)}%</div>
+          <div className="muted small" style={{ fontSize: 10, color: edge.edgePercent >= 0 ? '#66bb6a' : '#ef5350' }}>
+            {edge.edgePercent >= 0 ? '+' : ''}{edge.edgePercent.toFixed(0)}% mispricing
+          </div>
+        </div>
+      </div>
+
+      {/* WHY THIS EDGE EXISTS */}
+      {reasons.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color, marginBottom: 4 }}>
+            WHY
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 1.5, color: 'rgba(255,255,255,0.85)' }}>
+            {reasons.map((r, i) => <li key={i} style={{ marginBottom: 2 }}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* RISK */}
+      {risks.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', color: '#ef5350', marginBottom: 4 }}>
+            RISK
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 1.5, color: 'rgba(255,255,255,0.7)' }}>
+            {risks.map((r, i) => <li key={i} style={{ marginBottom: 2 }}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Tag row */}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            padding: '2px 6px',
+            background: `${variance.color}1a`,
+            color: variance.color,
+            border: `1px solid ${variance.color}33`,
+            borderRadius: 3,
+          }}
+        >
+          {variance.label}
+        </span>
+        {tags.map((t, i) => (
+          <span
+            key={i}
+            style={{
+              fontSize: 9,
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              padding: '2px 6px',
+              background: 'rgba(255,255,255,0.05)',
+              color: 'rgba(255,255,255,0.6)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 3,
+            }}
+          >
+            {t}
+          </span>
+        ))}
+      </div>
+    </Link>
+  );
+}
+
+function DislocationMediumCard({ edge }: { edge: UnifiedEdge }) {
+  const color = SPORT_COLOR[edge.sport];
+  const band = confidenceBand(edge);
+  const variance = varianceLabel(edge);
+  const reasons = buildEdgeReasons(edge).slice(0, 3);
+  const implied = marketImplied(edge);
+
   return (
     <Link
       to={edge.href}
@@ -405,7 +891,7 @@ function EdgeCard({ edge }: { edge: UnifiedEdge }) {
         color: 'inherit',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <SportAvatar edge={edge} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -417,30 +903,165 @@ function EdgeCard({ edge }: { edge: UnifiedEdge }) {
           </div>
         </div>
       </div>
-      <div style={{ marginTop: 8, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>
-          {edge.statLabel} {edge.line}
-        </span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: edge.direction === 'OVER' ? '#66bb6a' : '#ef5350' }}>
-          {edge.direction === 'OVER' ? '↑' : '↓'} {Math.round(edge.probability)}%
-        </span>
-        <span
-          style={{
-            marginLeft: 'auto',
-            fontSize: 16,
-            fontWeight: 800,
-            color: edge.edgePercent >= 0 ? '#66bb6a' : '#ef5350',
-          }}
-        >
+
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.7)',
+          marginBottom: 6,
+          fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+        }}
+      >
+        Model {Math.round(edge.probability)}% (±{band.width.toFixed(0)}) vs Market {Math.round(implied)}%
+        <span style={{ color: edge.edgePercent >= 0 ? '#66bb6a' : '#ef5350', marginLeft: 6, fontWeight: 700 }}>
           {edge.edgePercent >= 0 ? '+' : ''}{edge.edgePercent.toFixed(0)}%
         </span>
+      </div>
+
+      {reasons.length > 0 && (
+        <ul style={{ margin: '6px 0 8px', paddingLeft: 16, fontSize: 11, lineHeight: 1.45, color: 'rgba(255,255,255,0.7)' }}>
+          {reasons.map((r, i) => <li key={i}>{r}</li>)}
+        </ul>
+      )}
+
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.06em',
+          padding: '2px 6px',
+          background: `${variance.color}1a`,
+          color: variance.color,
+          border: `1px solid ${variance.color}33`,
+          borderRadius: 3,
+        }}
+      >
+        {variance.label}
+      </span>
+    </Link>
+  );
+}
+
+function DislocationCompactCard({ edge }: { edge: UnifiedEdge }) {
+  const color = SPORT_COLOR[edge.sport];
+  return (
+    <Link
+      to={edge.href}
+      style={{
+        display: 'block',
+        background: 'rgba(255,255,255,0.02)',
+        border: `1px solid ${color}22`,
+        borderLeft: `2px solid ${color}`,
+        borderRadius: 4,
+        padding: 8,
+        textDecoration: 'none',
+        color: 'inherit',
+        fontSize: 11,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+        <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {edge.playerName}
+        </span>
+        <span style={{ color: edge.edgePercent >= 0 ? '#66bb6a' : '#ef5350', fontWeight: 800 }}>
+          {edge.edgePercent >= 0 ? '+' : ''}{edge.edgePercent.toFixed(0)}%
+        </span>
+      </div>
+      <div className="muted small" style={{ fontSize: 10 }}>
+        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'} · {SPORT_LABEL[edge.sport]}
       </div>
     </Link>
   );
 }
 
+// ---------- Disagreement cards ----------
+
+function DisagreementCard({ edge }: { edge: UnifiedEdge }) {
+  const color = SPORT_COLOR[edge.sport];
+  const implied = marketImplied(edge);
+  const variance = varianceLabel(edge);
+  return (
+    <Link
+      to={edge.href}
+      style={{
+        display: 'block',
+        background: 'rgba(255,213,79,0.04)',
+        border: '1px solid rgba(255,213,79,0.2)',
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 6,
+        padding: 12,
+        textDecoration: 'none',
+        color: 'inherit',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <SportAvatar edge={edge} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {edge.playerName}
+          </div>
+          <div className="muted small" style={{ fontSize: 11 }}>
+            <span style={{ color, fontWeight: 700 }}>{SPORT_LABEL[edge.sport]}</span>
+            {edge.team && <span> · {edge.team}</span>}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          padding: 8,
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: 4,
+          marginBottom: 6,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>StatEdge</div>
+          <strong style={{ fontSize: 14, color: '#66bb6a' }}>{Math.round(edge.probability)}%</strong>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Market</div>
+          <strong style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)' }}>{Math.round(implied)}%</strong>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Δ</div>
+          <strong style={{ fontSize: 14, color: edge.edgePercent >= 0 ? '#66bb6a' : '#ef5350' }}>
+            {edge.edgePercent >= 0 ? '+' : ''}{edge.edgePercent.toFixed(0)}%
+          </strong>
+        </div>
+      </div>
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.06em',
+          padding: '2px 6px',
+          background: `${variance.color}1a`,
+          color: variance.color,
+          border: `1px solid ${variance.color}33`,
+          borderRadius: 3,
+        }}
+      >
+        {variance.label}
+      </span>
+    </Link>
+  );
+}
+
+// ---------- Trap card (institutional rebuild) ----------
+
 function TrapCard({ edge }: { edge: UnifiedEdge }) {
   const color = SPORT_COLOR[edge.sport];
+  const implied = marketImplied(edge);
+  const reasons = buildRiskReasons(edge);
   return (
     <Link
       to={edge.href}
@@ -455,12 +1076,10 @@ function TrapCard({ edge }: { edge: UnifiedEdge }) {
         color: 'inherit',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <SportAvatar edge={edge} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {edge.playerName}
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{edge.playerName}</div>
           <div className="muted small" style={{ fontSize: 11 }}>
             <span style={{ color, fontWeight: 700 }}>{SPORT_LABEL[edge.sport]}</span>
             {edge.team && <span> · {edge.team}</span>}
@@ -469,7 +1088,7 @@ function TrapCard({ edge }: { edge: UnifiedEdge }) {
         <span
           style={{
             fontSize: 11,
-            fontWeight: 700,
+            fontWeight: 800,
             letterSpacing: '0.04em',
             color: '#ef5350',
             background: 'rgba(239,83,80,0.15)',
@@ -480,15 +1099,75 @@ function TrapCard({ edge }: { edge: UnifiedEdge }) {
           ⚠ TRAP {Math.round(edge.trapScore)}
         </span>
       </div>
-      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600 }}>
-        {edge.statLabel} {edge.line}
-        <span style={{ marginLeft: 8, color: edge.direction === 'OVER' ? '#66bb6a' : '#ef5350' }}>
-          {edge.direction === 'OVER' ? '↑' : '↓'} {Math.round(edge.probability)}%
-        </span>
+
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
       </div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          padding: 8,
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: 4,
+          marginBottom: 8,
+        }}
+      >
+        <div>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Model</div>
+          <strong style={{ fontSize: 14, color: '#66bb6a' }}>{Math.round(edge.probability)}%</strong>
+        </div>
+        <div>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Market</div>
+          <strong style={{ fontSize: 14, color: '#ffb74d' }}>{Math.round(implied)}%</strong>
+        </div>
+        <div style={{ marginLeft: 'auto' }}>
+          <div className="muted small" style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Read</div>
+          <strong style={{ fontSize: 12, color: implied > edge.probability ? '#ef5350' : '#66bb6a' }}>
+            {implied > edge.probability ? 'Inflated' : 'Suppressed'}
+          </strong>
+        </div>
+      </div>
+
+      {reasons.length > 0 && (
+        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, lineHeight: 1.45, color: 'rgba(255,255,255,0.65)' }}>
+          {reasons.map((r, i) => <li key={i}>{r}</li>)}
+        </ul>
+      )}
     </Link>
   );
 }
+
+// ---------- Pressure signal card ----------
+
+function PressureSignalCard({ signal }: { signal: PressureSignal }) {
+  const color = signal.level === 'critical' ? '#ef5350'
+    : signal.level === 'elevated' ? '#ffb74d'
+    : '#7aa2ff';
+  const label = signal.level === 'critical' ? 'CRITICAL' : signal.level === 'elevated' ? 'ELEVATED' : 'NOTE';
+  return (
+    <div
+      style={{
+        background: `${color}0d`,
+        border: `1px solid ${color}33`,
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 6,
+        padding: 12,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color }}>{label}</span>
+        <strong style={{ fontSize: 13 }}>{signal.title}</strong>
+      </div>
+      <p className="muted small" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
+        {signal.detail}
+      </p>
+    </div>
+  );
+}
+
+// ---------- Avatars + strength + health (carry-over) ----------
 
 function SportAvatar({ edge }: { edge: UnifiedEdge }) {
   if (edge.sport === 'mlb' && typeof edge.playerId === 'number') {
@@ -612,7 +1291,7 @@ function NbaHealthCard({ nba }: { nba: SlateResponse | null }) {
   const color = SPORT_COLOR.nba;
   return (
     <Link
-      to="/nba/slate"
+      to="/nba/calibration"
       style={{
         display: 'block',
         background: 'rgba(255,255,255,0.02)',
@@ -629,7 +1308,7 @@ function NbaHealthCard({ nba }: { nba: SlateResponse | null }) {
         <span className="muted small">{nba?.combos.length ?? 0} cards</span>
       </div>
       <p className="muted small" style={{ marginTop: 6, marginBottom: 0 }}>
-        Calibration view embedded in /nba/slate. Click to open.
+        Open the calibration page for full predicted-vs-observed buckets.
       </p>
     </Link>
   );
