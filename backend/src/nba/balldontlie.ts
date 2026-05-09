@@ -72,5 +72,11 @@ export async function getScoreboardForDate(date: string): Promise<BdlGame[]> {
 }
 
 export function todayDateUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Eastern Time — same canonical sports timezone every league uses.
+  // Raw UTC rolls dates over at 7 PM CT during DST, surfacing
+  // tomorrow's slate while users still have games tonight.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
 }

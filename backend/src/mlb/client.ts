@@ -13,6 +13,19 @@ const BASE = 'https://statsapi.mlb.com/api/v1';
 const SPORT_ID = 1;
 const FETCH_TIMEOUT_MS = 10000;
 
+// "Today's" date in Eastern Time — the canonical sports timezone.
+// Using raw UTC (`new Date().toISOString().slice(0,10)`) rolls the
+// date over at 7 PM CT during DST, which surfaces tomorrow's slate
+// while users still have games TONIGHT. ET keeps the rollover at
+// midnight Eastern, matching every league's schedule + ESPN + every
+// sportsbook + how users intuitively think about "tonight's games."
+function todayEt(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
 // Legal/compliance: required disclaimer surfaced anywhere we render
 // MLB analytics. Sourced from the StatEdge MLB build spec — keep
 // verbatim so frontend and reports always show the same wording.
@@ -591,7 +604,7 @@ async function getStandingsRecordsByTeamId(season: number): Promise<Map<number, 
 // split records (the /schedule endpoint's leagueRecord is the record
 // going INTO the game, which is off-by-one once games start).
 export async function getTodaysMlbGames(date?: string): Promise<MlbTodayGame[]> {
-  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  const targetDate = date ?? todayEt();
   const season = Number(targetDate.slice(0, 4));
   const hydrate = 'probablePitcher(stats(group=[pitching],type=[season])),team,linescore,weather';
 
@@ -818,7 +831,7 @@ export function moneylineToImpliedProb(odds: number | null): number | null {
 export async function getEspnMlbOddsByMatchup(
   date?: string,
 ): Promise<Map<string, EspnMlbOdds>> {
-  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  const targetDate = date ?? todayEt();
   // ESPN expects YYYYMMDD without dashes for the dates query.
   const compactDate = targetDate.replace(/-/g, '');
   const url = `${ESPN_MLB_BASE}/scoreboard?dates=${compactDate}`;
@@ -874,7 +887,7 @@ const ODDS_CACHE_TTL_MS = 5 * 60 * 1000;
 export async function getEspnMlbOddsCached(
   date?: string,
 ): Promise<Map<string, EspnMlbOdds>> {
-  const key = date ?? new Date().toISOString().slice(0, 10);
+  const key = date ?? todayEt();
   const cached = oddsCache.get(key);
   if (cached && Date.now() - cached.fetchedAt < ODDS_CACHE_TTL_MS) {
     return cached.data;

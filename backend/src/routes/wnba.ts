@@ -474,6 +474,144 @@ wnbaRouter.get('/slate/stats', (_req, res) => {
   res.json({ stats: listWnbaStatKeys() });
 });
 
+// ---------- Bulk live stats for WNBA slate per-leg grading ----------
+//
+// Same pattern as /api/mlb/live/today + /api/live/today (NBA): one
+// endpoint that fans out to ESPN summaries for every live/final game,
+// projects per-athlete current stats keyed by athleteId so the
+// frontend can grade slate legs without 12 separate fetches.
+//
+// Server-side cache (25s TTL) absorbs concurrent slate-page polling.
+
+type WnbaLiveCacheEntry = { fetchedAt: number; payload: unknown };
+let wnbaLiveTodayCache: WnbaLiveCacheEntry | null = null;
+const WNBA_LIVE_TTL_MS = 25_000;
+
+function parseShootingMA(s: string): { made: number; attempted: number } {
+  const [m, a] = (s ?? '').split('-').map(Number);
+  return {
+    made: Number.isFinite(m) ? (m ?? 0) : 0,
+    attempted: Number.isFinite(a) ? (a ?? 0) : 0,
+  };
+}
+
+wnbaRouter.get('/live/today', async (_req, res) => {
+  const now = Date.now();
+  if (wnbaLiveTodayCache && now - wnbaLiveTodayCache.fetchedAt < WNBA_LIVE_TTL_MS) {
+    res.json(wnbaLiveTodayCache.payload);
+    return;
+  }
+  try {
+    const sb = await fetchWnbaScoreboard();
+    const games = sb.games;
+
+    const byGame: Record<string, {
+      state: 'pregame' | 'live' | 'final';
+      detailedState: string;
+      awayAbbr: string;
+      homeAbbr: string;
+      awayScore: number | null;
+      homeScore: number | null;
+    }> = {};
+    for (const g of games) {
+      const state: 'pregame' | 'live' | 'final' =
+        g.status.state === 'in' ? 'live'
+        : g.status.state === 'post' ? 'final'
+        : 'pregame';
+      byGame[g.id] = {
+        state,
+        detailedState: g.status.detail,
+        awayAbbr: g.away.abbreviation,
+        homeAbbr: g.home.abbreviation,
+        awayScore: g.away.score ? Number(g.away.score) : null,
+        homeScore: g.home.score ? Number(g.home.score) : null,
+      };
+    }
+
+    // Only fetch summaries for games that are live or final — pre-game
+    // boxscores have no player stats yet.
+    const interesting = games.filter(
+      (g) => g.status.state === 'in' || g.status.state === 'post',
+    );
+
+    const byPlayer: Record<string, {
+      eventId: string;
+      points: number;
+      rebounds: number;
+      assists: number;
+      steals: number;
+      blocks: number;
+      turnovers: number;
+      threePtMade: number;
+      threePtAttempted: number;
+      fgMade: number;
+      fgAttempted: number;
+      ftMade: number;
+      ftAttempted: number;
+      personalFouls: number;
+      pra: number;
+      pr: number;
+      pa: number;
+      ra: number;
+      stocks: number;
+    }> = {};
+
+    const summaryResults = await Promise.allSettled(
+      interesting.map((g) => fetchWnbaGameSummary(g.id).then((s) => ({ eventId: g.id, summary: s }))),
+    );
+
+    for (const r of summaryResults) {
+      if (r.status !== 'fulfilled') continue;
+      const { eventId, summary } = r.value;
+      for (const side of [summary.away, summary.home]) {
+        for (const p of [...side.starters, ...side.bench]) {
+          if (!p.athleteId) continue;
+          const fg = parseShootingMA(p.fg);
+          const tp = parseShootingMA(p.threePt);
+          const ft = parseShootingMA(p.ft);
+          const pts = p.points ?? 0;
+          const reb = p.rebounds ?? 0;
+          const ast = p.assists ?? 0;
+          const stl = p.steals ?? 0;
+          const blk = p.blocks ?? 0;
+          byPlayer[p.athleteId] = {
+            eventId,
+            points: pts,
+            rebounds: reb,
+            assists: ast,
+            steals: stl,
+            blocks: blk,
+            turnovers: p.turnovers ?? 0,
+            threePtMade: tp.made,
+            threePtAttempted: tp.attempted,
+            fgMade: fg.made,
+            fgAttempted: fg.attempted,
+            ftMade: ft.made,
+            ftAttempted: ft.attempted,
+            personalFouls: p.fouls ?? 0,
+            pra: pts + reb + ast,
+            pr:  pts + reb,
+            pa:  pts + ast,
+            ra:  reb + ast,
+            stocks: stl + blk,
+          };
+        }
+      }
+    }
+
+    const payload = {
+      fetchedAt: new Date().toISOString(),
+      byGame,
+      byPlayer,
+    };
+    wnbaLiveTodayCache = { fetchedAt: now, payload };
+    res.json(payload);
+  } catch (err) {
+    console.error('wnba/live/today failed', err);
+    res.status(500).json({ error: 'wnba live today fetch failed' });
+  }
+});
+
 // GET /api/wnba/calibration?windowDays=30
 //
 // Predicted-vs-observed accuracy. Lazy-grades any ungraded rows

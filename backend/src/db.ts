@@ -871,7 +871,14 @@ export async function getDataFreshness(): Promise<{
   if (!last) return { lastGameDate: null, daysStale: null };
 
   const lastMs = new Date(last + 'T00:00:00Z').getTime();
-  const todayUtc = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime();
+  // ET-anchored "today" so daysStale doesn't briefly jump to 1 the
+  // second UTC midnight passes (which is 7 PM CT during DST — users
+  // see "1 day stale" while they're actively watching tonight's games).
+  const todayEtIso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const todayUtc = new Date(todayEtIso + 'T00:00:00Z').getTime();
   const daysStale = Math.max(0, Math.round((todayUtc - lastMs) / (1000 * 60 * 60 * 24)));
   return { lastGameDate: last, daysStale };
 }

@@ -2209,7 +2209,10 @@ mlbRouter.get('/today', async (req, res) => {
     });
 
     res.json({
-      date: date ?? new Date().toISOString().slice(0, 10),
+      date: date ?? new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date()),
       games: enriched,
       disclaimer: MLB_DISCLAIMER,
     });

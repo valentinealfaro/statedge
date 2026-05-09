@@ -2463,6 +2463,53 @@ export async function getWnbaCalibration(windowDays: 30 | 90 = 30): Promise<Wnba
   return (await res.json()) as WnbaCalibrationReport;
 }
 
+// =============================================================
+// WNBA bulk live stats (Phase 78b) — per-leg slate grading
+// =============================================================
+
+export type WnbaLiveTodayPlayer = {
+  eventId: string;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  turnovers: number;
+  threePtMade: number;
+  threePtAttempted: number;
+  fgMade: number;
+  fgAttempted: number;
+  ftMade: number;
+  ftAttempted: number;
+  personalFouls: number;
+  pra: number;
+  pr: number;
+  pa: number;
+  ra: number;
+  stocks: number;
+};
+
+export type WnbaLiveTodayGame = {
+  state: 'pregame' | 'live' | 'final';
+  detailedState: string;
+  awayAbbr: string;
+  homeAbbr: string;
+  awayScore: number | null;
+  homeScore: number | null;
+};
+
+export type WnbaLiveTodayResponse = {
+  fetchedAt: string;
+  byGame: Record<string, WnbaLiveTodayGame>;
+  byPlayer: Record<string, WnbaLiveTodayPlayer>;
+};
+
+export async function getWnbaLiveToday(): Promise<WnbaLiveTodayResponse> {
+  const res = await fetch(`${API_BASE}/api/wnba/live/today`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as WnbaLiveTodayResponse;
+}
+
 export async function getMlbLiveToday(): Promise<MlbLiveTodayResponse> {
   const res = await fetch(`${API_BASE}/api/mlb/live/today`);
   if (!res.ok) {
