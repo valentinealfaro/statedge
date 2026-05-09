@@ -12,6 +12,7 @@ import {
   type MlbCalibrationReport,
 } from './api';
 import { ClvPanel } from './ClvPanel';
+import { LatestNewsRail } from './LatestNewsRail';
 import { LossForensics } from './LossForensics';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -68,6 +69,11 @@ export function MlbCalibration() {
         )}
 
         {report && <CalibrationView report={report} />}
+
+        {/* MLB-scoped news rail — context for users auditing the
+            model: while you're checking calibration, here's what
+            the engine has been writing about MLB. */}
+        <LatestNewsRail sport="mlb" limit={4} heading="MLB Coverage" />
       </div>
     </div>
   );

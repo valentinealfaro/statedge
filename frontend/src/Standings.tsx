@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getStandings, type StandingRow } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -58,6 +59,10 @@ export function Standings() {
             <ConferenceTable label="Western Conference" rows={data.west} />
           </>
         )}
+
+        {/* NBA-scoped news rail — Power Rankings + recent NBA articles
+            land here, giving standings users sport-specific context. */}
+        <LatestNewsRail sport="nba" limit={4} heading="NBA News & Power Rankings" />
       </div>
     </div>
   );

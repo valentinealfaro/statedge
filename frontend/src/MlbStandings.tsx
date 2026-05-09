@@ -13,6 +13,7 @@ import {
   type MlbStandingRow,
   type MlbStandingsResponse,
 } from './api';
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -72,6 +73,9 @@ export function MlbStandings() {
         {data && (
           <p className="mlb-disclaimer">{data.disclaimer}</p>
         )}
+
+        {/* MLB-scoped news rail — Power Rankings + recent MLB articles. */}
+        <LatestNewsRail sport="mlb" limit={4} heading="MLB News & Power Rankings" />
       </div>
     </div>
   );

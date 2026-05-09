@@ -3,6 +3,7 @@
 // so NBA matches MLB + WNBA's calibration surface area. Same component,
 // just hosted in its own page chrome.
 
+import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { SlateCalibration } from './SlateCalibration';
 import { useTitle } from './useTitle';
@@ -21,6 +22,9 @@ export function NbaCalibration() {
           accuracy. Pushes are excluded from the math.
         </p>
         <SlateCalibration />
+
+        {/* NBA-scoped news rail — context for users auditing the model. */}
+        <LatestNewsRail sport="nba" limit={4} heading="NBA Coverage" />
       </div>
     </div>
   );

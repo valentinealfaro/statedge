@@ -11,6 +11,7 @@ import {
   type WnbaCalibrationReport,
 } from './api';
 import { ClvPanel } from './ClvPanel';
+import { LatestNewsRail } from './LatestNewsRail';
 import { LossForensics } from './LossForensics';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -64,6 +65,9 @@ export function WnbaCalibration() {
         {!report && !error && <Skeleton width="100%" height={240} style={{ marginTop: 20 }} />}
 
         {report && <CalibrationView report={report} />}
+
+        {/* WNBA-scoped news rail. */}
+        <LatestNewsRail sport="wnba" limit={4} heading="WNBA Coverage" />
       </div>
     </div>
   );
