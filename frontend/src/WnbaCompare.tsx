@@ -9,6 +9,7 @@
 // and NBA so the platform reads as one engine.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { WnbaPlayerAvatar } from './Avatar';
 import {
   getWnbaPlayerGameLog,
@@ -40,10 +41,21 @@ const STATS = [
 
 export function WnbaCompare() {
   useTitle(['WNBA Compare']);
+  const [searchParams] = useSearchParams();
   const [selected, setSelected] = useState<WnbaSearchPlayer | null>(null);
   const [gamelog, setGamelog] = useState<WnbaGameLogResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Pre-load player from `?aid=...` (from global search). Resolves to
+  // a minimal WnbaSearchPlayer shape; gamelog effect picks up from there.
+  useEffect(() => {
+    const aid = searchParams.get('aid');
+    if (!aid || selected?.id === aid) return;
+    // Minimal stub — the gamelog effect runs off `selected.id` only;
+    // displayName/team get filled in from the gamelog response below.
+    setSelected({ id: aid, displayName: '', shortName: '', team: null, position: null, headshot: null });
+  }, [searchParams, selected?.id]);
 
   useEffect(() => {
     if (!selected) { setGamelog(null); return; }

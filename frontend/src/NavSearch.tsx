@@ -1,31 +1,40 @@
+// Global cross-sport intelligence search — Phase 83. Searches NBA +
+// MLB + WNBA in parallel, returns results grouped by sport, with
+// sport-colored section headers. Each result routes to that sport's
+// canonical player surface.
+//
+// Mission: one search box, every player. The institutional terminal
+// vibe — type a name, jump to the data.
+
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   searchMlbPlayers,
   searchPlayers,
+  searchWnbaPlayers,
   type MlbSearchPlayer,
   type Player,
+  type WnbaSearchPlayer,
 } from './api';
-import { PlayerAvatar } from './Avatar';
+import { MlbPlayerAvatar, PlayerAvatar, WnbaPlayerAvatar } from './Avatar';
 
-// Compact "jump to player" search that lives in the navbar. Always
-// visible on Compare/Standings/Game pages so a user can pivot from
-// anything to anyone in two keystrokes.
-//
-// Sport-aware: on /mlb/* routes searches mlb_players and routes to
-// /mlb/player/:id; on /nba/* (or default) searches NBA and routes
-// to /nba/compare with the player pre-loaded.
-type AnyPlayer =
-  | (Player & { _sport: 'nba' })
-  | (MlbSearchPlayer & { _sport: 'mlb' });
+type Sport = 'nba' | 'mlb' | 'wnba';
+
+const SPORT_COLOR: Record<Sport, string> = {
+  nba:  '#7aa2ff',
+  mlb:  '#66bb6a',
+  wnba: '#b388ff',
+};
+
+type SearchState = {
+  nba: Player[];
+  mlb: MlbSearchPlayer[];
+  wnba: WnbaSearchPlayer[];
+};
 
 export function NavSearch() {
-  const location = useLocation();
-  const isMlb = location.pathname.startsWith('/mlb');
-  const sport: 'mlb' | 'nba' = isMlb ? 'mlb' : 'nba';
-
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<AnyPlayer[]>([]);
+  const [results, setResults] = useState<SearchState>({ nba: [], mlb: [], wnba: [] });
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -33,26 +42,26 @@ export function NavSearch() {
 
   useEffect(() => {
     const q = query.trim();
-    if (!q) { setResults([]); return; }
+    if (q.length < 2) { setResults({ nba: [], mlb: [], wnba: [] }); return; }
     const ctrl = new AbortController();
     setLoading(true);
     const t = setTimeout(async () => {
-      try {
-        if (sport === 'mlb') {
-          const list = await searchMlbPlayers(q);
-          setResults(list.slice(0, 6).map((p) => ({ ...p, _sport: 'mlb' as const })));
-        } else {
-          const list = await searchPlayers(q, ctrl.signal);
-          setResults(list.slice(0, 6).map((p) => ({ ...p, _sport: 'nba' as const })));
-        }
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    }, 200);
+      const [nbaR, mlbR, wnbaR] = await Promise.allSettled([
+        searchPlayers(q, ctrl.signal).catch(() => []),
+        searchMlbPlayers(q).catch(() => []),
+        searchWnbaPlayers(q, ctrl.signal).catch(() => []),
+      ]);
+      if (ctrl.signal.aborted) return;
+      setResults({
+        nba:  nbaR.status === 'fulfilled' ? nbaR.value.slice(0, 5) : [],
+        mlb:  mlbR.status === 'fulfilled' ? mlbR.value.slice(0, 5) : [],
+        wnba: wnbaR.status === 'fulfilled' ? wnbaR.value.slice(0, 5) : [],
+      });
+      setLoading(false);
+    }, 220);
     return () => { ctrl.abort(); clearTimeout(t); };
-  }, [query, sport]);
+  }, [query]);
 
-  // Close the dropdown on outside click. Keeps the input visible but
-  // hides the result tray so the rest of the page is reachable.
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
@@ -61,21 +70,21 @@ export function NavSearch() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  function pick(p: AnyPlayer) {
-    setOpen(false);
-    setQuery('');
-    setResults([]);
-    if (p._sport === 'mlb') {
-      navigate(`/mlb/player/${p.id}`);
-    } else {
-      navigate(`/nba/compare?m=last10&pid=${p.id}`);
-    }
+  function pickNba(p: Player) {
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    navigate(`/nba/compare?m=last10&pid=${p.id}`);
+  }
+  function pickMlb(p: MlbSearchPlayer) {
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    navigate(`/mlb/player/${p.id}`);
+  }
+  function pickWnba(p: WnbaSearchPlayer) {
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    navigate(`/wnba/compare?aid=${encodeURIComponent(p.id)}`);
   }
 
-  function teamFor(p: AnyPlayer): string {
-    if (p._sport === 'mlb') return p.team?.abbreviation ?? '—';
-    return p.teamAbbreviation ?? '—';
-  }
+  const totalResults = results.nba.length + results.mlb.length + results.wnba.length;
+  const showTray = open && query.trim().length >= 2;
 
   return (
     <div className="nav-search" ref={wrapRef}>
@@ -84,26 +93,81 @@ export function NavSearch() {
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        placeholder={`Find an ${sport.toUpperCase()} player…`}
-        aria-label={`Find an ${sport.toUpperCase()} player`}
+        placeholder="Search any player…"
+        aria-label="Search any player across NBA, MLB, WNBA"
       />
-      {open && query.trim().length > 0 && (
-        <div className="nav-search-results">
-          {loading && results.length === 0 && (
-            <div className="nav-search-empty">Searching…</div>
+      {showTray && (
+        <div className="nav-search-results" style={{ maxHeight: 480, overflowY: 'auto' }}>
+          {loading && totalResults === 0 && (
+            <div className="nav-search-empty">Searching all sports…</div>
           )}
-          {!loading && results.length === 0 && (
-            <div className="nav-search-empty">No matches</div>
+          {!loading && totalResults === 0 && (
+            <div className="nav-search-empty">No matches across NBA, MLB, or WNBA</div>
           )}
-          {results.map((p) => (
-            <button key={`${p._sport}:${p.id}`} className="nav-search-row" onClick={() => pick(p)}>
-              <PlayerAvatar playerId={p.id} name={p.fullName} size="md" />
-              <span className="nav-search-name">{p.fullName}</span>
-              <span className="nav-search-team">{teamFor(p)}</span>
-            </button>
-          ))}
+
+          {results.nba.length > 0 && (
+            <SportSection sport="nba" count={results.nba.length}>
+              {results.nba.map((p) => (
+                <button key={`nba:${p.id}`} className="nav-search-row" onClick={() => pickNba(p)}>
+                  <PlayerAvatar playerId={p.id} name={p.fullName} size="md" />
+                  <span className="nav-search-name">{p.fullName}</span>
+                  <span className="nav-search-team">{p.teamAbbreviation ?? '—'}</span>
+                </button>
+              ))}
+            </SportSection>
+          )}
+
+          {results.mlb.length > 0 && (
+            <SportSection sport="mlb" count={results.mlb.length}>
+              {results.mlb.map((p) => (
+                <button key={`mlb:${p.id}`} className="nav-search-row" onClick={() => pickMlb(p)}>
+                  <MlbPlayerAvatar playerId={p.id} name={p.fullName} size="md" />
+                  <span className="nav-search-name">{p.fullName}</span>
+                  <span className="nav-search-team">{p.team?.abbreviation ?? '—'}</span>
+                </button>
+              ))}
+            </SportSection>
+          )}
+
+          {results.wnba.length > 0 && (
+            <SportSection sport="wnba" count={results.wnba.length}>
+              {results.wnba.map((p) => (
+                <button key={`wnba:${p.id}`} className="nav-search-row" onClick={() => pickWnba(p)}>
+                  <WnbaPlayerAvatar playerId={p.id} name={p.displayName} size="md" />
+                  <span className="nav-search-name">{p.displayName}</span>
+                  <span className="nav-search-team">{p.team ?? '—'}</span>
+                </button>
+              ))}
+            </SportSection>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function SportSection({ sport, count, children }: { sport: Sport; count: number; children: React.ReactNode }) {
+  const color = SPORT_COLOR[sport];
+  return (
+    <div>
+      <div
+        style={{
+          padding: '6px 10px',
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color,
+          background: `${color}11`,
+          borderTop: `1px solid ${color}22`,
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>{sport.toUpperCase()}</span>
+        <span style={{ color: 'rgba(255,255,255,0.4)' }}>{count}</span>
+      </div>
+      {children}
     </div>
   );
 }
