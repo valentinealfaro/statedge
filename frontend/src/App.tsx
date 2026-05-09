@@ -14,6 +14,8 @@ import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
 import { NbaCalibration } from './NbaCalibration';
 import { NbaSlateHistory } from './NbaSlateHistory';
+import { News } from './News';
+import { NewsArticle } from './NewsArticle';
 import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
@@ -68,6 +70,10 @@ export function App() {
           <Route path="/wnba/calibration" element={<WnbaCalibration />} />
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />
+
+          {/* News — Phase 104. Auto-generated articles, public SEO. */}
+          <Route path="/news" element={<News />} />
+          <Route path="/news/:slug" element={<NewsArticle />} />
 
           {/* Existing detail routes — sport-agnostic, leave as-is */}
           <Route path="/game/:gameId" element={<GameDetail />} />

@@ -1759,6 +1759,55 @@ export async function clearMlbDailySlate(adminSecret: string): Promise<{ ok: boo
   return (await res.json()) as { ok: boolean };
 }
 
+// Phase 104 — auto-generated news articles
+export type Article = {
+  id: number;
+  slug: string;
+  kind:
+    | 'top_mispricings'
+    | 'trap_watch'
+    | 'why_market_wrong'
+    | 'clv_recap'
+    | 'edge_preview'
+    | 'big_game'
+    | 'situation_report';
+  sport: 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';
+  title: string;
+  summary: string;
+  bodyMd: string;
+  heroImageUrl: string | null;
+  videoYoutubeId: string | null;
+  relatedPlayerId: string | null;
+  relatedGameKey: string | null;
+  publishedAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+};
+
+export async function listArticles(opts?: {
+  sport?: string;
+  kind?: string;
+  playerId?: string;
+  limit?: number;
+}): Promise<{ articles: Article[]; count: number }> {
+  const p = new URLSearchParams();
+  if (opts?.sport) p.set('sport', opts.sport);
+  if (opts?.kind) p.set('kind', opts.kind);
+  if (opts?.playerId) p.set('playerId', opts.playerId);
+  if (opts?.limit) p.set('limit', String(opts.limit));
+  const res = await fetch(`${API_BASE}/api/news?${p.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { articles: Article[]; count: number };
+}
+
+export async function getArticle(slug: string): Promise<Article | null> {
+  const res = await fetch(`${API_BASE}/api/news/${encodeURIComponent(slug)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { article: Article };
+  return body.article;
+}
+
 // Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
 // IPs are blocked by PrizePicks Cloudflare, so server-side fetch
 // returns 403. This helper fetches from the user's residential IP

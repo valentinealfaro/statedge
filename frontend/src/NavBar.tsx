@@ -126,6 +126,12 @@ export function NavBar() {
             >
               WNBA
             </Link>
+            <Link
+              to="/news"
+              className={pathname.startsWith('/news') ? 'navlink active' : 'navlink'}
+            >
+              News
+            </Link>
           </div>
         ) : (
           <div className="nav-links">
@@ -140,6 +146,12 @@ export function NavBar() {
               className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
             >
               NBA
+            </Link>
+            <Link
+              to="/news"
+              className={pathname.startsWith('/news') ? 'navlink active' : 'navlink'}
+            >
+              News
             </Link>
             <Link to="/pricing" className={pathname.startsWith('/pricing') ? 'navlink active' : 'navlink'}>
               Upgrade
