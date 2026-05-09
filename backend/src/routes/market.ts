@@ -11,13 +11,16 @@
 //   POST /provider/:source/ingest — webhook for paid feeds
 
 import { Router } from 'express';
-import { getPool } from '../db.js';
+import { getPool, isDbConfigured, setMlbDailySlateInDb, type MlbStoredDailyLine } from '../db.js';
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
 import { getBudgetStatus } from '../market/creditBudget.js';
 import {
   resolveMlbPlayer,
   resolveMlbTeamFromFullName,
 } from '../market/playerResolver.js';
+import {
+  fetchPrizepicksProjections,
+} from '../market/providers/prizepicksApi.js';
 import {
   fetchToaEventOdds,
   fetchToaEvents,
@@ -637,6 +640,252 @@ function mlbStatKeyToToaMarket(statKey: string): string | null {
   };
   return map[statKey] ?? null;
 }
+
+// POST /api/market/prizepicks/sync (admin, OR cron with header secret)
+//
+// Phase 103g — automated PrizePicks ingestion. Fetches the full
+// projections feed for the requested sport, persists every line as a
+// market_snapshot, and (when publishSlate=true) UPSERTS the published
+// daily slate so downstream engines (slate builder, calibration,
+// projections history) pick up the fresh lines.
+//
+// Replaces the manual admin-paste pipeline as the primary ingestion
+// source. Paste remains the BACKUP — admin can still publish manually
+// when this endpoint is rate-limited or blocked.
+//
+// Designed for 1-2 invocations per day (matches the user's stated
+// cadence). Vercel Cron triggers it; admin can also call manually.
+//
+// Body: {
+//   sport: 'mlb' | 'nba' | 'wnba' | 'mma',
+//   publishSlate?: boolean,    // default true — also write to mlb_daily_slate
+//   mode?: 'safe' | 'balanced' | 'aggressive' | 'insane' | 'auto'  // for slate publish
+// }
+//
+// Auth: x-admin-secret header MUST match SLATE_ADMIN_SECRET (works
+// for both admin invocations + Vercel Cron headers).
+marketRouter.post('/prizepicks/sync', async (req, res) => {
+  const expected = process.env.SLATE_ADMIN_SECRET;
+  if (!expected) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured' });
+    return;
+  }
+  if (req.header('x-admin-secret') !== expected) {
+    res.status(401).json({ error: 'admin secret required' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    sport?: MarketSport;
+    publishSlate?: boolean;
+    mode?: string;
+  };
+  const sport = (body.sport ?? 'mlb') as MarketSport;
+  const publishSlate = body.publishSlate ?? true;
+  const mode = body.mode ?? 'balanced';
+
+  try {
+    // Fetch + parse PrizePicks projections (one HTTP call, no cost
+    // beyond the network round-trip to PrizePicks).
+    const fetched = await fetchPrizepicksProjections({ sport, perPage: 500 });
+
+    if (fetched.props.length === 0) {
+      res.json({
+        ok: true,
+        sport,
+        propsFetched: 0,
+        snapshotsInserted: 0,
+        slatePublished: false,
+        message: 'PrizePicks returned 0 projections — board may be down or sport not in season.',
+      });
+      return;
+    }
+
+    // Persist every prop as a market_snapshot. For MLB, enrich with
+    // resolved internal_player_id + team + opponent + gameKey so CLV
+    // can JOIN against projection_history. Other sports skip
+    // enrichment for now (NBA + WNBA + MMA player resolution lands
+    // in subsequent phases).
+    let snapshotProps = fetched.props;
+    let resolution = { resolvedPlayers: 0, resolvedTeams: 0, unresolvedPlayers: 0 };
+    if (sport === 'mlb') {
+      // PrizePicks doesn't surface event/home/away on its projections
+      // feed — opponent enrichment is best-effort (limited to what
+      // resolveMlbPlayer.team gives us). Pass an empty events array
+      // to keep the enricher's contract happy.
+      const enriched = await enrichToaSnapshots(snapshotProps, []);
+      snapshotProps = enriched.props;
+      resolution = {
+        resolvedPlayers: enriched.resolvedPlayers,
+        resolvedTeams: enriched.resolvedTeams,
+        unresolvedPlayers: enriched.unresolvedPlayers,
+      };
+    }
+    const writeRes = await writeMarketSnapshots(snapshotProps);
+
+    // Optional: also publish the slate so the slate engine picks up
+    // these lines. MLB-only for now — NBA + WNBA slate-publish paths
+    // exist but use different data shapes.
+    let slatePublished = false;
+    let slateLines = 0;
+    if (publishSlate && sport === 'mlb' && isDbConfigured()) {
+      const stored: MlbStoredDailyLine[] = [];
+      for (const p of snapshotProps) {
+        if (p.sport !== 'mlb') continue;
+        if (typeof p.internalPlayerId !== 'number') continue;     // skip unresolved
+        // Convert side: standard → 'both'; demon → 'over'; goblin → 'under'.
+        let direction: 'over' | 'under' | 'both' = 'both';
+        if (p.isDemon) direction = 'over';
+        else if (p.isGoblin) direction = 'under';
+        else direction = 'both';
+        // Map our normalized statKey back to the slate's expected
+        // statKey vocabulary. They're the same for MLB (we already
+        // canonicalized through normalizer.ts earlier in the same
+        // pipeline) so this is a no-op here.
+        stored.push({
+          playerId: p.internalPlayerId,
+          statKey: p.statKey as MlbStoredDailyLine['statKey'],
+          line: p.line,
+          direction,
+          // gamePk / opponent / pitcher resolution land in a follow-up;
+          // PrizePicks doesn't return them on this feed. Slate engine
+          // hydrates from /api/mlb/today separately.
+        });
+      }
+      // Dedupe — PrizePicks sometimes returns multiple projections for
+      // the same (player, stat, line) when one is Demon + another is
+      // Goblin. The slate stores ONE line per (player, stat) tuple; we
+      // prefer 'both' when present, else demon/goblin.
+      const dedup = new Map<string, MlbStoredDailyLine>();
+      for (const l of stored) {
+        const key = `${l.playerId}::${l.statKey}::${l.line}`;
+        const existing = dedup.get(key);
+        if (!existing) {
+          dedup.set(key, l);
+        } else if (l.direction === 'both') {
+          dedup.set(key, l);
+        }
+      }
+      const finalLines = [...dedup.values()];
+      if (finalLines.length > 0) {
+        await setMlbDailySlateInDb({
+          lines: finalLines,
+          rawText: null,
+          mode,
+        });
+        slatePublished = true;
+        slateLines = finalLines.length;
+      }
+    }
+
+    res.json({
+      ok: true,
+      sport,
+      fetchedAt: fetched.fetchedAt,
+      propsFetched: fetched.props.length,
+      snapshotsInserted: writeRes.inserted,
+      resolution,
+      slatePublished,
+      slateLines,
+    });
+  } catch (err) {
+    console.error('prizepicks/sync failed', err);
+    res.status(502).json({
+      error: (err as Error).message,
+      hint: 'PrizePicks may be rate-limiting or blocking the source IP. Fall back to admin paste.',
+    });
+  }
+});
+
+// GET /api/market/prizepicks/sync (Vercel Cron only)
+//
+// GET wrapper for the POST sync endpoint. Used by Vercel Cron, which
+// only supports GET. Cron requests carry an Authorization Bearer
+// header with CRON_SECRET. We validate that header rather than the
+// admin secret — Vercel Cron is the only legitimate caller of this
+// endpoint shape, so SLATE_ADMIN_SECRET stays scoped to admin POSTs.
+//
+// Sport defaults to MLB. Override via ?sport=mlb|nba|wnba|mma so the
+// same endpoint can be scheduled for multiple sports if needed.
+marketRouter.get('/prizepicks/sync', async (req, res) => {
+  // Vercel Cron auth: Bearer token in Authorization header.
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    res.status(503).json({ error: 'CRON_SECRET not configured — set in Vercel env vars to enable cron' });
+    return;
+  }
+  const authHeader = req.header('authorization') ?? '';
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    res.status(401).json({ error: 'cron auth required' });
+    return;
+  }
+
+  const sport = (req.query.sport as MarketSport | undefined) ?? 'mlb';
+  const publishSlate = req.query.publishSlate !== 'false';      // default true
+  const mode = (req.query.mode as string | undefined) ?? 'balanced';
+
+  try {
+    const fetched = await fetchPrizepicksProjections({ sport, perPage: 500 });
+    if (fetched.props.length === 0) {
+      res.json({
+        ok: true, sport, propsFetched: 0, snapshotsInserted: 0, slatePublished: false,
+      });
+      return;
+    }
+
+    let snapshotProps = fetched.props;
+    let resolution = { resolvedPlayers: 0, resolvedTeams: 0, unresolvedPlayers: 0 };
+    if (sport === 'mlb') {
+      const enriched = await enrichToaSnapshots(snapshotProps, []);
+      snapshotProps = enriched.props;
+      resolution = {
+        resolvedPlayers: enriched.resolvedPlayers,
+        resolvedTeams: enriched.resolvedTeams,
+        unresolvedPlayers: enriched.unresolvedPlayers,
+      };
+    }
+    const writeRes = await writeMarketSnapshots(snapshotProps);
+
+    let slatePublished = false;
+    let slateLines = 0;
+    if (publishSlate && sport === 'mlb' && isDbConfigured()) {
+      const stored: MlbStoredDailyLine[] = [];
+      for (const p of snapshotProps) {
+        if (typeof p.internalPlayerId !== 'number') continue;
+        const direction: 'over' | 'under' | 'both' =
+          p.isDemon ? 'over' : p.isGoblin ? 'under' : 'both';
+        stored.push({
+          playerId: p.internalPlayerId,
+          statKey: p.statKey as MlbStoredDailyLine['statKey'],
+          line: p.line,
+          direction,
+        });
+      }
+      const dedup = new Map<string, MlbStoredDailyLine>();
+      for (const l of stored) {
+        const k = `${l.playerId}::${l.statKey}::${l.line}`;
+        const ex = dedup.get(k);
+        if (!ex || l.direction === 'both') dedup.set(k, l);
+      }
+      const finalLines = [...dedup.values()];
+      if (finalLines.length > 0) {
+        await setMlbDailySlateInDb({ lines: finalLines, rawText: null, mode });
+        slatePublished = true;
+        slateLines = finalLines.length;
+      }
+    }
+
+    res.json({
+      ok: true, sport, fetchedAt: fetched.fetchedAt,
+      propsFetched: fetched.props.length,
+      snapshotsInserted: writeRes.inserted,
+      resolution, slatePublished, slateLines,
+    });
+  } catch (err) {
+    console.error('cron prizepicks/sync failed', err);
+    res.status(502).json({ error: (err as Error).message });
+  }
+});
 
 marketRouter.get('/snapshots/recent', async (req, res) => {
   try {

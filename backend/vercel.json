@@ -8,5 +8,15 @@
       "maxDuration": 180,
       "memory": 1024
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/market/prizepicks/sync?sport=mlb",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/market/prizepicks/sync?sport=mlb",
+      "schedule": "0 22 * * *"
+    }
+  ]
 }
