@@ -326,13 +326,14 @@ function collectEdges(
           fragilityTier: l.fragilityTier ?? null,
           momentumScore: null,
           riskScore: l.risk ?? null,
-          // NBA — Phase 101 fields not yet wired upstream.
-          marketImpliedProb: null,
-          lineInflationScore: null,
-          publicBiasTags: [],
-          sharpnessScore: null,
-          edgeDurability: null,
-          whyMarketWrong: null,
+          // NBA — Phase 101b wired through slateCombos. Legacy snapshots
+          // pre-dating this layer fall back to null.
+          marketImpliedProb: l.marketImpliedProb ?? null,
+          lineInflationScore: l.lineInflationScore ?? null,
+          publicBiasTags: l.publicBiasTags ?? [],
+          sharpnessScore: l.sharpnessScore ?? null,
+          edgeDurability: l.edgeDurability ?? null,
+          whyMarketWrong: l.whyMarketWrong ?? null,
           href: `/nba/compare?m=last10&pid=${l.playerId}`,
         });
       }

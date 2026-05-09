@@ -14,6 +14,11 @@
 // which picks to surface and how to group them.
 
 import { LAST10_LABELS, type Last10StatId } from './last10.js';
+import {
+  computeMarketIntel,
+  type EdgeDurability,
+  type PublicBiasTag,
+} from './marketIntel.js';
 import type { PlayerArchetype } from './playerArchetype.js';
 import { normalCdf } from './projectionEngine.js';
 import type { ResolvedLine } from './slatePipeline.js';
@@ -915,6 +920,17 @@ export type ComboCandidate = {
   // both sides bookable and pay the table rate.
   isDemon?: boolean;
   isGoblin?: boolean;
+
+  // ---- Phase 101 — Market Intelligence Engine ----
+  // See backend/src/services/marketIntel.ts for the full contract.
+  // Optional because Wild Card legs created before this layer don't
+  // have them; renderers fall back gracefully.
+  marketImpliedProb?: number;
+  lineInflationScore?: number;
+  publicBiasTags?: PublicBiasTag[];
+  sharpnessScore?: number;
+  edgeDurability?: EdgeDurability;
+  whyMarketWrong?: string | null;
 };
 
 // Wild Card variants. 'standard' = passes the strict historical gate
@@ -1188,6 +1204,23 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
     // doesn't use it; downstream code might.
     void seasonAvg;
 
+    // Phase 101 — market intelligence computed once, attached to the
+    // candidate. Survives the strip() into the public ComboCandidate.
+    const intel = computeMarketIntel({
+      probability,
+      edgePercent,
+      projection: p.projection.final,
+      line: l.line,
+      seasonAvg: p.factorBreakdown.seasonAvg ?? l.last10Avg ?? 0,
+      l5Avg: p.factorBreakdown.last5Avg,
+      l10Avg: l.last10Avg,
+      fragilityScore,
+      trapScore,
+      reasonCodes: p.modelNotes ?? [],
+      direction,
+      statKey: l.statKey,
+    });
+
     const raw: EnrichedCandidate = {
       playerId: l.playerId,
       playerName: l.playerName,
@@ -1228,6 +1261,12 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       archetype: l.archetype?.archetype,
       isDemon: l.direction === 'over',
       isGoblin: l.direction === 'under',
+      marketImpliedProb: intel.marketImpliedProb,
+      lineInflationScore: intel.lineInflationScore,
+      publicBiasTags: intel.publicBiasTags,
+      sharpnessScore: intel.sharpnessScore,
+      edgeDurability: intel.edgeDurability,
+      whyMarketWrong: intel.whyMarketWrong,
       context: {
         seasonAvg: p.factorBreakdown.seasonAvg ?? l.last10Avg,
         last5Avg: p.factorBreakdown.last5Avg,

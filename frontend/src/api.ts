@@ -719,6 +719,15 @@ export type SlateComboLeg = {
   // payout, easier line). Both undefined/false = standard prop.
   isDemon?: boolean;
   isGoblin?: boolean;
+
+  // Phase 101 — Market Intelligence Engine. See MlbPublicBiasTag /
+  // MlbEdgeDurability above; same vocabulary across sports.
+  marketImpliedProb?: number;
+  lineInflationScore?: number;
+  publicBiasTags?: MlbPublicBiasTag[];
+  sharpnessScore?: number;
+  edgeDurability?: MlbEdgeDurability;
+  whyMarketWrong?: string | null;
 };
 
 export type WildCardKind =
