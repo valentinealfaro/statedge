@@ -402,13 +402,14 @@ function collectEdges(
         fragilityTier: null,
         momentumScore: l.momentumScore ?? null,
         riskScore: null,
-        // WNBA — Phase 101 fields not yet wired upstream.
-        marketImpliedProb: null,
-        lineInflationScore: null,
-        publicBiasTags: [],
-        sharpnessScore: null,
-        edgeDurability: null,
-        whyMarketWrong: null,
+        // WNBA — Phase 101c wired through projection.ts. Legacy
+        // snapshots pre-dating this layer fall back to null.
+        marketImpliedProb: l.marketImpliedProb ?? null,
+        lineInflationScore: l.lineInflationScore ?? null,
+        publicBiasTags: l.publicBiasTags ?? [],
+        sharpnessScore: l.sharpnessScore ?? null,
+        edgeDurability: l.edgeDurability ?? null,
+        whyMarketWrong: l.whyMarketWrong ?? null,
         href: `/wnba/compare?aid=${encodeURIComponent(l.athleteId)}`,
       });
     }

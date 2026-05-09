@@ -2365,6 +2365,14 @@ export type WnbaProjectedLine = {
   fragilityScore: number;
   momentumScore: number;
   reasonCodes: string[];
+  // Phase 101 — Market Intelligence Engine. Optional for legacy
+  // snapshots; renderers fall back gracefully.
+  marketImpliedProb?: number;
+  lineInflationScore?: number;
+  publicBiasTags?: MlbPublicBiasTag[];
+  sharpnessScore?: number;
+  edgeDurability?: MlbEdgeDurability;
+  whyMarketWrong?: string | null;
 };
 
 export type WnbaCombo = {

@@ -9,6 +9,11 @@
 // port the institutional engine once the WNBA player-stats sync
 // workflow exists.
 
+import {
+  computeMarketIntel,
+  type EdgeDurability,
+  type PublicBiasTag,
+} from '../services/marketIntel.js';
 import { fetchWnbaPlayerGameLog, type WnbaGameLogEntry } from './espn.js';
 
 // Stat-key → game-log accessor. Keep in sync with the slate parser's
@@ -75,6 +80,13 @@ export type ProjectedWnbaLine = {
   fragilityScore: number;    // 0-100; high = thin sample or volatile
   momentumScore: number;     // 0-100; high = L5 well above season
   reasonCodes: string[];
+  // Phase 101 — Market Intelligence Engine. See marketIntel.ts.
+  marketImpliedProb: number;
+  lineInflationScore: number;
+  publicBiasTags: PublicBiasTag[];
+  sharpnessScore: number;
+  edgeDurability: EdgeDurability;
+  whyMarketWrong: string | null;
 };
 
 const DEFAULT_IMPLIED_PROB = 50;     // assume even market for now
@@ -108,6 +120,13 @@ export async function projectWnbaLine(
       l10HitRate: 0, l10HitCount: 0,
       trapScore: 0, fragilityScore: 80, momentumScore: 50,
       reasonCodes: ['No gamelog data — player may be inactive or pre-season.'],
+      // Phase 101 — neutral defaults for empty projection.
+      marketImpliedProb: 50,
+      lineInflationScore: 0,
+      publicBiasTags: [],
+      sharpnessScore: 0,
+      edgeDurability: 'fragile',
+      whyMarketWrong: null,
     };
   }
 
@@ -160,6 +179,22 @@ export async function projectWnbaLine(
   if (trapScore >= 30) reasonCodes.push(`Recent spike: L5 avg ${l5Avg.toFixed(1)} vs season ${seasonAvg.toFixed(1)} — possible public trap.`);
   if (momentumScore >= 70) reasonCodes.push(`Momentum: L5 averaging ${(lift * 100).toFixed(0)}% above season.`);
 
+  // Phase 101 — Market Intelligence Engine.
+  const intel = computeMarketIntel({
+    probability,
+    edgePercent,
+    projection,
+    line,
+    seasonAvg,
+    l5Avg,
+    l10Avg,
+    fragilityScore,
+    trapScore,
+    reasonCodes,
+    direction,
+    statKey,
+  });
+
   return {
     athleteId, playerName, team, statKey,
     statLabel: STAT_LABELS[statKey] ?? statKey,
@@ -176,5 +211,11 @@ export async function projectWnbaLine(
     fragilityScore,
     momentumScore,
     reasonCodes,
+    marketImpliedProb: intel.marketImpliedProb,
+    lineInflationScore: intel.lineInflationScore,
+    publicBiasTags: intel.publicBiasTags,
+    sharpnessScore: intel.sharpnessScore,
+    edgeDurability: intel.edgeDurability,
+    whyMarketWrong: intel.whyMarketWrong,
   };
 }
