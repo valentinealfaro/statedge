@@ -1846,6 +1846,15 @@ export function buildCombos(
       // hit rates already factor in venue mix.
       score += 2;
     }
+    // +3 minutes trending up. context.minutesMultiplier compares
+    // projected vs season-avg minutes. ≥1.05 means a real role bump
+    // (not just rounding noise). Aligned with the Phase 28 spec —
+    // Wild Card rewards expansion patterns.
+    const minCtx = (c as { context?: { minutesMultiplier: number } }).context;
+    if (minCtx && minCtx.minutesMultiplier >= 1.05) {
+      score += 3;
+      tags.push(`minutes ×${minCtx.minutesMultiplier.toFixed(2)} trending up`);
+    }
 
     // --- Penalties --------------------------------------------------
     if (c.last10HitCount === 3) {
