@@ -682,6 +682,129 @@ function useWnbaLiveToday(): WnbaLiveTodayResponse | null {
   return feed;
 }
 
+// Phase 92: WNBA Flex payouts — same PrizePicks schedule MLB/NBA use.
+const WNBA_FLEX_PAYOUTS: Record<string, number> = {
+  'Best 2': 3, 'Best 3': 5, 'Best 4': 10, 'Best 5': 7, 'Best 6': 25,
+};
+
+// Slate-level live tracker — aggregates every card on tonight's
+// WNBA slate into a single status banner: cleared / dead / live /
+// pending counts, per-leg totals, simulated $1 P/L. Same pattern
+// MLB + NBA use.
+function WnbaSlateLiveSummary({
+  combos,
+  liveToday,
+}: {
+  combos: Array<{ size: number; label: WnbaCombo['label']; combo: WnbaCombo | null; reason: string }>;
+  liveToday: WnbaLiveTodayResponse | null;
+}) {
+  if (!liveToday) return null;
+  const anyLive = Object.values(liveToday.byGame).some((g) => g.state === 'live');
+  const anyFinal = Object.values(liveToday.byGame).some((g) => g.state === 'final');
+  if (!anyLive && !anyFinal) return null;
+
+  type CardStatus = 'cleared' | 'dead' | 'live' | 'pending';
+  function statusForLegs(legs: WnbaCombo['legs']): CardStatus {
+    const grades = legs.map((l) => resolveLegLive(liveToday, l));
+    if (grades.some((g) => g.grade === 'MISS')) return 'dead';
+    const allHit = grades.length > 0 && grades.every((g) => g.grade === 'HIT' || g.grade === 'PUSH');
+    if (allHit) return 'cleared';
+    if (grades.some((g) => g.grade === 'PROGRESS' || g.grade === 'HIT')) return 'live';
+    return 'pending';
+  }
+
+  const cards: Array<{ name: string; status: CardStatus }> = [];
+  const allLegs: WnbaCombo['legs'] = [];
+  for (const slot of combos) {
+    if (!slot.combo) continue;
+    cards.push({ name: slot.combo.label, status: statusForLegs(slot.combo.legs) });
+    for (const l of slot.combo.legs) allLegs.push(l);
+  }
+
+  const cleared = cards.filter((c) => c.status === 'cleared').length;
+  const dead    = cards.filter((c) => c.status === 'dead').length;
+  const live    = cards.filter((c) => c.status === 'live').length;
+  const pending = cards.filter((c) => c.status === 'pending').length;
+
+  const seenLeg = new Set<string>();
+  let legHit = 0, legMiss = 0, legProgress = 0, legPending = 0;
+  for (const l of allLegs) {
+    const key = `${l.athleteId}::${l.statKey}::${l.line}::${l.direction}`;
+    if (seenLeg.has(key)) continue;
+    seenLeg.add(key);
+    const g = resolveLegLive(liveToday, l);
+    if (g.grade === 'HIT')           legHit += 1;
+    else if (g.grade === 'MISS')     legMiss += 1;
+    else if (g.grade === 'PROGRESS') legProgress += 1;
+    else                              legPending += 1;
+  }
+  const totalLegs = legHit + legMiss + legProgress + legPending;
+
+  if (cleared + dead + live === 0) return null;
+
+  let profit = 0;
+  for (const c of cards) {
+    if (c.status === 'cleared') profit += (WNBA_FLEX_PAYOUTS[c.name] ?? 1) - 1;
+    else if (c.status === 'dead') profit -= 1;
+  }
+
+  return (
+    <div
+      style={{
+        margin: '12px 0',
+        padding: '10px 14px',
+        borderRadius: 6,
+        background: dead > 0 && cleared === 0
+          ? 'rgba(239, 83, 80, 0.10)'
+          : cleared > 0
+          ? 'rgba(102, 187, 106, 0.10)'
+          : 'rgba(179, 136, 255, 0.10)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex',
+        gap: 16,
+        flexWrap: 'wrap',
+        alignItems: 'baseline',
+        fontSize: 13,
+      }}
+      title="Live aggregate across every card on tonight's WNBA slate. Cleared = all legs hit; Dead = at least one leg missed; Live = still in progress; Pending = game hasn't started."
+    >
+      <strong style={{ fontSize: 14, letterSpacing: '0.02em' }}>Slate live status</strong>
+      <span title="Cards where every leg has hit (parlay paid)" style={{ color: '#66bb6a', fontWeight: 700 }}>● {cleared} CLEARED</span>
+      <span title="Cards where at least one leg has missed (parlay dead)" style={{ color: '#ef5350', fontWeight: 700 }}>● {dead} DEAD</span>
+      <span title="Cards with at least one game in progress" style={{ color: '#b388ff', fontWeight: 700 }}>● {live} LIVE</span>
+      {pending > 0 && (<span className="muted small">{pending} pending tipoff</span>)}
+      <span
+        title="Per-leg totals across every card. De-duped so a leg on multiple cards counts once."
+        style={{
+          paddingLeft: 12,
+          marginLeft: 4,
+          borderLeft: '1px solid rgba(255,255,255,0.12)',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'baseline',
+        }}
+      >
+        <span className="muted small">Legs ({totalLegs})</span>
+        <span style={{ color: '#66bb6a', fontWeight: 700 }}>{legHit} hit</span>
+        <span style={{ color: '#ef5350', fontWeight: 700 }}>{legMiss} miss</span>
+        <span style={{ color: '#b388ff', fontWeight: 700 }}>{legProgress} live</span>
+        {legPending > 0 && (<span className="muted small">{legPending} pending</span>)}
+      </span>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'baseline' }}>
+        <span className="muted small">Simulated $1 P/L</span>
+        <strong
+          style={{
+            fontSize: 14,
+            color: profit > 0 ? '#66bb6a' : profit < 0 ? '#ef5350' : undefined,
+          }}
+        >
+          {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+        </strong>
+      </span>
+    </div>
+  );
+}
+
 function ComboRail({
   combos,
   resolvedMode,
@@ -701,6 +824,7 @@ function ComboRail({
           mode: <strong>{resolvedMode}</strong> · diversified portfolio across cards (no player on more than 4 of 6)
         </span>
       </div>
+      <WnbaSlateLiveSummary combos={combos} liveToday={liveToday} />
       <div className="best-picks-rail">
         {combos.map((slot) => (
           <ComboCard key={slot.size} slot={slot} liveToday={liveToday} onPlayerClick={onPlayerClick} />

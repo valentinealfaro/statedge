@@ -939,7 +939,23 @@ function BestPicksRail({
       if (c.status === 'cleared') profit += (FLEX_PAYOUTS[c.name] ?? 1) - 1;
       else if (c.status === 'dead') profit -= 1;
     }
-    return { cleared, dead, live, pending, profit };
+    // Phase 92: per-leg totals (de-duped — same player+stat+line+dir
+    // can appear on multiple cards).
+    const seenLeg = new Set<string>();
+    let legHit = 0, legMiss = 0, legProgress = 0, legPending = 0;
+    for (const c of combos) {
+      for (const l of c.legs) {
+        const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
+        if (seenLeg.has(key)) continue;
+        seenLeg.add(key);
+        const g = resolveNbaLegLive(liveToday, l);
+        if (g.grade === 'HIT')           legHit += 1;
+        else if (g.grade === 'MISS')     legMiss += 1;
+        else if (g.grade === 'PROGRESS') legProgress += 1;
+        else                              legPending += 1;
+      }
+    }
+    return { cleared, dead, live, pending, profit, legHit, legMiss, legProgress, legPending };
   })();
 
   return (
@@ -981,6 +997,25 @@ function BestPicksRail({
           {liveSummary.pending > 0 && (
             <span className="muted small">{liveSummary.pending} pending tipoff</span>
           )}
+          <span
+            title="Per-leg totals across every card. De-duped so a leg on multiple cards counts once."
+            style={{
+              paddingLeft: 12,
+              marginLeft: 4,
+              borderLeft: '1px solid rgba(255,255,255,0.12)',
+              display: 'flex',
+              gap: 10,
+              alignItems: 'baseline',
+            }}
+          >
+            <span className="muted small">Legs ({liveSummary.legHit + liveSummary.legMiss + liveSummary.legProgress + liveSummary.legPending})</span>
+            <span style={{ color: '#66bb6a', fontWeight: 700 }}>{liveSummary.legHit} hit</span>
+            <span style={{ color: '#ef5350', fontWeight: 700 }}>{liveSummary.legMiss} miss</span>
+            <span style={{ color: '#7aa2ff', fontWeight: 700 }}>{liveSummary.legProgress} live</span>
+            {liveSummary.legPending > 0 && (
+              <span className="muted small">{liveSummary.legPending} pending</span>
+            )}
+          </span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'baseline' }}>
             <span className="muted small">Simulated $1 P/L</span>
             <strong
