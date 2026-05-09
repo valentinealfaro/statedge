@@ -1,14 +1,17 @@
-// Global cross-sport intelligence search — Phase 83. Searches NBA +
-// MLB + WNBA in parallel, returns results grouped by sport, with
-// sport-colored section headers. Each result routes to that sport's
-// canonical player surface.
+// Global cross-sport intelligence search — Phase 83 + Phase 91.
+// Searches NBA + MLB + WNBA in parallel for player matches, AND on
+// focus (empty input) surfaces "trending edges across tonight's
+// slates" — search is now a discovery surface, not just lookup.
 //
-// Mission: one search box, every player. The institutional terminal
-// vibe — type a name, jump to the data.
+// Mission: one search box, every player. Plus institutional terminal
+// behavior — when nothing typed, show what's hot tonight.
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  getMlbDailySlate,
+  getTodaySlate,
+  getWnbaSlate,
   searchMlbPlayers,
   searchPlayers,
   searchWnbaPlayers,
@@ -32,13 +35,96 @@ type SearchState = {
   wnba: WnbaSearchPlayer[];
 };
 
+type TrendingEdge = {
+  sport: Sport;
+  playerName: string;
+  team: string | null;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  edgePercent: number;
+  href: string;
+};
+
 export function NavSearch() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchState>({ nba: [], mlb: [], wnba: [] });
+  const [trending, setTrending] = useState<TrendingEdge[] | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const trendingFetchedRef = useRef(false);
+
+  // Lazy-load trending edges on first focus. Cached for the session
+  // — server-side caches absorb cost across users.
+  async function ensureTrendingLoaded() {
+    if (trendingFetchedRef.current) return;
+    trendingFetchedRef.current = true;
+    const [nbaR, mlbR, wnbaR] = await Promise.allSettled([
+      getTodaySlate('balanced'),
+      getMlbDailySlate(),
+      getWnbaSlate(),
+    ]);
+    const out: TrendingEdge[] = [];
+    if (nbaR.status === 'fulfilled' && nbaR.value.resolved) {
+      const seen = new Set<string>();
+      for (const c of nbaR.value.resolved.combos) {
+        for (const l of c.legs) {
+          const k = `${l.playerId}-${l.statKey}-${l.line}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({
+            sport: 'nba',
+            playerName: l.playerName,
+            team: l.team,
+            statLabel: l.statLabel,
+            line: l.line,
+            direction: l.direction,
+            edgePercent: l.edgePercent ?? 0,
+            href: '/nba/slate',
+          });
+        }
+      }
+    }
+    if (mlbR.status === 'fulfilled' && mlbR.value.resolved) {
+      const seen = new Set<string>();
+      for (const slot of mlbR.value.resolved.combos) {
+        if (!slot.combo) continue;
+        for (const l of slot.combo.legs) {
+          const k = `${l.playerId}-${l.statKey}-${l.line}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({
+            sport: 'mlb',
+            playerName: l.playerName,
+            team: l.team,
+            statLabel: l.statLabel,
+            line: l.line,
+            direction: l.direction,
+            edgePercent: l.edgePercent,
+            href: '/mlb/slate',
+          });
+        }
+      }
+    }
+    if (wnbaR.status === 'fulfilled' && wnbaR.value.resolved) {
+      for (const l of wnbaR.value.resolved.lines.slice(0, 30)) {
+        out.push({
+          sport: 'wnba',
+          playerName: l.playerName,
+          team: l.team,
+          statLabel: l.statLabel,
+          line: l.line,
+          direction: l.direction,
+          edgePercent: l.edgePercent,
+          href: '/wnba/slate',
+        });
+      }
+    }
+    out.sort((a, b) => b.edgePercent - a.edgePercent);
+    setTrending(out.filter((e) => e.edgePercent >= 5).slice(0, 8));
+  }
 
   useEffect(() => {
     const q = query.trim();
@@ -92,10 +178,75 @@ export function NavSearch() {
         type="search"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        placeholder="Search any player…"
+        onFocus={() => { setOpen(true); void ensureTrendingLoaded(); }}
+        placeholder="Search any player or browse trending…"
         aria-label="Search any player across NBA, MLB, WNBA"
       />
+      {open && query.trim().length < 2 && trending && trending.length > 0 && (
+        <div className="nav-search-results" style={{ maxHeight: 480, overflowY: 'auto' }}>
+          <div
+            style={{
+              padding: '6px 10px',
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.5)',
+              background: 'rgba(255,255,255,0.03)',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span>Trending tonight</span>
+            <span style={{ color: 'rgba(255,255,255,0.4)' }}>by edge %</span>
+          </div>
+          {trending.map((t, i) => {
+            const color = SPORT_COLOR[t.sport];
+            return (
+              <button
+                key={i}
+                className="nav-search-row"
+                onClick={() => {
+                  setOpen(false);
+                  navigate(t.href);
+                }}
+                style={{ borderLeft: `3px solid ${color}` }}
+              >
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    color,
+                    width: 32,
+                    flexShrink: 0,
+                  }}
+                >
+                  {t.sport.toUpperCase()}
+                </span>
+                <span className="nav-search-name" style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t.playerName}
+                  </span>
+                  <span style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
+                    {t.statLabel} {t.line} {t.direction === 'OVER' ? '↑' : '↓'} {t.team ?? ''}
+                  </span>
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 800,
+                    color: t.edgePercent >= 0 ? '#66bb6a' : '#ef5350',
+                  }}
+                >
+                  {t.edgePercent >= 0 ? '+' : ''}{t.edgePercent.toFixed(0)}%
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {showTray && (
         <div className="nav-search-results" style={{ maxHeight: 480, overflowY: 'auto' }}>
           {loading && totalResults === 0 && (
