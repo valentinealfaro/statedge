@@ -1005,6 +1005,91 @@ marketRouter.get('/prizepicks/sync', async (req, res) => {
   }
 });
 
+// GET /api/market/debug/mlb-players?testName=Aaron+Judge
+//
+// Phase 103g-quat-bis diagnostic. Reports the actual state of the
+// mlb_players table on production so we can tell whether the resolver
+// is failing because:
+//   (a) the table is empty / sparsely populated
+//   (b) the unaccent extension isn't loaded
+//   (c) name formats differ between PrizePicks API and DB
+//
+// Public read; the data is just row counts + sample names. No secrets.
+marketRouter.get('/debug/mlb-players', async (req, res) => {
+  const testName = String(req.query.testName ?? 'Aaron Judge');
+  try {
+    const pool = getPool();
+
+    // 1) Total row count.
+    const totalRes = await pool.query<{ c: string }>(`SELECT COUNT(*)::text AS c FROM mlb_players`);
+    const totalRows = Number(totalRes.rows[0]?.c ?? 0);
+
+    // 2) Sample first 10 names so we can see what the table looks like.
+    const sampleRes = await pool.query<{ full_name: string }>(
+      `SELECT full_name FROM mlb_players ORDER BY id LIMIT 10`,
+    );
+
+    // 3) Test unaccent extension.
+    let unaccentWorks = false;
+    let unaccentError: string | null = null;
+    try {
+      await pool.query(`SELECT unaccent('Jesús') AS test`);
+      unaccentWorks = true;
+    } catch (err) {
+      unaccentError = (err as Error).message;
+    }
+
+    // 4) Try resolving the test name three different ways.
+    const trimmed = testName.trim();
+    // 4a) Plain LOWER() match.
+    const exactRes = await pool.query<{ id: number; full_name: string }>(
+      `SELECT id, full_name FROM mlb_players WHERE LOWER(full_name) = LOWER($1) LIMIT 1`,
+      [trimmed],
+    );
+    // 4b) unaccent() match — same SQL the bulk resolver uses.
+    let unaccentMatch: { id: number; full_name: string } | null = null;
+    let unaccentMatchError: string | null = null;
+    if (unaccentWorks) {
+      try {
+        const r = await pool.query<{ id: number; full_name: string }>(
+          `SELECT id, full_name FROM mlb_players
+            WHERE regexp_replace(unaccent(lower(full_name)), '\\s+', ' ', 'g')
+                = regexp_replace(unaccent(lower($1)), '\\s+', ' ', 'g')
+            LIMIT 1`,
+          [trimmed],
+        );
+        unaccentMatch = r.rows[0] ?? null;
+      } catch (err) {
+        unaccentMatchError = (err as Error).message;
+      }
+    }
+    // 4c) ILIKE fallback (matches partial / fuzzy).
+    const ilikeRes = await pool.query<{ id: number; full_name: string }>(
+      `SELECT id, full_name FROM mlb_players WHERE full_name ILIKE $1 LIMIT 5`,
+      [`%${trimmed.split(/\s+/).slice(-1)[0]}%`],
+    );
+
+    res.json({
+      totalRows,
+      sampleNames: sampleRes.rows.map((r) => r.full_name),
+      unaccentExtension: {
+        available: unaccentWorks,
+        error: unaccentError,
+      },
+      testName: trimmed,
+      results: {
+        plainLowerMatch: exactRes.rows[0] ?? null,
+        unaccentMatch,
+        unaccentMatchError,
+        ilikeLastNameMatches: ilikeRes.rows,
+      },
+    });
+  } catch (err) {
+    console.error('debug/mlb-players failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 marketRouter.get('/snapshots/recent', async (req, res) => {
   try {
     const hours = req.query.hours ? Math.max(1, Math.min(168, Number(req.query.hours))) : 24;

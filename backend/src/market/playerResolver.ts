@@ -99,10 +99,20 @@ export type BulkResolvedPlayer = {
   team: string | null;
 };
 
-function unaccentLower(s: string): string {
+// Strip combining diacritics from a string + lowercase + collapse
+// whitespace. Mirrors the SQL-side
+//   regexp_replace(unaccent(lower(...)), '\s+', ' ', 'g')
+// so JS keys match SQL keys exactly.
+//
+// Earlier version used literal combining characters in the regex
+// bracket. Replaced with explicit ̀-ͯ escapes — combining
+// marks rendered alone can mis-encode in source files (editors
+// attach them to surrounding chars), and the literal bracket form
+// could fail to match on save+rebuild cycles. Explicit escapes
+// always work.
+export function unaccentLower(s: string): string {
   return s
     .normalize('NFD')
-    // Strip combining diacritics (U+0300-U+036F).
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
