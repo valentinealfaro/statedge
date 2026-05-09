@@ -27,6 +27,7 @@ import {
   type MlbStatMeta,
 } from './api';
 import { NavBar } from './NavBar';
+import { PlayerNewsSection } from './PlayerNewsSection';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
@@ -173,6 +174,14 @@ export function MlbPlayerLog() {
 
         {log && (
           <p className="mlb-disclaimer">{(log as { disclaimer?: string }).disclaimer ?? ''}</p>
+        )}
+
+        {player && (
+          <PlayerNewsSection
+            sport="mlb"
+            playerId={player.id}
+            playerName={player.fullName}
+          />
         )}
       </div>
     </div>

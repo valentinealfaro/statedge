@@ -1808,6 +1808,43 @@ export async function getArticle(slug: string): Promise<Article | null> {
   return body.article;
 }
 
+// Phase 105 — player profile bundle. Returns articles we wrote about
+// the player + external Google News headlines + a set of social /
+// reference search-link templates. Player profile pages render the
+// three blocks side by side.
+export type ExternalHeadline = {
+  title: string;
+  link: string;
+  source: string | null;
+  publishedAt: string | null;
+};
+export type PlayerSearchLink = {
+  label: string;
+  url: string;
+  kind: 'social' | 'reference';
+};
+export type PlayerProfileBundle = {
+  sport: string;
+  playerId: string;
+  playerName: string | null;
+  articles: Article[];
+  externalHeadlines: ExternalHeadline[];
+  searchLinks: PlayerSearchLink[];
+};
+
+export async function getPlayerNewsBundle(opts: {
+  sport: 'mlb' | 'nba' | 'wnba' | 'mma';
+  id: string | number;
+  name?: string;
+}): Promise<PlayerProfileBundle> {
+  const p = new URLSearchParams();
+  if (opts.name) p.set('name', opts.name);
+  const url = `${API_BASE}/api/news/player/${opts.sport}/${encodeURIComponent(String(opts.id))}?${p.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as PlayerProfileBundle;
+}
+
 // Phase 103g-tris — browser-side PrizePicks pull. Vercel datacenter
 // IPs are blocked by PrizePicks Cloudflare, so server-side fetch
 // returns 403. This helper fetches from the user's residential IP

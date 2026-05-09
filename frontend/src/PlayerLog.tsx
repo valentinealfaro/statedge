@@ -19,6 +19,7 @@ import {
   type PlayerGame,
 } from './api';
 import { NavBar } from './NavBar';
+import { PlayerNewsSection } from './PlayerNewsSection';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
@@ -181,6 +182,14 @@ export function PlayerLog() {
             log={log}
             stat={selectedStat}
             line={lineInput.trim() === '' ? null : Number(lineInput)}
+          />
+        )}
+
+        {player && (playerName || player.teamAbbreviation) && (
+          <PlayerNewsSection
+            sport="nba"
+            playerId={playerId}
+            playerName={playerName || `Player ${playerId}`}
           />
         )}
       </div>

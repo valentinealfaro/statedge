@@ -6,6 +6,7 @@
 // templates without waiting for the slate publish).
 
 import { Router } from 'express';
+import { fetchGoogleNewsHeadlines } from '../news/externalNews.js';
 import {
   generateBigGameArticles,
   generateDailyClvRecaps,
@@ -38,6 +39,65 @@ newsRouter.get('/', async (req, res) => {
     res.status(500).json({ error: 'news list failed' });
   }
 });
+
+// GET /api/news/player/:sport/:id — player profile bundle. Returns
+// our own articles about this player (from articles table), plus
+// external news headlines from Google News, plus a set of social /
+// reference search URLs. Frontend renders this as a "News & Links"
+// section on the player profile page.
+//
+// Sport is part of the path because article slug + player-id pairs
+// scope to a sport. The id matches articles.related_player_id.
+newsRouter.get('/player/:sport/:id', async (req, res) => {
+  try {
+    const sport = req.params.sport as ArticleSport;
+    const id = req.params.id;
+    const playerName = (req.query.name as string | undefined) ?? '';
+
+    const [articles, headlines] = await Promise.all([
+      listArticles({ playerId: id, limit: 12 }),
+      playerName ? fetchGoogleNewsHeadlines(playerName, { limit: 8 }) : Promise.resolve([]),
+    ]);
+
+    // Per-sport reference URL templates. Pure templates — frontend
+    // renders these as link buttons. Twitter / Instagram / YouTube
+    // searches use the player name; sport-specific reference sites
+    // use the player id when the source supports it.
+    const searchLinks = playerName ? buildSearchLinks(playerName, sport, id) : [];
+
+    res.json({
+      sport,
+      playerId: id,
+      playerName: playerName || null,
+      articles,
+      externalHeadlines: headlines,
+      searchLinks,
+    });
+  } catch (err) {
+    console.error('news/player failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+function buildSearchLinks(name: string, sport: ArticleSport, id: string): Array<{ label: string; url: string; kind: 'social' | 'reference' }> {
+  const q = encodeURIComponent(name);
+  const links: Array<{ label: string; url: string; kind: 'social' | 'reference' }> = [
+    { label: 'Twitter / X',    url: `https://twitter.com/search?q=${q}&src=typed_query`, kind: 'social' },
+    { label: 'Instagram',      url: `https://www.instagram.com/explore/tags/${q.replace(/%20/g, '')}`, kind: 'social' },
+    { label: 'YouTube',        url: `https://www.youtube.com/results?search_query=${q}+highlights`, kind: 'social' },
+    { label: 'Google News',    url: `https://news.google.com/search?q=${q}`, kind: 'reference' },
+  ];
+  if (sport === 'mlb') {
+    links.push({ label: 'Baseball Savant', url: `https://baseballsavant.mlb.com/savant-player/${id}`, kind: 'reference' });
+    links.push({ label: 'MLB.com Profile', url: `https://www.mlb.com/player/${id}`, kind: 'reference' });
+  } else if (sport === 'nba') {
+    links.push({ label: 'Basketball-Reference', url: `https://www.google.com/search?q=basketball-reference.com+${q}&btnI=I'm+Feeling+Lucky`, kind: 'reference' });
+    links.push({ label: 'NBA.com', url: `https://www.nba.com/search?q=${q}` , kind: 'reference' });
+  } else if (sport === 'wnba') {
+    links.push({ label: 'WNBA.com', url: `https://www.wnba.com/search?q=${q}`, kind: 'reference' });
+  }
+  return links;
+}
 
 // GET /api/news/:slug — single article body
 newsRouter.get('/:slug', async (req, res) => {
