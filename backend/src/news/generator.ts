@@ -15,7 +15,9 @@
 // All called from cron handlers / event hooks. Each is idempotent
 // via slug-based upsert in store.ts.
 
+import { getStandingsFromDb } from '../db.js';
 import { computeMlbClv, computeWnbaClv } from '../market/clv.js';
+import { computeMlbStandings } from '../services/mlbStandings.js';
 import { detectBigGames, type Detection, type DetectionInput } from './bigGameDetector.js';
 import { findLineSteam } from './lineSteam.js';
 import type { FightNightInput } from './mmaFightNightFetcher.js';
@@ -25,12 +27,14 @@ import {
   generateEdgePreview,
   generateFightNight,
   generateLineSteamArticle,
+  generatePowerRankings,
   generateTopMispricings,
   generateTrapWatch,
   generateWhyMarketWrong,
   generateBigGame,
   type EdgeLeg,
   type LineSteamMover,
+  type PowerRankingTeam,
 } from './templates.js';
 import { findBigGameHighlight } from './youtubeHighlights.js';
 import type { Article } from './types.js';
@@ -269,6 +273,69 @@ export async function generateDailyClvRecaps(opts: { date: string }): Promise<Ar
     });
     if (draft) out.push(await upsertArticle(draft));
   }
+  return out;
+}
+
+// ---------- Power Rankings bundle (Phase 115) ----------
+//
+// Weekly cron generates one power-rankings article per active sport.
+// Pulls from existing standings infrastructure: NBA team_game_logs
+// JSONB, MLB mlb_games table. WNBA's standings function is sport-
+// internal; falls through gracefully if its season isn't active.
+//
+// "Active" = standings have at least 10 teams with >0 games. Off-
+// season sports return empty and the article isn't generated.
+export async function generatePowerRankingsArticles(opts: { date: string }): Promise<Article[]> {
+  const out: Article[] = [];
+
+  // NBA
+  try {
+    // Current season — derived the same way the standings route does
+    // (current calendar year as a string). NBA seasons span Oct-Apr
+    // but the standings table is keyed by the year of the fall start.
+    const nbaSeason = String(new Date().getUTCFullYear());
+    const standings = await getStandingsFromDb(nbaSeason);
+    const teams = [...standings.east, ...standings.west].filter((t) => t.wins + t.losses > 0);
+    if (teams.length >= 10) {
+      const teamsForTemplate: PowerRankingTeam[] = teams.map((t) => ({
+        abbreviation: t.abbreviation,
+        fullName: t.fullName,
+        wins: t.wins,
+        losses: t.losses,
+        winPct: t.winPct,
+        l10Wins: t.l10Wins,
+        l10Losses: t.l10Losses,
+        pointRate: t.ppg,
+      }));
+      const draft = generatePowerRankings({ sport: 'nba', date: opts.date, teams: teamsForTemplate });
+      if (draft) out.push(await upsertArticle(draft));
+    }
+  } catch (err) {
+    console.warn('power-rankings nba failed:', (err as Error).message);
+  }
+
+  // MLB
+  try {
+    const standings = await computeMlbStandings();
+    const teams = standings.teams.filter((t) => t.wins + t.losses > 0);
+    if (teams.length >= 10) {
+      const teamsForTemplate: PowerRankingTeam[] = teams.map((t) => ({
+        abbreviation: t.abbreviation,
+        fullName: t.fullName,
+        wins: t.wins,
+        losses: t.losses,
+        winPct: t.winPct,
+        l10Wins: t.last10.wins,
+        l10Losses: t.last10.losses,
+        pointRate: t.runsScoredPerGame,
+      }));
+      const draft = generatePowerRankings({ sport: 'mlb', date: opts.date, teams: teamsForTemplate });
+      if (draft) out.push(await upsertArticle(draft));
+    }
+  } catch (err) {
+    console.warn('power-rankings mlb failed:', (err as Error).message);
+  }
+
   return out;
 }
 

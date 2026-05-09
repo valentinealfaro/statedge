@@ -1772,6 +1772,7 @@ export type Article = {
     | 'big_game'
     | 'fight_night'
     | 'line_steam'
+    | 'power_rankings'
     | 'situation_report';
   sport: 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';
   title: string;

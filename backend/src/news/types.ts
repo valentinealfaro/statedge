@@ -21,6 +21,7 @@ export type ArticleKind =
   | 'big_game'               // Player went off — auto-recap with highlight
   | 'fight_night'            // UFC card recap — main event + finishes + title fights
   | 'line_steam'             // Intraday line movement — market is reacting to info
+  | 'power_rankings'         // Weekly per-sport rankings: standing + recent form
   | 'situation_report';      // Reserved for Phase 103g situation clustering
 
 export type ArticleSport = 'mlb' | 'nba' | 'wnba' | 'mma' | 'cross';

@@ -537,6 +537,155 @@ export function generateBigGame(opts: {
   };
 }
 
+// ---------- Power Rankings (Phase 115) ----------
+//
+// Weekly auto-generated per-sport ranking. Pure power ranking by
+// season win% + last-10 form, with a "trending" tag derived from
+// the gap between the two (hot teams are over-performing recent
+// form vs season; cold teams are the opposite). Not a forecast,
+// not a prediction — just an honest snapshot of where each team
+// stands right now.
+//
+// Cron fires Sunday morning ET so the article is published when
+// users wake up to plan their week.
+
+export type PowerRankingTeam = {
+  abbreviation: string;
+  fullName: string;
+  wins: number;
+  losses: number;
+  winPct: number;
+  l10Wins: number;
+  l10Losses: number;
+  // Optional: per-game scoring (NBA = ppg, MLB = runsScored)
+  pointRate?: number | null;
+  // Free-form note that the template can attach to the row
+  // (e.g., "longest win streak in NBA"). Optional.
+  note?: string;
+};
+
+export function generatePowerRankings(opts: {
+  sport: 'mlb' | 'nba' | 'wnba';
+  date: string;
+  teams: PowerRankingTeam[];
+}): ArticleDraft | null {
+  if (opts.teams.length === 0) return null;
+
+  // Rank by season win% primary, last-10 win% as tiebreaker. Last-10
+  // record DOES matter — Bloomberg-style "current state of the team"
+  // pulls form into the visible ranking, but doesn't override season
+  // sample size.
+  const ranked = [...opts.teams].sort((a, b) => {
+    if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+    const aL10 = a.l10Wins + a.l10Losses === 0 ? 0 : a.l10Wins / (a.l10Wins + a.l10Losses);
+    const bL10 = b.l10Wins + b.l10Losses === 0 ? 0 : b.l10Wins / (b.l10Wins + b.l10Losses);
+    if (bL10 !== aL10) return bL10 - aL10;
+    return a.fullName.localeCompare(b.fullName);
+  });
+
+  const sportLabel = opts.sport.toUpperCase();
+  const slug = articleSlug({ kind: 'power_rankings', date: opts.date, sport: opts.sport });
+  const summary = `${sportLabel} power rankings for the week of ${humanDate(opts.date)} — every team ranked by season win% with last-10 form, hot/cold tags, and the trend signal that matters.`;
+
+  const lines: string[] = [];
+  lines.push(`# ${sportLabel} Power Rankings · Week of ${humanDate(opts.date)}`);
+  lines.push('');
+  lines.push(summary);
+  lines.push('');
+  lines.push(`Rankings are season win% primary, last-10 form as tiebreaker. The "Trend" column shows whether a team's recent record is above (↑) or below (↓) their season pace — that's the leading indicator for how the next week plays out.`);
+  lines.push('');
+
+  // Top 5 deep-dive callout
+  const top5 = ranked.slice(0, 5);
+  if (top5.length > 0) {
+    lines.push(`## Top of the league`);
+    lines.push('');
+    top5.forEach((t, i) => {
+      lines.push(`**${i + 1}. ${t.fullName}** (${t.wins}-${t.losses}, ${(t.winPct * 100).toFixed(1)}%) — last 10: ${t.l10Wins}-${t.l10Losses}${trendEmoji(t)}.${t.note ? ` ${t.note}` : ''}`);
+    });
+    lines.push('');
+  }
+
+  // Full table — every team, scrollable on mobile
+  lines.push(`## Full rankings`);
+  lines.push('');
+  lines.push(`| Rank | Team | Record | Win% | Last 10 | Trend |`);
+  lines.push(`|---|---|---|---|---|---|`);
+  ranked.forEach((t, i) => {
+    const trend = trendForTeam(t);
+    lines.push(`| ${i + 1} | ${t.fullName} | ${t.wins}-${t.losses} | ${(t.winPct * 100).toFixed(1)}% | ${t.l10Wins}-${t.l10Losses} | ${trend} |`);
+  });
+  lines.push('');
+
+  // Hot / cold callouts
+  const hot = ranked.filter((t) => isHot(t));
+  const cold = ranked.filter((t) => isCold(t));
+  if (hot.length > 0 || cold.length > 0) {
+    lines.push(`## Trending`);
+    lines.push('');
+    if (hot.length > 0) {
+      const names = hot.map((t) => `**${t.fullName}** (${t.l10Wins}-${t.l10Losses} L10)`).join(', ');
+      lines.push(`**🔥 Heating up:** ${names}.`);
+      lines.push('');
+    }
+    if (cold.length > 0) {
+      const names = cold.map((t) => `**${t.fullName}** (${t.l10Wins}-${t.l10Losses} L10)`).join(', ');
+      lines.push(`**🧊 Cooling down:** ${names}.`);
+      lines.push('');
+    }
+  }
+
+  lines.push(`---`);
+  lines.push('');
+  lines.push(`*Power rankings update every Sunday morning ET, after the prior week's games settle. They're a snapshot, not a forecast — the StatEdge model uses much more than win% (matchup, recent variance, lineup, park, weather). For tonight's projections, see the slate.*`);
+
+  return {
+    slug,
+    kind: 'power_rankings',
+    sport: opts.sport,
+    title: `${sportLabel} Power Rankings · Week of ${humanDate(opts.date)}`,
+    summary,
+    bodyMd: lines.join('\n'),
+    heroImageUrl: null,
+    videoYoutubeId: null,
+    relatedPlayerId: null,
+    relatedGameKey: null,
+    expiresAt: null,
+  };
+}
+
+function trendEmoji(t: PowerRankingTeam): string {
+  if (isHot(t))  return ' 🔥';
+  if (isCold(t)) return ' 🧊';
+  return '';
+}
+
+function trendForTeam(t: PowerRankingTeam): string {
+  const total = t.l10Wins + t.l10Losses;
+  if (total === 0) return '—';
+  const l10 = t.l10Wins / total;
+  // Compare last-10 vs season win%. ≥10 percentage points either way
+  // is the threshold for hot/cold flag.
+  const delta = (l10 - t.winPct) * 100;
+  if (delta >= 10) return `↑ +${delta.toFixed(0)}pp`;
+  if (delta <= -10) return `↓ ${delta.toFixed(0)}pp`;
+  return '— flat';
+}
+
+function isHot(t: PowerRankingTeam): boolean {
+  const total = t.l10Wins + t.l10Losses;
+  if (total === 0) return false;
+  const l10 = t.l10Wins / total;
+  return (l10 - t.winPct) * 100 >= 15 && t.l10Wins >= 7;
+}
+
+function isCold(t: PowerRankingTeam): boolean {
+  const total = t.l10Wins + t.l10Losses;
+  if (total === 0) return false;
+  const l10 = t.l10Wins / total;
+  return (l10 - t.winPct) * 100 <= -15 && t.l10Losses >= 7;
+}
+
 // ---------- Line Steam (Phase 109c) ----------
 //
 // Daily afternoon-ET cron: surfaces the day's biggest line moves

@@ -18,6 +18,7 @@ import {
   generateDailyEdgePreviews,
   generateFightNightArticles,
   generateLineSteamArticles,
+  generatePowerRankingsArticles,
   generateSlatePublishArticles,
 } from '../news/generator.js';
 import { fetchMlbBigGameInputs } from '../news/mlbBigGameFetcher.js';
@@ -317,6 +318,32 @@ newsRouter.get('/cron/clv-recap', async (req, res) => {
     });
   } catch (err) {
     console.error('cron/clv-recap failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/news/cron/power-rankings — weekly. Pulls active-sport
+// standings, generates one ranking article per sport (NBA + MLB
+// today; WNBA + UFC slot in when their feeds wire up). Idempotent
+// via slug — re-running mid-week refreshes the prior week's article
+// rather than creating duplicates.
+newsRouter.get('/cron/power-rankings', async (req, res) => {
+  const authErr = requireCronAuth(req);
+  if (authErr) {
+    res.status(authErr.includes('configured') ? 503 : 401).json({ error: authErr });
+    return;
+  }
+  try {
+    const date = (req.query.date as string | undefined) ?? todayEt();
+    const articles = await generatePowerRankingsArticles({ date });
+    res.json({
+      ok: true,
+      date,
+      articlesGenerated: articles.length,
+      articles: articles.map((a) => ({ slug: a.slug, title: a.title })),
+    });
+  } catch (err) {
+    console.error('cron/power-rankings failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
