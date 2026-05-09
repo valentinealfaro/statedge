@@ -23,6 +23,7 @@ import {
   type UfcSlateParseResult,
   type UfcStoredLine,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -87,6 +88,12 @@ export function MmaSlate() {
         <p className="muted small" style={{ marginTop: 4, marginBottom: 16 }}>
           Tonight's UFC PrizePicks props with consensus moneylines. Projection engine ships in a later phase — this is the foundation: parse, store, render with market context.
         </p>
+
+        {/* UFC-scoped truth metric. Self-hides until UFC projection
+            volume accumulates from the engine that ships in a later
+            phase. Once it does, this slate page surfaces UFC-specific
+            beat rate without code changes. */}
+        <ClvTrustBanner sport="mma" />
 
         {!adminMode && (
           <PublicTodaySlate

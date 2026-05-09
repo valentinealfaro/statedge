@@ -339,8 +339,10 @@ export function Slate() {
       </p>
 
       {/* Truth metric pinned above the board — institutional users
-          check the scoreboard before they trust tonight's picks. */}
-      <ClvTrustBanner />
+          check the scoreboard before they trust tonight's picks.
+          Sport-scoped to NBA so the banner reports tonight's-sport
+          beat rate, not cross-sport noise. */}
+      <ClvTrustBanner sport="nba" />
 
       {/* Tonight's NBA games — sits at the top so users orient on
           the actual game context before scanning the pre-built

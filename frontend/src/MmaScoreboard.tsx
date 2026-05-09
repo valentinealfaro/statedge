@@ -15,6 +15,7 @@ import {
   type UfcMoneylineEvent,
   type UfcScoreboardResponse,
 } from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
@@ -80,6 +81,11 @@ export function MmaScoreboard() {
           Upcoming and recent UFC cards. Fighter profiles, moneylines, and
           method-of-victory edge analysis land in subsequent phases.
         </p>
+
+        {/* Truth metric — UFC-scoped. Self-hides until UFC projection
+            volume accumulates; banner pattern stays consistent across
+            all three sports. */}
+        <ClvTrustBanner sport="mma" />
 
         <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           <TabButton active={tab === 'upcoming'} onClick={() => setTab('upcoming')}>

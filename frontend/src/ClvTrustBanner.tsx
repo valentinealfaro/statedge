@@ -1,21 +1,38 @@
-// ClvTrustBanner — Phase 111.
+// ClvTrustBanner — Phase 111, sport-aware in Phase 120.
 //
-// The institutional truth metric, visible on the home page. Closing
-// line value (CLV) is the cleanest answer to "are these projections
-// any good?" — independent of game-outcome variance, you either got
-// a better number than the market eventually settled on or you
-// didn't. Long-run ≥55% beat rate on a real volume = real edge.
+// The institutional truth metric. Closing line value (CLV) is the
+// cleanest answer to "are these projections any good?" — independent
+// of game-outcome variance. Long-run ≥55% beat rate on real volume
+// = real edge.
 //
-// We publish three windows side-by-side (7d / 30d / season-to-date)
-// because trust is built by transparency, not point estimates. The
-// banner silently hides if no projection has graded yet — better
-// than displaying "—%" with low denominator.
+// Three windows side-by-side (7d / 30d / season-to-date). When a
+// `sport` prop is provided, the banner filters its scoreboard to
+// that sport — Slate pages get sport-specific receipts; Home and
+// Dashboard get the cross-sport aggregate.
+//
+// Banner silently hides when no projection has graded for the
+// selected scope yet — better than showing "—%" with low denominator.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getClvTrustScore, type ClvTrustScoreResponse, type ClvTrustWindow } from './api';
 
-export function ClvTrustBanner() {
+type Sport = 'mlb' | 'nba' | 'wnba' | 'mma';
+
+type SportFilteredView = {
+  beatRate: number | null;
+  beatMarket: number;
+  withClosing: number;
+};
+
+type Props = {
+  // When set, the banner reports only this sport's beat rate. Without
+  // it, the banner reports cross-sport aggregate and shows per-sport
+  // chips at the bottom.
+  sport?: Sport;
+};
+
+export function ClvTrustBanner({ sport }: Props = {}) {
   const [data, setData] = useState<ClvTrustScoreResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,16 +44,24 @@ export function ClvTrustBanner() {
 
   if (error || !data) return null;
 
-  // No data anywhere → don't show the banner. We'd rather hide than
-  // display empty boxes that broadcast "we have nothing."
+  // Resolve per-window scope: when `sport` is set, dig per-sport stats
+  // out of each window's bySport[]. When unset, fall through to the
+  // cross-sport top-level totals.
+  const w7  = scopeWindow(data.window7d, sport);
+  const w30 = scopeWindow(data.window30d, sport);
+  const wSn = scopeWindow(data.seasonToDate, sport);
+
   const hasAny =
-    (data.window7d.withClosing ?? 0) > 0 ||
-    (data.window30d.withClosing ?? 0) > 0 ||
-    (data.seasonToDate.withClosing ?? 0) > 0;
+    w7.withClosing > 0 || w30.withClosing > 0 || wSn.withClosing > 0;
   if (!hasAny) return null;
 
-  const seasonRate = data.seasonToDate.beatRate;
-  const seasonAboveBar = seasonRate !== null && seasonRate >= 55;
+  const seasonAboveBar = wSn.beatRate !== null && wSn.beatRate >= 55;
+  const eyebrow = sport
+    ? `STATEDGE ${sport.toUpperCase()} · TRUTH METRIC`
+    : 'STATEDGE TRUTH METRIC';
+  const blurb = sport
+    ? `How often our published ${sport.toUpperCase()} projections beat the market's eventual closing line. Independent of game outcomes — pure process accuracy.`
+    : 'How often our published projections beat the market\'s eventual closing line. Independent of game outcomes — pure process accuracy. Every published prop is graded against later snapshots; we publish the math.';
 
   return (
     <section
@@ -55,7 +80,7 @@ export function ClvTrustBanner() {
             fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
             textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
           }}>
-            STATEDGE TRUTH METRIC
+            {eyebrow}
           </div>
           <h2 style={{ margin: '4px 0 0', fontSize: 18, fontWeight: 800 }}>
             Closing Line Value
@@ -82,7 +107,7 @@ export function ClvTrustBanner() {
       </div>
 
       <p className="muted small" style={{ margin: '0 0 16px', fontSize: 12, lineHeight: 1.5 }}>
-        How often our published projections beat the market's eventual closing line. Independent of game outcomes — pure process accuracy. Every published prop is graded against later snapshots; we publish the math.
+        {blurb}
       </p>
 
       <div style={{
@@ -90,12 +115,14 @@ export function ClvTrustBanner() {
         gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap: 12,
       }}>
-        <WindowCard label="Last 7 Days"          win={data.window7d}    accent />
-        <WindowCard label="Last 30 Days"         win={data.window30d}            />
-        <WindowCard label="Season to Date"       win={data.seasonToDate}         />
+        <WindowCard label="Last 7 Days"     view={w7}  accent />
+        <WindowCard label="Last 30 Days"    view={w30}        />
+        <WindowCard label="Season to Date"  view={wSn}        />
       </div>
 
-      {data.seasonToDate.bySport.length > 0 && (
+      {/* Cross-sport breakdown chips — only render when NOT scoped
+          to a single sport (avoids redundancy on slate pages). */}
+      {!sport && data.seasonToDate.bySport.length > 0 && (
         <div style={{ marginTop: 14, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {data.seasonToDate.bySport.map((s) => (
             <div key={s.sport} style={{
@@ -116,8 +143,27 @@ export function ClvTrustBanner() {
   );
 }
 
-function WindowCard({ label, win, accent }: { label: string; win: ClvTrustWindow; accent?: boolean }) {
-  const rate = win.beatRate;
+// Resolve which numbers a given window contributes — full cross-sport
+// roll-up vs the row for a specific sport.
+function scopeWindow(win: ClvTrustWindow, sport: Sport | undefined): SportFilteredView {
+  if (!sport) {
+    return {
+      beatRate: win.beatRate,
+      beatMarket: win.beatMarket,
+      withClosing: win.withClosing,
+    };
+  }
+  const row = win.bySport.find((s) => s.sport === sport);
+  if (!row) return { beatRate: null, beatMarket: 0, withClosing: 0 };
+  return {
+    beatRate: row.beatRate,
+    beatMarket: row.beatMarket,
+    withClosing: row.withClosing,
+  };
+}
+
+function WindowCard({ label, view, accent }: { label: string; view: SportFilteredView; accent?: boolean }) {
+  const rate = view.beatRate;
   const above = rate !== null && rate >= 55;
   const at    = rate !== null && rate >= 50 && rate < 55;
   const color = rate === null ? 'rgba(255,255,255,0.5)'
@@ -143,8 +189,8 @@ function WindowCard({ label, win, accent }: { label: string; win: ClvTrustWindow
         </span>
       </div>
       <div className="muted small" style={{ fontSize: 11, marginTop: 4 }}>
-        {win.withClosing > 0
-          ? `${win.beatMarket} of ${win.withClosing} props beat the close`
+        {view.withClosing > 0
+          ? `${view.beatMarket} of ${view.withClosing} props beat the close`
           : 'No graded props yet'}
       </div>
     </div>

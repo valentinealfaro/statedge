@@ -524,9 +524,9 @@ export function MlbSlate() {
         </div>
 
         {/* Truth metric pinned high so the slate's projections come
-            with their accuracy receipt. Banner self-hides if no
-            projections have graded yet. */}
-        <ClvTrustBanner />
+            with their accuracy receipt. Sport-scoped to MLB so the
+            banner reports the MLB-specific beat rate, not aggregate. */}
+        <ClvTrustBanner sport="mlb" />
 
         {/* PUBLIC VIEW — today's published slate. Default for every visitor. */}
         {!adminMode && (
