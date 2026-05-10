@@ -158,6 +158,41 @@ export type ProjectionInputs = {
   marketImpliedProb: number | null;
 };
 
+// Per-stat stddev floors. Evidence-grounded by typical MLB game-to-
+// game variance. Iter 5 of the formula loop replaces a structurally-
+// wrong `projection * 0.15` global floor that blew up z-scores on
+// low-magnitude binary stats (the doubles 95→0% bug). Values are
+// conservative — when in doubt, larger floor wins because that
+// pulls fake-confident probabilities toward the median.
+export const MLB_STDDEV_FLOOR: Record<MlbStatKey, number> = {
+  // Hitters — binary-ish (mostly 0 per game with occasional 1/2).
+  // Real Bernoulli stddev for p=0.10 is √(p*(1-p))=0.30; multi-event
+  // games push real stddev higher.
+  home_runs:            0.45,
+  doubles:              0.55,
+  triples:              0.30,
+  stolen_bases:         0.45,
+  // Hitters — frequent events (most games 1+).
+  hits:                 1.00,
+  singles:              0.85,
+  total_bases:          1.30,
+  runs:                 0.85,
+  rbis:                 1.00,
+  walks:                0.80,
+  strikeouts:           1.00,    // hitter K
+  hits_runs_rbis:       1.50,
+  hitter_fantasy_score: 4.00,
+  // Pitchers — counting stats over multiple innings, larger spread.
+  ks:                   2.20,
+  earned_runs_allowed:  1.50,
+  walks_allowed:        1.00,
+  pitcher_outs:         3.00,
+  hits_allowed:         1.50,
+  innings_pitched:      1.00,
+  home_runs_allowed:    0.65,
+  pitches_thrown:       12.0,
+};
+
 // Stat-type risk per the StatEdge MLB spec. Used as a floor on
 // `riskScore` — high-variance stats (HR, SB) are inherently risky
 // regardless of how stable the player is at them.
@@ -934,10 +969,27 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const projection = baselineProjection * totalContextMult;
 
   // ----- Probability via normal approximation -----
-  // Use the L10 stddev as our variance estimate. If stddev is
-  // pathologically small (e.g. all values identical), use a floor of
-  // ~10% of the projection so probabilities don't snap to 0/100.
-  const stddev = Math.max(last10.stddev, Math.max(0.01, Math.abs(projection) * 0.15));
+  // Iter 5 of the formula loop: per-stat stddev floors that reflect
+  // real MLB game-to-game variance.
+  //
+  // The previous floor was Math.abs(projection) * 0.15 — way too
+  // tight for low-magnitude binary-ish stats. For doubles with
+  // projection 0.5 the floor was 0.075, but real game-to-game stddev
+  // for doubles is ~0.55 (most games 0, occasional 1, rare 2). When
+  // the projection nudged above the line via park / weather / matchup
+  // multipliers, z-score = (proj - line) / 0.075 blew up to >5,
+  // producing fake 95-99% probabilities that the user-shared May
+  // 2026 calibration confirmed never materialize: doubles 95→0% in
+  // 32 graded rows, singles 88→20%, strikeouts 95→39%.
+  //
+  // Per-stat floors below match NBA's STD_DEV_FLOOR pattern. Values
+  // are evidence-grounded by typical MLB game-to-game variance:
+  // binary events (HR, doubles, triples, SB) get ~0.3-0.55 floors
+  // so projection swings above the line don't snap probability to
+  // the cap. Larger stats (total_bases, hits_runs_rbis, fantasy)
+  // get proportionally larger floors.
+  const statFloor = MLB_STDDEV_FLOOR[inputs.statKey] ?? Math.max(0.01, Math.abs(projection) * 0.15);
+  const stddev = Math.max(last10.stddev, statFloor);
   const z = (projection - line) / stddev;
   const probOver = normalCdf(z) * 100;
   const rawProbability = direction === 'OVER' ? probOver : 100 - probOver;

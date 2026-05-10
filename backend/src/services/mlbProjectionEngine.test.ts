@@ -771,3 +771,61 @@ describe('computeMlbProjection — market-implied edge baseline', () => {
     expect(b.edgePercent).toBe(a.edgePercent);
   });
 });
+
+describe('computeMlbProjection — per-stat stddev floors (iter 5)', () => {
+  // The user-shared May 2026 calibration showed doubles 95% predicted
+  // / 0% observed across 32 graded rows. Root cause: the global
+  // `projection * 0.15` stddev floor was 0.075 for doubles
+  // (projection ~0.5), making z = (proj-line)/stddev blow up on
+  // small projection nudges and producing fake 95% probabilities.
+  // Per-stat floors block that path.
+  test('doubles with thin-sample last10 + small projection swing stays below 95%', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'doubles',
+      direction: 'OVER',
+      line: 0.5,
+      // last10 had a small spike that would have produced
+      // last10.stddev ~0 if all three values were identical.
+      last10: makeLast10({
+        values: [1, 1, 1],
+        sampleSize: 3,
+        last10Average: 1,
+        last5Average: 1,
+        stddev: 0,        // pathological — exactly the case the floor protects
+      }),
+      seasonAverage: 0.6,
+      seasonGames: 60,
+      opponentAverage: 0.7,
+      opponentGames: 4,
+      homeAverage: 0.6,
+      awayAverage: 0.6,
+    }));
+    // Pre-iter-5 with a 0.075 floor and a 0.6+ projection vs 0.5
+    // line, z would have been ~1.3+ producing >85% probability.
+    // With a 0.55 floor for doubles, z stays in ~1.0 range max,
+    // and the 5-95 clamp prevents the engine from claiming >95%.
+    expect(r.probability).toBeLessThanOrEqual(95);
+  });
+
+  test('home_runs floor caps blow-up probability on rare-event projections', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'home_runs',
+      direction: 'OVER',
+      line: 0.5,
+      last10: makeLast10({
+        values: [1, 1, 0, 1],
+        sampleSize: 4,
+        last10Average: 0.75,
+        last5Average: 0.75,
+        stddev: 0.43,
+      }),
+      seasonAverage: 0.4,
+      seasonGames: 60,
+    }));
+    // HR is one of the highest-variance MLB props — engine must not
+    // claim 95% confidence even on a hot streak. Per-stat floor of
+    // 0.45 for HR enforces that.
+    expect(r.probability).toBeLessThanOrEqual(95);
+    expect(r.probability).toBeGreaterThanOrEqual(5);
+  });
+});
