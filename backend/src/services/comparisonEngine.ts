@@ -1,3 +1,18 @@
+// NBA comparison engine. Pure functions over PlayerGame[] / TeamGame[]
+// arrays — given a player's game history and an opposing team's game
+// history (or another player's history, or two team histories),
+// produce comparison reports + hit-probability estimates against an
+// arbitrary line.
+//
+// Powers /api/compare endpoints (PvT / PvP / TvT / Last10) which back
+// the NBA Compare page's four modes. Sport-agnostic in spirit but
+// hardcoded to NBA stat keys (points / rebounds / assists / fgPct /
+// fg3Pct / minutes); MLB + WNBA + UFC have their own equivalents.
+//
+// All deterministic — no DB / no network. Inputs come from the route
+// layer (which queries player_game_logs / team_game_logs); this file
+// just runs the math.
+
 import type { PlayerGame, TeamGame } from '../nba/client.js';
 
 export type StatKey = 'points' | 'rebounds' | 'assists' | 'minutes' | 'fgPct' | 'fg3Pct';
