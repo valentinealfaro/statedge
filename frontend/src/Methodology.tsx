@@ -1,4 +1,5 @@
-// /methodology — public "How StatEdge works" explainer. Phase 119.
+// /methodology — public "How StatEdge works" explainer. Phase 119,
+// extended through iter 52 (Live grading section).
 //
 // Bloomberg-Terminal value prop = transparency. Every cell drills
 // into its provenance. This page documents the 10-layer projection
@@ -6,8 +7,11 @@
 // marketing copy — process documentation. The truth-metric receipts
 // (CLV + Calibration + Durability) prove each claim.
 //
-// Static content, no API. Anyone can read it; institutional users
-// can trust it because the math is published.
+// Mostly static content, but with three live receipt embeds —
+// EliteHeatmap (90-day Elite track record), BeatRateTrend (weekly
+// CLV beat-rate time series), EngineStatus (live ops counters).
+// Anyone can read it; institutional users can trust it because the
+// math is published AND the receipts tick from real data.
 
 import { Link } from 'react-router-dom';
 import { BeatRateTrend } from './BeatRateTrend';
