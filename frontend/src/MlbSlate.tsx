@@ -1,7 +1,10 @@
-// MLB slate page — Phase 4. Admin pastes tonight's lines as JSON,
-// system projects each leg via mlbProjectionEngine, then constructs
-// Safe/Balanced/Aggressive/Insane combos respecting the per-spec
-// "card size must be earned" eligibility gates.
+// MLB slate page — Phase 4 foundation, extended through Phase 103g
+// (PrizePicks ingestion). Admin can paste tonight's lines as JSON
+// OR pull directly from PrizePicks via the user's residential IP
+// (datacenter IPs hit Cloudflare 403). System projects each leg via
+// mlbProjectionEngine, then constructs Safe / Balanced / Aggressive
+// / Insane combos respecting the per-spec "card size must be earned"
+// eligibility gates.
 //
 // Mission alignment:
 //   - When a card slot can't earn its eligibility bar, we surface
@@ -10,9 +13,6 @@
 //   - Insane mode keeps lottery framing per saved memory.
 //   - Disclaimer always rendered.
 //   - No "lock / guaranteed" copy anywhere.
-//
-// v1 ingestion is a JSON paste box. PrizePicks/scrape integration
-// for MLB is a future slice.
 
 import { useEffect, useMemo, useState } from 'react';
 import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
