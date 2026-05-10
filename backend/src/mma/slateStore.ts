@@ -1,11 +1,19 @@
 // UFC slate persistence — Phase 110a.
 //
-// Stores parsed UFC props per slate-day. No projection engine yet
-// (that needs a fighter-stat DB which is a separate multi-phase
-// build) — this just captures the raw lines so the frontend can
-// render a published slate AND so the news engine has data to
-// operate on (line-steam articles, edge tracking once projections
-// arrive).
+// Stores parsed UFC props per slate-day. The Phase 136 moneyline-
+// anchored projection engine (mma/projectionEngine.projectUfcProp)
+// runs OVER these stored lines on each request — projections aren't
+// persisted because the engine is a pure function of (line + market
+// odds + scoreboard pairing), all of which can be re-fetched. The
+// deeper fighter-stat fundamental engine that's still on the roadmap
+// will likely flip this — those projections will need to persist
+// alongside the lines so projection_history can compute UFC CLV +
+// calibration buckets.
+//
+// This file's role today: capture the raw lines so the frontend can
+// render the slate, the projection-engine route + cross-sport Elite
+// builder can compute edges, and the news engine has data for line-
+// steam / fight-night articles.
 
 import { getPool, isDbConfigured } from '../db.js';
 import type { UfcStatKey } from './stats.js';
