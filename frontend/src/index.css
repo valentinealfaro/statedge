@@ -2640,18 +2640,24 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
 }
+/* Iter 13: tighter leg row. Bigger gap, name takes priority weight,
+   probability sits right with stronger visual presence. The leg
+   should read "Player → Stat → Direction" at a glance, not as a
+   wall of equally-weighted chips. */
 .best-pick-leg {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11px;
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
 }
 .best-pick-leg-name {
-  color: var(--text-2);
-  font-weight: 600;
+  color: var(--text-1);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: -0.1px;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -2728,16 +2734,24 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   flex-shrink: 0;
 }
 .slate-leg-team .avatar.team.md { width: 14px; height: 14px; }
+/* Iter 13: stat + direction% form the per-leg headline pair. Make the
+   probability % visually dominant — it's the single most important
+   number per leg. Direction arrow stays small but colored. */
 .best-pick-leg-stat {
-  font-size: 10px;
-  color: var(--text-3);
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
 }
 .best-pick-leg-dir {
-  font-weight: 700;
-  font-size: 10px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: -0.3px;
   margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
 }
-.best-pick-leg-dir.over { color: var(--hot); }
+.best-pick-leg-dir.over  { color: var(--hot); }
 .best-pick-leg-dir.under { color: var(--cold); }
 .best-pick-cta {
   margin-top: 10px;
@@ -2840,9 +2854,12 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   margin-top: -1px;
 }
 
-/* Slate-mode selector — three buttons above the rail. Active state
-   uses the brand-blue accent. Hint text below the label only shows
-   on the active option (compact on mobile). */
+/* Slate-mode selector — five buttons above the rail. Iter 13 redesign:
+   each mode now has its own color identity reflecting its risk
+   posture (Safe = green, Balanced = blue, Aggressive = amber, Insane =
+   red-violet, Auto = neutral). The accent appears as a 2px top stripe
+   plus a tinted background when active so the selector reads like an
+   institutional risk dial, not a generic button row. */
 .slate-mode-section {
   margin-bottom: 14px;
 }
@@ -2859,11 +2876,12 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   }
 }
 .slate-mode-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 10px 14px;
+  gap: 3px;
+  padding: 12px 14px 10px;
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -2871,19 +2889,59 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font: inherit;
   cursor: pointer;
   text-align: left;
+  overflow: hidden;
   transition: border-color var(--motion-fast), color var(--motion-fast),
-              background var(--motion-fast);
+              background var(--motion-fast), transform var(--motion-fast);
+}
+/* Top accent stripe — invisible by default, shows mode color on hover/active */
+.slate-mode-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background var(--motion-fast);
 }
 .slate-mode-btn:hover {
   color: var(--text-1);
   border-color: var(--border-default);
+  transform: translateY(-1px);
 }
 .slate-mode-btn.active {
-  border-color: var(--brand-blue);
-  background:
-    linear-gradient(135deg, rgba(91,141,239,0.08), rgba(124,77,255,0.06)),
-    var(--surface-1);
   color: var(--text-1);
+}
+
+/* ── Per-mode color identity ── */
+.slate-mode-btn.mode-safe::before       { background: var(--hot); }
+.slate-mode-btn.mode-balanced::before   { background: var(--brand-blue); }
+.slate-mode-btn.mode-aggressive::before { background: var(--warn); }
+.slate-mode-btn.mode-insane::before     { background: linear-gradient(90deg, #ef5350 0%, #7c4dff 100%); }
+.slate-mode-btn.mode-auto::before       { background: var(--text-3); }
+
+/* Active fill per mode — subtle tinted background that matches the stripe */
+.slate-mode-btn.mode-safe.active {
+  border-color: var(--hot);
+  background: linear-gradient(180deg, rgba(109,208,122,0.10) 0%, rgba(109,208,122,0.02) 100%), var(--surface-1);
+}
+.slate-mode-btn.mode-balanced.active {
+  border-color: var(--brand-blue);
+  background: linear-gradient(180deg, rgba(91,141,239,0.10) 0%, rgba(91,141,239,0.02) 100%), var(--surface-1);
+}
+.slate-mode-btn.mode-aggressive.active {
+  border-color: var(--warn);
+  background: linear-gradient(180deg, rgba(255,184,107,0.10) 0%, rgba(255,184,107,0.02) 100%), var(--surface-1);
+}
+.slate-mode-btn.mode-insane.active {
+  border-color: rgba(124,77,255,0.55);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, rgba(239,83,80,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(124,77,255,0.08) 0%, rgba(124,77,255,0.02) 100%),
+    var(--surface-1);
+  box-shadow: 0 0 0 1px rgba(124,77,255,0.15) inset;
+}
+.slate-mode-btn.mode-auto.active {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%), var(--surface-1);
 }
 /* Recommended mode (Balanced) — subtle default treatment so first-time
    users see which mode the model recommends. Stays muted when the user
@@ -2933,21 +2991,31 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 /* Risk-meter bars under each mode button. Five segments; filled
    segments use the brand-blue accent. Visual variance/aggression
    indicator from spec §"ADD VISUAL RISK METER". */
+/* Iter 13: meter bars get a touch more presence + per-mode color
+   match. Insane uses a red-to-violet gradient on the filled bars to
+   reinforce the "lottery" identity. */
 .slate-mode-meter {
   display: inline-flex;
-  gap: 2px;
-  margin-top: 4px;
+  gap: 3px;
+  margin-top: 6px;
 }
 .mode-meter-bar {
-  width: 8px;
+  width: 10px;
   height: 4px;
   border-radius: 2px;
-  background: var(--surface-3);
+  background: rgba(255, 255, 255, 0.05);
+  transition: background var(--motion-fast);
 }
-.mode-meter-bar.filled { background: var(--brand-blue); }
-.mode-insane .mode-meter-bar.filled { background: var(--cold); }
-.mode-aggressive .mode-meter-bar.filled { background: var(--warn); }
-.mode-safe .mode-meter-bar.filled { background: var(--hot); }
+.mode-meter-bar.filled                             { background: var(--brand-blue); }
+.mode-safe .mode-meter-bar.filled                  { background: var(--hot); }
+.mode-aggressive .mode-meter-bar.filled            { background: var(--warn); }
+.mode-insane .mode-meter-bar.filled                {
+  background: linear-gradient(90deg, #ef5350 0%, #7c4dff 100%);
+}
+.mode-auto .mode-meter-bar.filled                  { background: var(--text-2); }
+.slate-mode-btn.active .mode-meter-bar.filled {
+  box-shadow: 0 0 6px currentColor;
+}
 
 /* Auto-mode resolution badge — surfaces "tonight resolves to X". */
 .slate-mode-auto-badge {
