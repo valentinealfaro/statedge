@@ -47,6 +47,7 @@ export function MobileBottomNav() {
     if (key === 'nba') return liveCounts.nba > 0;
     if (key === 'mlb') return liveCounts.mlb > 0;
     if (key === 'starred') return starredTally.liveInFlight > 0 || starredTally.hit > 0 || starredTally.miss > 0;
+    if (key === 'best-bets') return (liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0;
     return false;
   }
 

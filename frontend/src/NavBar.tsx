@@ -119,8 +119,10 @@ export function NavBar() {
             </Link>
             <Link
               to="/best-bets"
-              className={pathname === '/best-bets' ? 'navlink active' : 'navlink'}
-              title="Cross-sport unified watchlist — every edge ranked by EV"
+              className={`${pathname === '/best-bets' ? 'navlink active' : 'navlink'}${(liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0 ? ' has-live' : ''}`}
+              title={(liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0
+                ? 'Cross-sport unified watchlist — games live now, edges in flight'
+                : 'Cross-sport unified watchlist — every edge ranked by EV'}
             >
               Best Bets
             </Link>
@@ -182,8 +184,10 @@ export function NavBar() {
             </Link>
             <Link
               to="/best-bets"
-              className={pathname === '/best-bets' ? 'navlink active' : 'navlink'}
-              title="Cross-sport unified watchlist — every edge ranked by EV"
+              className={`${pathname === '/best-bets' ? 'navlink active' : 'navlink'}${(liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0 ? ' has-live' : ''}`}
+              title={(liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0
+                ? 'Cross-sport unified watchlist — games live now, edges in flight'
+                : 'Cross-sport unified watchlist — every edge ranked by EV'}
             >
               Best Bets
             </Link>
