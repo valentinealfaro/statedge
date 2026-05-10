@@ -5,9 +5,11 @@
 //
 // Lighter than NBA's full L1-L10 projection engine (which reads from
 // a persisted player_game_logs DB) — this version computes everything
-// on the fly from ESPN gamelogs we cache for 5min. Phase 77b will
-// port the institutional engine once the WNBA player-stats sync
-// workflow exists.
+// on the fly from ESPN gamelogs we cache for 5min. The original plan
+// was to port the institutional engine in Phase 77b once the WNBA
+// player-stats sync workflow existed; per the 2026-05-09 sport-
+// priorities decision (MMA replaced WNBA as the third focus sport)
+// this engine stays at v1 and the deeper port isn't being scoped.
 
 import {
   computeMarketIntel,
