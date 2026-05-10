@@ -1,10 +1,11 @@
-// Live Deck — surfaced at the top of the homepage when ANY NBA or MLB
-// game is currently in progress. Bloomberg-Terminal framing: when
-// markets are live, that's what users see first.
+// Live Deck — surfaced at the top of the homepage when any NBA, MLB,
+// UFC, or WNBA event is currently in progress. Bloomberg-Terminal
+// framing: when markets are live, that's what users see first.
 //
-// Combines two sources (ESPN NBA scoreboard + statsapi MLB schedule)
-// into a single sport-tagged feed, sorted by sport then status detail.
-// Renders nothing when no games are live so the homepage stays clean.
+// Combines four sources (ESPN NBA scoreboard + statsapi MLB schedule
+// + ESPN WNBA scoreboard + ESPN UFC scoreboard) into a single sport-
+// tagged feed, sorted by sport then status detail. Renders nothing
+// when no events are live so the homepage stays clean.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
