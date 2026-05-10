@@ -2762,21 +2762,23 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .slate-leg-button:hover { text-decoration: underline; text-decoration-color: rgba(122, 162, 255, 0.6); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .slate-leg-button:focus-visible { outline: 1px solid var(--brand-blue); outline-offset: 2px; border-radius: 3px; }
+/* Iter 17: team pill refined — slightly bigger logo, cleaner badge
+   shape. Reads as a deliberate chip instead of a cramped tag. */
 .slate-leg-team {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 5px 1px 2px;
+  gap: 4px;
+  padding: 2px 7px 2px 3px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  font-size: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
+  letter-spacing: 0.05em;
+  color: var(--text-2);
   flex-shrink: 0;
 }
-.slate-leg-team .avatar.team.md { width: 14px; height: 14px; }
+.slate-leg-team .avatar.team.md { width: 16px; height: 16px; }
 /* Iter 13: stat + direction% form the per-leg headline pair. Make the
    probability % visually dominant — it's the single most important
    number per leg. Direction arrow stays small but colored. */
@@ -2853,22 +2855,28 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 600;
 }
 
-/* Iter 12 redesign: subtle horizontal rule between legs so the rail
-   reads like a clean institutional list, not 6 rectangles bumping
-   into each other. Last leg drops the separator. */
+/* Iter 17: leg-block now has a subtle hover state + tighter rhythm.
+   Hovering any leg row dims the rest slightly and reveals a quiet
+   tinted bg on the active leg — the kind of micro-interaction that
+   makes the whole rail feel alive without being noisy. */
 .best-pick-leg-block {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 0;
+  gap: 4px;
+  padding: 8px 8px;
+  margin: 0 -8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  transition: background var(--motion-fast);
+}
+.best-pick-leg-block:hover {
+  background: rgba(91, 141, 239, 0.04);
 }
 .best-pick-leg-block:last-child {
   border-bottom: 0;
-  padding-bottom: 2px;
 }
 .best-pick-leg-block:first-child {
-  padding-top: 2px;
+  padding-top: 4px;
 }
 .best-pick-wild-evidence {
   font-size: 10px;
@@ -3250,28 +3258,50 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .best-pick-leg-edge.pos { color: var(--hot); }
 .best-pick-leg-edge.neg { color: var(--cold); }
 .best-pick-leg-edge.flat { color: var(--text-3); }
+/* Iter 17: chips refined with subtle 1px borders matching their fill,
+   slightly more padding for breathing room, uppercase locked at 9px
+   for compact visual rhythm. Reads as deliberate Bloomberg-style
+   tags rather than rounded blob chips. */
 .best-pick-leg-cat {
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px 6px;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
   border-radius: var(--radius-pill);
   background: var(--surface-3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-3);
 }
-.best-pick-leg-cat.cat-safe-core   { background: var(--hot-bg); color: var(--hot); }
-.best-pick-leg-cat.cat-value       { background: rgba(91,141,239,0.15); color: var(--brand-blue); }
-.best-pick-leg-cat.cat-ceiling     { background: rgba(255,184,107,0.12); color: var(--warn); }
-.best-pick-leg-cat.cat-contrarian  { background: rgba(124,77,255,0.12); color: var(--brand-purple); }
+.best-pick-leg-cat.cat-safe-core   {
+  background: var(--hot-bg);
+  border-color: rgba(109, 208, 122, 0.25);
+  color: var(--hot);
+}
+.best-pick-leg-cat.cat-value       {
+  background: rgba(91,141,239,0.15);
+  border-color: rgba(91, 141, 239, 0.30);
+  color: var(--brand-blue);
+}
+.best-pick-leg-cat.cat-ceiling     {
+  background: rgba(255,184,107,0.12);
+  border-color: rgba(255, 184, 107, 0.30);
+  color: var(--warn);
+}
+.best-pick-leg-cat.cat-contrarian  {
+  background: rgba(124,77,255,0.12);
+  border-color: rgba(124, 77, 255, 0.30);
+  color: var(--brand-purple);
+}
 .best-pick-leg-trap {
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px 6px;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
   border-radius: var(--radius-pill);
   background: rgba(239,106,106,0.12);
+  border: 1px solid rgba(239, 106, 106, 0.30);
   color: var(--cold);
 }
 
