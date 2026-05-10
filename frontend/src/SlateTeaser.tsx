@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getSlateAuto, type SlateResolvedLine } from './api';
+import {
+  getSlateAuto,
+  liveGradeLegs,
+  type EliteLegLiveState,
+  type SlateResolvedLine,
+} from './api';
 import { PlayerAvatar } from './Avatar';
 import { edgeScore } from './edgeScore';
+import { LiveVerdictPill } from './slateLiveState';
 import { Skeleton } from './Skeleton';
 
 // Top 6 best-edge picks from tonight's PrizePicks slate, surfaced on
@@ -14,6 +20,7 @@ export function SlateTeaser() {
   const [lines, setLines] = useState<SlateResolvedLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
+  const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
 
   useEffect(() => {
     getSlateAuto()
@@ -33,6 +40,37 @@ export function SlateTeaser() {
       .catch(() => setHidden(true))
       .finally(() => setLoading(false));
   }, []);
+
+  // Phase 145 — poll live state for the visible top-6 every 60s. Same
+  // shared endpoint as /slate, capped well under the 50-leg limit.
+  const linesSig = lines.map((l) => `${l.playerId}-${l.statKey}-${l.line}`).join('|');
+  useEffect(() => {
+    if (lines.length === 0) { setLiveByKey(new Map()); return; }
+    let cancelled = false;
+    const tick = () => {
+      const payload = lines.map((l) => ({
+        playerId: l.playerId,
+        playerName: l.playerName,
+        statKey: l.statKey,
+        direction: (l.hitProbability?.lean === 'UNDER' ? 'UNDER' : 'OVER') as 'OVER' | 'UNDER',
+        line: l.line,
+      }));
+      liveGradeLegs(payload)
+        .then((states) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < states.length; i++) {
+            const p = payload[i]!;
+            m.set(`${p.playerId}-${p.statKey}-${p.line}-${p.direction}`, states[i]!);
+          }
+          setLiveByKey(m);
+        })
+        .catch(() => { /* silent */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [linesSig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (hidden) return null;
 
@@ -59,6 +97,7 @@ export function SlateTeaser() {
               const lean = hit?.lean ?? 'OVER';
               const cls = lean === 'OVER' ? 'teaser-badge over' : 'teaser-badge under';
               const edge = edgeScore(l);
+              const live = liveByKey.get(`${l.playerId}-${l.statKey}-${l.line}-${lean === 'UNDER' ? 'UNDER' : 'OVER'}`) ?? null;
               return (
                 <Link
                   key={`${l.playerId}-${l.statKey}-${l.line}`}
@@ -74,6 +113,11 @@ export function SlateTeaser() {
                   <div className={cls}>
                     ⚡ {edge} · {lean}
                   </div>
+                  {live && (
+                    <div style={{ marginTop: 6 }}>
+                      <LiveVerdictPill state={live} compact />
+                    </div>
+                  )}
                 </Link>
               );
             })}
