@@ -426,6 +426,15 @@ let autoPublishInflight: Promise<StoredSlateLine[]> | null = null;
 // whether to surface or swallow.
 async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
   const ppLines = await fetchPrizePicksNba();
+  // Iter 27: diagnostic log so we can see if PP is returning legs
+  // tagged as demons/goblins. Without this, a 403 from PP and an
+  // empty-but-untagged slate look identical in production logs.
+  const demonCount = ppLines.filter((p) => p.oddsType === 'demon').length;
+  const goblinCount = ppLines.filter((p) => p.oddsType === 'goblin').length;
+  console.log(
+    `[autoPublishFromPrizePicks] PP returned ${ppLines.length} lines `
+    + `(${demonCount} demons, ${goblinCount} goblins, ${ppLines.length - demonCount - goblinCount} standard)`,
+  );
   const stored: StoredSlateLine[] = [];
   for (const p of ppLines) {
     if (!p.playerName || !p.statType) continue;
@@ -686,6 +695,34 @@ slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
     return;
   }
   try {
+    // Iter 27 (user 2026-05-10 "demon still wrong"): the cross-sport
+    // elite path was bypassing the iter-25 stale-slate refresh and
+    // additionally held a cache key that stuck to the pre-iter-21
+    // version of the stored slate. Two-step fix:
+    //   1. Apply the same isStale detection to NBA and force a
+    //      refresh BEFORE computing the cache key, so the key changes
+    //      (via updatedAt) and the stale cached result is bypassed.
+    //   2. The cross-sport ticket is then computed against the fresh
+    //      slate — Insane / demon-bearing legs flow through correctly.
+    {
+      const stored = await getDailySlateFromDb().catch(() => null);
+      const isStale = stored
+        && stored.lines.length > 0
+        && stored.lines.every((l) => !l.direction || l.direction === 'both');
+      if (!stored || stored.lines.length === 0 || isStale) {
+        try {
+          if (!autoPublishInflight) {
+            autoPublishInflight = autoPublishFromPrizePicks().finally(() => {
+              autoPublishInflight = null;
+            });
+          }
+          await autoPublishInflight;
+        } catch (err) {
+          console.warn('cross-sport elite stale-refresh skipped:', (err as Error).message);
+        }
+      }
+    }
+
     // Cache check — cross-sport elite is expensive (resolves both
     // sports' slates through their projection engines) but the answer
     // changes only when EITHER slate is republished. Key includes
@@ -1069,6 +1106,49 @@ slateRouter.post('/today', async (req, res) => {
   } catch (err) {
     console.error('slate/today POST failed', err);
     res.status(500).json({ error: 'slate today write failed' });
+  }
+});
+
+// Iter 27: admin force-refresh — bypasses ALL caches, ALL stale checks
+// and unconditionally re-runs autoPublishFromPrizePicks against tonight's
+// PrizePicks. Use when iter-25's stale-detection isn't firing because
+// the auto-publish path is silently failing (PP returning 403 from
+// Vercel egress) and someone's pasted a slate with all-'both' direction
+// data. Returns a diagnostic with the demon/goblin counts so we can
+// see at a glance whether the refresh worked.
+slateRouter.post('/refresh-from-pp', async (req, res) => {
+  if (!isDbConfigured()) {
+    res.status(503).json({ error: 'Daily slate requires DB' });
+    return;
+  }
+  const secret = process.env.SLATE_ADMIN_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: 'SLATE_ADMIN_SECRET not configured on server' });
+    return;
+  }
+  const provided = req.header('x-admin-secret');
+  if (provided !== secret) {
+    res.status(401).json({ error: 'admin secret mismatch' });
+    return;
+  }
+  try {
+    const lines = await autoPublishFromPrizePicks();
+    const demons = lines.filter((l) => l.direction === 'over').length;
+    const goblins = lines.filter((l) => l.direction === 'under').length;
+    res.json({
+      ok: true,
+      total: lines.length,
+      demons,
+      goblins,
+      standard: lines.length - demons - goblins,
+    });
+  } catch (err) {
+    console.error('slate/refresh-from-pp failed', err);
+    res.status(502).json({
+      error: 'PrizePicks auto-fetch failed',
+      detail: (err as Error).message,
+      hint: 'PrizePicks may be returning 403 from Vercel IPs. Use POST /api/slate/today with admin secret to manually publish a slate with direction tags.',
+    });
   }
 });
 

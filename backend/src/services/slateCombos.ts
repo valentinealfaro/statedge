@@ -1143,8 +1143,10 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
 
     // Skip picks where the projection's lean conflicts with the
     // bookable side (Demon = over-only, Goblin = under-only).
-    if (l.direction === 'over' && !isOver) continue;
-    if (l.direction === 'under' && isOver) continue;
+    // Iter 27: case-normalize defensively (see isDemon comment below).
+    const propDir = typeof l.direction === 'string' ? l.direction.toLowerCase() : 'both';
+    if (propDir === 'over' && !isOver) continue;
+    if (propDir === 'under' && isOver) continue;
 
     const direction: 'OVER' | 'UNDER' = isOver ? 'OVER' : 'UNDER';
     const probability = isOver ? p.probability.over : p.probability.under;
@@ -1294,8 +1296,13 @@ function buildCandidates(lines: ResolvedLine[]): EnrichedCandidate[] {
       vsOpponentHitRate: Math.round(vsOpponentHitRate),
       statVolatility,
       archetype: l.archetype?.archetype,
-      isDemon: l.direction === 'over',
-      isGoblin: l.direction === 'under',
+      // Iter 27 (user 2026-05-10 "demon still wrong"): defensive
+      // case-normalization on direction comparison. The DB schema
+      // stores lowercase 'over'/'under'/'both', but a stale row OR a
+      // mis-cased admin paste could land here as 'OVER'/'OVer'/etc
+      // and silently flip isDemon to false. Lowercase first.
+      isDemon: typeof l.direction === 'string' && l.direction.toLowerCase() === 'over',
+      isGoblin: typeof l.direction === 'string' && l.direction.toLowerCase() === 'under',
       marketImpliedProb: intel.marketImpliedProb,
       lineInflationScore: intel.lineInflationScore,
       publicBiasTags: intel.publicBiasTags,
