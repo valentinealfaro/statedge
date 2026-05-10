@@ -12,6 +12,12 @@ import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
+// User-facing sport labels — 'mma' is internal, the audience-facing
+// label is 'UFC' (matches the rest of the app).
+const SPORT_LABEL: Record<string, string> = {
+  nba: 'NBA', mlb: 'MLB', mma: 'UFC', wnba: 'WNBA',
+};
+
 const SPORT_COLOR: Record<string, string> = {
   cross: '#ffd54f',
   mlb:   '#66bb6a',
@@ -125,7 +131,9 @@ function ArticleBody({ article }: { article: Article }) {
           color: 'rgba(255,255,255,0.55)',
           textTransform: 'uppercase',
         }}>
-          {article.sport === 'cross' ? 'CROSS-SPORT' : article.sport.toUpperCase()}
+          {article.sport === 'cross'
+            ? 'CROSS-SPORT'
+            : (SPORT_LABEL[article.sport] ?? article.sport.toUpperCase())}
         </span>
         <span className="muted small" style={{ fontSize: 11 }}>
           {new Date(article.publishedAt).toLocaleString([], {

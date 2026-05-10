@@ -21,6 +21,11 @@ const SPORT_COLOR: Record<string, string> = {
   mma:   '#ef5350',
 };
 
+// 'mma' is the internal sport code; everywhere user-facing it's 'UFC'.
+const SPORT_LABEL: Record<string, string> = {
+  nba: 'NBA', mlb: 'MLB', mma: 'UFC', wnba: 'WNBA',
+};
+
 const KIND_LABEL: Record<string, string> = {
   top_mispricings:    'Market Dislocations',
   trap_watch:         'Trap Watch',
@@ -60,7 +65,7 @@ export function LatestNewsRail({ sport, gameKey, limit = 4, heading }: Props) {
     <section style={{ margin: '32px auto', maxWidth: 1200, padding: '0 16px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
-          {heading ?? (sport ? `${sport.toUpperCase()} Latest` : 'Latest from the Engine')}
+          {heading ?? (sport ? `${SPORT_LABEL[sport] ?? sport.toUpperCase()} Latest` : 'Latest from the Engine')}
         </h2>
         <Link to="/news" style={{ fontSize: 12, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none' }}>
           All news →
@@ -117,7 +122,9 @@ function RailCard({ article }: { article: Article }) {
             fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
             color: 'rgba(255,255,255,0.5)',
           }}>
-            {article.sport === 'cross' ? 'CROSS' : article.sport.toUpperCase()}
+            {article.sport === 'cross'
+              ? 'CROSS'
+              : (SPORT_LABEL[article.sport] ?? article.sport.toUpperCase())}
           </span>
         </div>
         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, lineHeight: 1.3 }}>

@@ -22,6 +22,17 @@ const SPORT_COLOR: Record<string, string> = {
   mma:   '#ef5350',
 };
 
+// User-facing labels — 'mma' is internal, the audience-facing label
+// is 'UFC' (matches the pill / NavBar / CSV exports). Mirrors the
+// SPORT_LABEL maps in StarredPage / NavSearch.
+const SPORT_LABEL: Record<string, string> = {
+  all:  'All',
+  nba:  'NBA',
+  mlb:  'MLB',
+  mma:  'UFC',
+  wnba: 'WNBA',
+};
+
 const KIND_LABEL: Record<string, string> = {
   top_mispricings:    'Market Dislocations',
   trap_watch:         'Trap Watch',
@@ -72,7 +83,9 @@ export function News() {
         </p>
 
         <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          {(['all', 'mlb', 'nba', 'wnba', 'mma'] as const).map((tab) => {
+          {/* Tab order tracks the 2026-05-09 sport-priorities decision:
+              All · NBA · MLB · UFC (focus sports) · WNBA (maintenance). */}
+          {(['all', 'nba', 'mlb', 'mma', 'wnba'] as const).map((tab) => {
             const active = sportFilter === tab;
             const color = tab === 'all' ? '#cccccc' : SPORT_COLOR[tab];
             return (
@@ -95,7 +108,7 @@ export function News() {
                   textTransform: 'uppercase',
                 }}
               >
-                {tab === 'all' ? 'All' : tab.toUpperCase()}
+                {SPORT_LABEL[tab]}
                 {counts && counts[tab] !== undefined && (
                   <span style={{ marginLeft: 6, opacity: 0.6, fontWeight: 500 }}>{counts[tab]}</span>
                 )}
@@ -192,7 +205,9 @@ function ArticleCard({ article }: { article: Article }) {
             fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
             color: 'rgba(255,255,255,0.5)',
           }}>
-            {article.sport === 'cross' ? 'CROSS-SPORT' : article.sport.toUpperCase()}
+            {article.sport === 'cross'
+              ? 'CROSS-SPORT'
+              : (SPORT_LABEL[article.sport] ?? article.sport.toUpperCase())}
           </span>
           <span className="muted small" style={{ fontSize: 11 }}>
             {timeAgo(article.publishedAt)}
