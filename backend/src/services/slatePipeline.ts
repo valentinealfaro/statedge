@@ -21,6 +21,8 @@ import {
   type InjuryStatus,
   type ProjectionResult,
 } from './projectionEngine.js';
+import { getNbaCalibrationFeedbackCached } from './nbaCalibrationFeedback.js';
+import type { CalibrationReport } from './slateCalibration.js';
 import { classifyArchetype, type ArchetypeReport } from './playerArchetype.js';
 import { buildCombos, type Combo } from './slateCombos.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
@@ -224,9 +226,18 @@ export async function resolveSlate(
   // Run the today-injuries lookup in parallel — it's cached and rarely
   // refetches but the first slate request of the morning will pay it.
   const uniquePlayerIds = Array.from(new Set(pending.map((p) => p.playerId)));
-  const [logs, injuries] = await Promise.all([
+  const [logs, injuries, calibrationReport] = await Promise.all([
     getPlayerGameLogsBulkFromDb(uniquePlayerIds, currentSeason()),
     getTodayInjuriesMap(),
+    // L9 → L6 calibration feedback. Pre-fetch the report once for the
+    // whole slate (cached 5 min) and pass it into every project() call
+    // so per-bucket / per-stat overclaim corrections actually move the
+    // model's probability output. NBA had been computing the same
+    // calibration report for the History page without ever feeding it
+    // back into projection-time decisions. Soft-fail to null if the
+    // DB query throws — the engine treats null as "no feedback layer"
+    // and degrades to its pre-feedback behavior.
+    getNbaCalibrationFeedbackCached().catch((): CalibrationReport | null => null),
   ]);
 
   function injuryFor(canonicalName: string): InjuryEntry | undefined {
@@ -394,6 +405,7 @@ export async function resolveSlate(
           opponentAbbr: oppAbbr,
           isHome: null, // tonight's home/away unknown at slate-build time
           playerInjuryStatus: injStatus,
+          calibrationReport,
         });
       }
     }

@@ -28,6 +28,8 @@ import {
   computeRobustBaseline,
   type RobustBaselineComponents,
 } from './mlbBaselineEngine.js';
+import { applyNbaCalibrationAdjustment } from './nbaCalibrationFeedback.js';
+import type { CalibrationReport } from './slateCalibration.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +73,13 @@ export type ProjectionInputs = {
   isStarPlayer?: boolean;
   // 0-100; if absent, defaults to neutral.
   blowoutRiskScore?: number | null;
+
+  // L9 → L6 calibration feedback. Pre-fetched (cached) calibration
+  // report from slateCalibration. When present, the engine applies a
+  // per-bucket / per-stat probability adjustment after the Gaussian-CDF
+  // computation. Optional so callers without DB access (tests, ad-hoc
+  // analysis) can skip — engine degrades gracefully.
+  calibrationReport?: CalibrationReport | null;
 };
 
 export type ProjectionResult = {
@@ -625,7 +634,27 @@ export function project(inp: ProjectionInputs): ProjectionResult {
   // clamp was just looser than MLB's, not principled. Capping at
   // 0.95 leaves room for "strong" predictions while preventing the
   // absurd 99% claims that fed inflated EV scoring + card eligibility.
-  const overProbability = Math.round(clamp(overP, 0.05, 0.95) * 100);
+  let overProbability = Math.round(clamp(overP, 0.05, 0.95) * 100);
+
+  // L9 → L6 calibration feedback. When the slate pipeline pre-fetched
+  // a calibration report, apply a per-bucket / per-stat shift toward
+  // the historical smoothed hit rate. Mirrors what MLB has done since
+  // mlbCalibrationFeedback iter 6 — without this, the slateCalibration
+  // page produces data the model never reads. Re-clamp to [5, 95]
+  // afterward so the iter-4 ceiling holds even if a structural overclaim
+  // bucket pushes hard toward the prior.
+  if (inp.calibrationReport) {
+    const adj = applyNbaCalibrationAdjustment(
+      overProbability,
+      inp.calibrationReport,
+      stat,
+    );
+    if (adj.shift !== 0) {
+      overProbability = clamp(Math.round(adj.adjustedProbability), 5, 95);
+      if (adj.reason) notes.push(adj.reason);
+    }
+  }
+
   const underProbability = 100 - overProbability;
 
   // Projected range: ±1 SD around the context-adjusted projection.
