@@ -3068,32 +3068,44 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   box-shadow: 0 0 6px currentColor;
 }
 
-/* Auto-mode resolution badge — surfaces "tonight resolves to X". */
+/* Iter 18: Auto / Insane banners get matching premium treatment so
+   they read as intentional info panels rather than mid-1990s alert
+   boxes. Both gain a subtle gradient bg, soft inner highlight, and
+   tighter typography. */
 .slate-mode-auto-badge {
-  margin-top: 4px;
-  padding: 8px 12px;
-  background: rgba(91,141,239,0.08);
-  border: 1px solid rgba(91,141,239,0.25);
+  margin-top: 8px;
+  padding: 10px 14px;
+  background:
+    linear-gradient(180deg, rgba(91,141,239,0.10) 0%, rgba(91,141,239,0.04) 100%);
+  border: 1px solid rgba(91,141,239,0.30);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  font-size: 12.5px;
   color: var(--text-2);
+  line-height: 1.5;
 }
 .slate-mode-auto-badge strong {
   color: var(--brand-blue);
   text-transform: capitalize;
 }
 
-/* Insane-mode warning — sits below the selector when user picks
-   Insane, telling them the trade-off. */
 .slate-mode-insane-warn {
-  margin-top: 4px;
-  padding: 8px 12px;
-  background: rgba(239,106,106,0.08);
-  border: 1px solid rgba(239,106,106,0.25);
+  margin-top: 8px;
+  padding: 12px 16px;
+  background:
+    radial-gradient(ellipse 100% 60% at 0% 0%, rgba(239,83,80,0.10), transparent 50%),
+    linear-gradient(180deg, rgba(124,77,255,0.06) 0%, rgba(124,77,255,0.02) 100%);
+  border: 1px solid rgba(124, 77, 255, 0.30);
   border-radius: var(--radius-md);
-  font-size: 12px;
-  color: var(--cold);
-  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-weight: 500;
+  line-height: 1.55;
+}
+.slate-mode-insane-warn strong {
+  color: var(--text-1);
+  font-weight: 800;
 }
 
 /* Card-level EV verdict (Positive / Neutral / Negative). Sits below
@@ -3305,34 +3317,56 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--cold);
 }
 
-/* Empty Wild Card tile — surfaces "no qualifying picks" copy without
-   pretending to be a clickable card. */
+/* Iter 18: empty Wild Card state given a real visual identity.
+   Going to be visible more often after iter 16 (Insane requires
+   market disagreement), so it needs to feel deliberate, not broken.
+   Subtle dashed border, faint amber accent matching the Wild
+   Card identity, and the body sits on a layered radial highlight
+   so the empty tile reads as "intentionally quiet" rather than
+   "missing data". */
 .best-pick-card.empty-wild {
   cursor: default;
-  opacity: 0.7;
-  border-style: dashed;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255, 184, 107, 0.05), transparent 60%),
+    linear-gradient(180deg, var(--surface-1) 0%, var(--surface-0) 100%);
+  border: 1px dashed rgba(255, 184, 107, 0.30);
+  box-shadow: none;
 }
 .best-pick-card.empty-wild:hover {
   transform: none;
   box-shadow: none;
+  border-color: rgba(255, 184, 107, 0.40);
 }
 .empty-wild-body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 16px;
   text-align: center;
-  padding: 8px 4px;
+  padding: 16px 8px 8px;
+}
+.empty-wild-body::before {
+  content: '○';
+  display: block;
+  font-size: 28px;
+  line-height: 1;
+  color: rgba(255, 184, 107, 0.40);
+  margin-bottom: 4px;
 }
 .empty-wild-body p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--text-2);
+  color: var(--text-1);
+  letter-spacing: -0.1px;
 }
 .empty-wild-body p.muted {
   font-weight: 500;
   color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 480px;
+  margin: 0 auto;
 }
 
 /* History view: wild-card evidence under the leg row. */
