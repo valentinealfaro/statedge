@@ -175,6 +175,30 @@ export async function upsertEliteTicket(opts: {
   );
 }
 
+// Persist a ticket-level verdict computed elsewhere (typically the
+// /elite/live-state endpoint, which has fresher per-leg state than the
+// per-sport projection_history tables can offer mid-game). Idempotent:
+// only writes if the row hasn't been graded yet — preserving grader-of-
+// record discipline so daily cron and live writeback can't fight.
+export async function markEliteTicketGraded(opts: {
+  ticketDate: string;
+  hitOrMiss: boolean;
+  legsHit: number;
+}): Promise<{ written: boolean }> {
+  if (!isDbConfigured()) return { written: false };
+  await ensureEliteTicketsTable();
+  const result = await getPool().query(
+    `UPDATE elite_tickets
+        SET hit_or_miss = $2,
+            legs_hit = $3,
+            graded_at = now()
+      WHERE ticket_date = $1
+        AND graded_at IS NULL`,
+    [opts.ticketDate, opts.hitOrMiss, opts.legsHit],
+  );
+  return { written: (result.rowCount ?? 0) > 0 };
+}
+
 export async function listEliteTickets(opts?: { limit?: number }): Promise<StoredEliteTicket[]> {
   if (!isDbConfigured()) return [];
   await ensureEliteTicketsTable();

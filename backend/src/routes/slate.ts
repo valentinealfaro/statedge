@@ -11,7 +11,7 @@ import { getUfcMoneylines } from '../mma/odds.js';
 import { fetchUfcScoreboard } from '../mma/espn.js';
 import { generateElitePlay, type ElitePlayLeg } from '../news/templates.js';
 import { upsertArticle } from '../news/store.js';
-import { gradeEliteTickets, listEliteTickets, upsertEliteTicket } from '../services/eliteTicketStore.js';
+import { gradeEliteTickets, listEliteTickets, markEliteTicketGraded, upsertEliteTicket } from '../services/eliteTicketStore.js';
 import { liveGradeElite } from '../services/liveEliteGrader.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
@@ -546,6 +546,44 @@ slateRouter.get('/elite/live-state', async (_req, res) => {
       else if (s.verdict === 'IN_FLIGHT') tally.inFlight++;
       else if (s.verdict === 'UNGRADED') tally.ungraded++;
       else tally.pending++;
+    }
+
+    // Auto-writeback to the elite_tickets ledger when the ticket has
+    // FULLY resolved off live state. We require every gradeable leg
+    // (i.e. not UNGRADED — MMA legs stay ungraded by design) to be
+    // either HIT/MISS/PUSH (gameStatus === 'final') or ON_PACE_HIT/
+    // ON_PACE_MISS (locked-in mid-game outcomes). Once that bar is
+    // met, persist hitOrMiss + legsHit to the ledger so PastElitePlays
+    // shows tonight's verdict without waiting for the daily cron.
+    //
+    // Idempotent — markEliteTicketGraded refuses to overwrite a row
+    // that already has graded_at set. Worst case is a duplicate
+    // attempt that no-ops.
+    if (today.gradedAt === null && states.length > 0) {
+      const everyLockedIn = states.every((s) => {
+        if (s.verdict === 'UNGRADED') return false;
+        return s.verdict === 'HIT'
+          || s.verdict === 'MISS'
+          || s.verdict === 'PUSH'
+          || s.verdict === 'ON_PACE_HIT'
+          || s.verdict === 'ON_PACE_MISS';
+      });
+      const noUngraded = states.every((s) => s.verdict !== 'UNGRADED');
+      if (everyLockedIn && noUngraded) {
+        const ticketHit = states.every(
+          (s) => s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT',
+        );
+        const legsHit = states.filter(
+          (s) => s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT',
+        ).length;
+        markEliteTicketGraded({
+          ticketDate: today.ticketDate,
+          hitOrMiss: ticketHit,
+          legsHit,
+        }).catch((err) => {
+          console.warn('elite live-state writeback failed', (err as Error).message);
+        });
+      }
     }
 
     // Edge cache for ~30s — short enough that mid-game updates land,
