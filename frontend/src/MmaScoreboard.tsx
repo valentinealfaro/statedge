@@ -33,17 +33,25 @@ export function MmaScoreboard() {
   const [moneylines, setMoneylines] = useState<UfcMoneylineEvent[]>([]);
 
   useEffect(() => {
-    setData(null);
-    setError(null);
-    getUfcScoreboard()
-      .then(setData)
-      .catch((err: Error) => setError(err.message));
-    // Moneylines are fetched in parallel — they're cached server-side
-    // for 12h so this is cheap on every page load. Failure here is
-    // non-fatal; the scoreboard renders without odds.
+    let cancelled = false;
+    const tick = () => {
+      getUfcScoreboard()
+        .then((d) => { if (!cancelled) { setData(d); setError(null); } })
+        .catch((err: Error) => { if (!cancelled) setError(err.message); });
+    };
+    tick();
+    // Moneylines are fetched once on mount — they're cached server-side
+    // for 12h so this is cheap. Failure here is non-fatal; the
+    // scoreboard renders without odds.
     getUfcMoneylines()
-      .then((r) => setMoneylines(r.events))
-      .catch(() => setMoneylines([]));
+      .then((r) => { if (!cancelled) setMoneylines(r.events); })
+      .catch(() => { /* silent */ });
+    // Re-poll the scoreboard every 60s so live cards (state === 'in')
+    // tick fresh round/result data into view. Quieter than polling
+    // every 30s — UFC fights resolve slowly, a one-minute beat is
+    // tight enough.
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
   // Build a fast lookup: fighter name (lowercased, normalized) →
@@ -161,19 +169,63 @@ function EventCard({ event, moneylineByFighter }: { event: UfcEvent; moneylineBy
     weekday: 'short', month: 'short', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   });
+  const isLive = event.state === 'in';
+  const isFinal = event.state === 'post';
 
   return (
     <div
+      className="fade-up"
       style={{
-        padding: 14,
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(239,83,80,0.2)',
+        position: 'relative',
+        padding: 16,
+        background: `
+          radial-gradient(ellipse 50% 80% at 0% 0%, rgba(239,83,80,0.08) 0%, transparent 60%),
+          linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+          var(--surface-1)
+        `,
+        border: `1px solid ${isLive ? 'rgba(239,83,80,0.45)' : 'rgba(239,83,80,0.20)'}`,
         borderLeft: `3px solid ${MMA_ACCENT}`,
-        borderRadius: 6,
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: isLive
+          ? '0 1px 0 rgba(255,255,255,0.05) inset, 0 8px 24px rgba(239,83,80,0.18), 0 2px 6px rgba(0,0,0,0.30)'
+          : 'var(--shadow-card)',
+        overflow: 'hidden',
       }}
     >
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(239,83,80,0.50), transparent)',
+      }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{event.name}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, letterSpacing: '-0.2px' }}>{event.name}</h3>
+          {isLive && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 10, fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase',
+              color: '#ef5350',
+              padding: '2px 8px', borderRadius: 3,
+              background: 'rgba(239,83,80,0.16)',
+              border: '1px solid rgba(239,83,80,0.45)',
+            }}>
+              <span className="live-pulse" style={{
+                display: 'inline-block', width: 6, height: 6, borderRadius: 3, background: '#ef5350',
+              }} />
+              Live
+            </span>
+          )}
+          {isFinal && (
+            <span style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase',
+              color: 'rgba(255,255,255,0.55)',
+              padding: '2px 8px', borderRadius: 3,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.10)',
+            }}>
+              Final
+            </span>
+          )}
+        </div>
         <span className="muted small" style={{ fontSize: 11 }}>{dateLabel}</span>
       </div>
 
@@ -227,11 +279,26 @@ function FightRow({ fight, eventId, primary, moneylineByFighter }: { fight: UfcF
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.45)' }}>VS</span>
         <FighterCell f={blue} winner={fight.result?.winnerId === blue?.id} primary={primary} alignRight moneyline={blueMl} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', gap: 8, flexWrap: 'wrap' }}>
         <span>
           {fight.weightClass ?? ''}
+          {fight.isMain && <span style={{ marginLeft: 6, color: '#ffd54f' }}>· MAIN</span>}
           {fight.isTitle && <span style={{ marginLeft: 6, color: '#ffd54f' }}>· TITLE</span>}
         </span>
+        {fight.state === 'in' && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            color: '#ef5350', fontWeight: 800,
+            padding: '1px 7px', borderRadius: 3,
+            background: 'rgba(239,83,80,0.14)',
+            border: '1px solid rgba(239,83,80,0.40)',
+          }}>
+            <span className="live-pulse" style={{
+              display: 'inline-block', width: 5, height: 5, borderRadius: 2.5, background: '#ef5350',
+            }} />
+            Live
+          </span>
+        )}
         {fight.result && (
           <span>
             {fight.result.method ?? '—'}
