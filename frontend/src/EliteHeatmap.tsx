@@ -1,9 +1,11 @@
-// EliteHeatmap — Phase 148e.
+// EliteHeatmap — Phase 148e (today's-cell gold ring added iter 41).
 //
 // Bloomberg-style visual track record: 90-day grid of every Elite
 // ticket published, colored by verdict. Each cell is one day. Hover
-// reveals tier + grade + verdict + payout. Self-hides when fewer than
-// 3 graded days exist (early-life signal-vs-noise honesty).
+// reveals tier + grade + verdict + payout. Today's cell gets a gold
+// outline ring + 'Today · ' tooltip prefix so users can orient at a
+// glance. Self-hides when fewer than 3 graded days exist (early-life
+// signal-vs-noise honesty).
 //
 // The point: institutional users want to scan the track record in 2
 // seconds, not parse a list. A heatmap makes "we hit X of last Y"
