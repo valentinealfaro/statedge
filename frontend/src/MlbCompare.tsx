@@ -1,10 +1,11 @@
-// MLB compare page — Phase 2. Search a player, pick a stat, see their
-// last-10 distribution with average / median / range / consistency /
-// hit rate at any line. Mission-aligned: real analytical value, no
-// hype copy, disclaimer always visible.
-//
-// Deliberately simple in v1. Charts / pitcher matchup / park context
-// land in Phase 3+ once the projection engine exists.
+// MLB compare page — Phase 2 foundation, extended through the
+// projection-engine work in subsequent phases. Search a player, pick
+// a stat, see their last-10 distribution with average / median /
+// range / consistency / hit rate at any line, plus the projection
+// engine's full output: ProjectionPanel (final / range / lean),
+// MonteCarloBands (distribution), ContextAdjustments (pitcher
+// matchup, park factor, weather, batting order). Mission-aligned:
+// real analytical value, no hype copy, disclaimer always visible.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
