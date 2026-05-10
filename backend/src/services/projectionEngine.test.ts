@@ -226,6 +226,78 @@ describe('projectionEngine.project', () => {
   });
 });
 
+// Iter 9 of the formula loop: NBA edge math anchored to the de-vigged
+// sportsbook implied probability instead of a fixed 50% baseline.
+// Without market data the engine falls back to 50% (unchanged path);
+// with a market read the edge.score reflects how far the model sits
+// from the book's TRUE belief, not the vigged price.
+describe('projectionEngine — market-anchored edge (iter 9)', () => {
+  it('agreeing-with-market projection scores LOWER edge than disagreeing one', () => {
+    // Two identical projections, same line, same stats. Difference:
+    // marketImpliedProb is set very close to the model's output for
+    // one and far away for the other. The "model agrees with market"
+    // case should score a smaller edge — there's no advantage to bet
+    // a number both sides already agree on.
+    const games = steadyScorerSeason();
+    const agree = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: games,
+      marketImpliedProb: 88,        // model also lands near 88-92%
+    });
+    const disagree = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: games,
+      marketImpliedProb: 50,        // book thinks 50/50, model says ~90%
+    });
+    expect(disagree.edge.score).toBeGreaterThan(agree.edge.score);
+  });
+
+  it('marketImpliedProb is surfaced on the result', () => {
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: steadyScorerSeason(),
+      marketImpliedProb: 62,
+    });
+    expect(r.marketImpliedProb).toBe(62);
+  });
+
+  it('null marketImpliedProb falls back to 50% baseline (legacy behavior)', () => {
+    // No market read — projection still works, edge math anchors at 50.
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: steadyScorerSeason(),
+    });
+    expect(r.marketImpliedProb).toBeNull();
+    expect(r.edge.score).toBeGreaterThan(0);
+  });
+
+  it('emits a market-disagreement note when gap is ≥10pp', () => {
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: steadyScorerSeason(),
+      marketImpliedProb: 55,        // model ~88-92%; gap > 10pp
+    });
+    const text = r.modelNotes.join(' ');
+    expect(text).toMatch(/Market \(de-vigged\)/i);
+  });
+
+  it('does NOT emit the disagreement note when gap is small', () => {
+    const r = project({
+      selectedStat: 'points',
+      lineValue: 23.5,
+      seasonGames: steadyScorerSeason(),
+      marketImpliedProb: 87,        // close to model — no real edge
+    });
+    const text = r.modelNotes.join(' ');
+    expect(text).not.toMatch(/Market \(de-vigged\)/i);
+  });
+});
+
 describe('projectionEngine.isProjectable', () => {
   it('rejects double_double', () => {
     expect(isProjectable('double_double')).toBe(false);

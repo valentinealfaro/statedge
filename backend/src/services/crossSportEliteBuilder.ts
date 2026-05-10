@@ -117,7 +117,12 @@ export function normalizeNba(l: NbaResolvedLine): EliteCandidate | null {
     edgeScore: p.edge?.score ?? 0,
     trapScore: p.risk?.score ?? 0,
     fragilityScore: p.fragility?.score ?? 0,
-    marketImpliedProb: null,
+    // Iter 9: NBA legs now carry the de-vigged sportsbook implied
+    // probability when one is available (paired-side de-vig per
+    // bookmaker, falls back to single-side approximation). This lets
+    // the cross-sport elite ranker classify "market_disagreement" the
+    // same way it does for MLB legs.
+    marketImpliedProb: p.marketImpliedProb ?? null,
     publicBiasTags: [],
     sharpnessScore: null,
     edgeDurability: null,
@@ -140,6 +145,15 @@ function classifyMlbEdge(p: ResolvedMlbLine['projection']): EdgeReason {
 
 function classifyNbaEdge(p: NbaResolvedLine['projection']): EdgeReason {
   if (!p) return 'model_disagreement';
+  // Market disagreement — only meaningful when we have a real market
+  // read. Same 12pp gap MLB uses; below that the model and book are
+  // saying ~the same thing.
+  const overProb = p.probability?.over ?? 50;
+  if (
+    p.marketImpliedProb !== null
+    && p.marketImpliedProb !== undefined
+    && Math.abs(overProb - p.marketImpliedProb) >= 12
+  ) return 'market_disagreement';
   if ((p.momentumExpansionScore ?? 50) >= 70 && (p.edge?.score ?? 0) >= 12) return 'role_expansion';
   if ((p.edge?.score ?? 0) >= 18) return 'matchup_asymmetry';
   return 'model_disagreement';

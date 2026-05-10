@@ -80,6 +80,16 @@ export type ProjectionInputs = {
   // computation. Optional so callers without DB access (tests, ad-hoc
   // analysis) can skip — engine degrades gracefully.
   calibrationReport?: CalibrationReport | null;
+
+  // De-vigged sportsbook implied probability (0..100) for the OVER side
+  // of this prop, anchored to a real bookmaker market read. Pre-fetched
+  // by the slate pipeline (mirrors MLB iter 3 + iter 8 — paired-side
+  // de-vig with single-side fallback). When present, edge math
+  // measures how far the model's predicted probability sits from the
+  // book's actual belief rather than from a pretend 50% baseline.
+  // When null, the engine falls back to the 50% baseline so the math
+  // stays honest in the absence of a market read.
+  marketImpliedProb?: number | null;
 };
 
 export type ProjectionResult = {
@@ -96,6 +106,11 @@ export type ProjectionResult = {
   confidence: { score: number; label: string };
   risk: { score: number; label: string };
   edge: { score: number; label: string; lean: string };
+  // De-vigged sportsbook implied probability for the OVER side at lock
+  // time (0..100). null when no market snapshot was passed in. The
+  // edge.score composite anchors against this when present, against
+  // 50% otherwise.
+  marketImpliedProb: number | null;
   // L5 Fragility — separate from probability and risk. Same dimension
   // as MLB Phase 15 brought to NBA so users see "75% prob 3PM 2.5"
   // doesn't read identical to "75% prob PRA 32.5" — failure modes
@@ -755,7 +770,20 @@ export function project(inp: ProjectionInputs): ProjectionResult {
   else if (underProbability >= 57 && confidenceScore >= 55 && riskScore <= 70) lean = 'Slight Under Lean';
   else lean = 'No Clear Edge';
 
-  const probabilityEdge = Math.abs(overProbability - 50) * 2;
+  // Anchor probability edge against the de-vigged market when we have
+  // a real market read; otherwise fall back to the 50% prior so the
+  // math is unchanged for legs without a snapshot. Anchoring vs the
+  // book's true belief — not the vig-inclusive raw implied — lets a
+  // 75% model output that agrees with a 75% market read score as a
+  // small edge (right answer, no advantage), while a 75% model vs a
+  // 60% market read scores as a large edge (real advantage). Pre-iter
+  // 9, NBA used the 50% baseline universally and a Strong Over Lean
+  // that the market already priced as a heavy favorite was scored the
+  // same as one the market thought was a coin flip.
+  const marketAnchor = inp.marketImpliedProb !== null && inp.marketImpliedProb !== undefined
+    ? inp.marketImpliedProb
+    : 50;
+  const probabilityEdge = clamp(Math.abs(overProbability - marketAnchor) * 2, 0, 100);
   const projectionEdge = clamp((edgeAbs / blendedStdDev) * 100, 0, 100);
   const historicalHitScore =
     (historicalHitRates.season ?? 50) * 0.25 +
@@ -791,6 +819,21 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     notes.push('Projection sits within 1.0 of the line — coin-flip territory.');
   }
   if (sampleSizeScore < 50) notes.push('Sample size is light — interpret confidence cautiously.');
+
+  // Market disagreement note — surfaces when the model's predicted
+  // probability deviates meaningfully from the de-vigged book read.
+  // ≥10pp gap is "real disagreement" in player-prop terms; below that
+  // the model and market mostly agree and there's little edge to bet.
+  if (inp.marketImpliedProb !== null && inp.marketImpliedProb !== undefined) {
+    const gap = overProbability - inp.marketImpliedProb;
+    if (Math.abs(gap) >= 10) {
+      const dir = gap > 0 ? 'higher' : 'lower';
+      notes.push(
+        `Market (de-vigged) sees ${inp.marketImpliedProb.toFixed(0)}% — ` +
+        `model is ${Math.abs(gap).toFixed(0)}pp ${dir}.`,
+      );
+    }
+  }
 
   // L1 robust baseline (institutional 7-window composite). Compute
   // from the full ordered-most-recent-first season values. Result is
@@ -859,6 +902,7 @@ export function project(inp: ProjectionInputs): ProjectionResult {
     confidence: { score: confidenceScore, label: confidenceLabel(confidenceScore) },
     risk: { score: riskScore, label: riskLabel(riskScore) },
     edge: { score: edgeScore, label: edgeLabel(edgeScore), lean },
+    marketImpliedProb: inp.marketImpliedProb ?? null,
     fragility,
     momentumExpansionScore,
     robustBaseline,
@@ -936,6 +980,7 @@ function makeNoProjection(stat: Last10StatId, line: number, reason: string): Pro
     confidence: { score: 0, label: 'Very Weak' },
     risk: { score: 100, label: 'Extreme Risk' },
     edge: { score: 0, label: 'Weak Edge', lean: 'No Clear Edge' },
+    marketImpliedProb: null,
     fragility: {
       score: 50,
       tier: 'Moderate Fragility',

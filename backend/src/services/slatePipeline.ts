@@ -1,3 +1,147 @@
+// ---------- NBA market-implied prob (de-vigged) bulk lookup ----------
+//
+// Mirror of mlbSlatePipeline iter 8: fetch real bookmaker prices,
+// de-vig (paired-side multiplicative normalization, single-side
+// fallback) so the projection engine compares its predicted prob
+// against the book's TRUE belief — not the vig-inclusive raw implied.
+// Bulk-shaped (one query for the whole slate's tuples) to avoid N+1
+// per-leg DB hits.
+
+const PAIR_WINDOW_MS = 6 * 60 * 60 * 1000;
+const NBA_DFS_BOOKMAKERS = new Set(['prizepicks', 'underdog']);
+
+type NbaMarketKey = string;       // `${playerId}|${statKey}|${line}`
+
+function nbaMarketKey(playerId: number, statKey: Last10StatId, line: number): NbaMarketKey {
+  return `${playerId}|${statKey}|${line}`;
+}
+
+async function fetchNbaMarketImpliedProbsBulk(
+  legs: Array<{ playerId: number; statKey: Last10StatId; line: number }>,
+): Promise<Map<NbaMarketKey, number>> {
+  const out = new Map<NbaMarketKey, number>();
+  if (legs.length === 0 || !isDbConfigured()) return out;
+  try {
+    const pool = getPool();
+    // Build distinct (player, stat, line) tuples to query.
+    const seen = new Set<string>();
+    const playerIds: string[] = [];
+    const statKeys: string[] = [];
+    const lines: number[] = [];
+    for (const l of legs) {
+      const k = nbaMarketKey(l.playerId, l.statKey, l.line);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      playerIds.push(String(l.playerId));
+      statKeys.push(l.statKey);
+      lines.push(l.line);
+    }
+    if (playerIds.length === 0) return out;
+    // Pull freshest snapshot per (playerId, statKey, line, bookmaker,
+    // direction) over the last 7 days. Postgres unnest() lets us pass
+    // three parallel arrays as a single set of tuples.
+    const result = await pool.query<{
+      internal_player_id: string;
+      stat_key: string;
+      line_value: string;
+      bookmaker: string | null;
+      direction: string;
+      implied: string | null;
+      captured_at: Date;
+    }>(
+      `WITH wanted AS (
+         SELECT *
+           FROM unnest($1::text[], $2::text[], $3::numeric[])
+                AS t(internal_player_id, stat_key, line_value)
+       ),
+       latest AS (
+         SELECT s.internal_player_id, s.stat_key, s.line_value,
+                s.bookmaker, s.direction, s.implied_probability, s.captured_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY s.internal_player_id, s.stat_key, s.line_value, s.bookmaker, s.direction
+                  ORDER BY s.captured_at DESC
+                ) AS rn
+           FROM market_snapshots s
+           JOIN wanted w
+             ON w.internal_player_id = s.internal_player_id
+            AND w.stat_key = s.stat_key
+            AND ABS(w.line_value - s.line_value) < 0.01
+          WHERE s.sport = 'nba'
+            AND COALESCE(s.bookmaker, '') NOT IN ('prizepicks', 'underdog')
+            AND s.implied_probability IS NOT NULL
+            AND s.captured_at >= (NOW() - INTERVAL '7 days')
+       )
+       SELECT internal_player_id, stat_key, line_value::text AS line_value,
+              bookmaker, direction,
+              implied_probability::text AS implied,
+              captured_at
+         FROM latest
+        WHERE rn = 1`,
+      [playerIds, statKeys, lines],
+    );
+
+    type Sided = { rawPct: number; capturedAt: number };
+    type BookSlot = { over?: Sided; under?: Sided; both?: Sided };
+    const byKey = new Map<NbaMarketKey, Map<string, BookSlot>>();
+    for (const r of result.rows) {
+      if (!r.implied) continue;
+      const raw = Number(r.implied);
+      if (!Number.isFinite(raw) || raw <= 0) continue;
+      const pct = raw <= 1 ? raw * 100 : raw;
+      const dir = (r.direction ?? '').toLowerCase();
+      const key = `${r.internal_player_id}|${r.stat_key}|${Number(r.line_value)}`;
+      const book = (r.bookmaker ?? '').toLowerCase() || 'unknown';
+      const inner = byKey.get(key) ?? new Map<string, BookSlot>();
+      const slot = inner.get(book) ?? {};
+      const sided: Sided = {
+        rawPct: Math.max(1, Math.min(99, pct)),
+        capturedAt: r.captured_at.getTime(),
+      };
+      if (dir === 'over') slot.over = sided;
+      else if (dir === 'under') slot.under = sided;
+      else if (dir === 'both') slot.both = sided;
+      inner.set(book, slot);
+      byKey.set(key, inner);
+    }
+
+    for (const [key, books] of byKey.entries()) {
+      // Prefer the freshest paired book.
+      type Paired = { over: Sided; under: Sided; freshness: number };
+      const paired: Paired[] = [];
+      for (const slot of books.values()) {
+        if (!slot.over || !slot.under) continue;
+        const gap = Math.abs(slot.over.capturedAt - slot.under.capturedAt);
+        if (gap > PAIR_WINDOW_MS) continue;
+        paired.push({
+          over: slot.over,
+          under: slot.under,
+          freshness: Math.max(slot.over.capturedAt, slot.under.capturedAt),
+        });
+      }
+      paired.sort((a, b) => b.freshness - a.freshness);
+      if (paired.length > 0) {
+        const r = devigPair(paired[0].over.rawPct, paired[0].under.rawPct);
+        out.set(key, trueProbForSide(r, 'OVER'));
+        continue;
+      }
+      // Single-side fallback — pick the freshest OVER (or 'both').
+      const candidates: Sided[] = [];
+      for (const slot of books.values()) {
+        if (slot.over) candidates.push(slot.over);
+        if (slot.both) candidates.push(slot.both);
+      }
+      if (candidates.length === 0) continue;
+      candidates.sort((a, b) => b.capturedAt - a.capturedAt);
+      out.set(key, devigSingleSide(candidates[0].rawPct));
+    }
+    return out;
+  } catch {
+    return out;     // DB blip → empty map; engine falls back to 50% baseline
+  }
+}
+
+void NBA_DFS_BOOKMAKERS;       // doc-only — referenced via inline NOT IN
+
 // End-to-end "raw line → resolved card" pipeline for NBA. Three
 // ingestion paths funnel through here so the front-end always gets
 // the same response shape:
@@ -10,6 +154,8 @@
 
 import {
   getPlayerGameLogsBulkFromDb,
+  getPool,
+  isDbConfigured,
   listAllPlayerCandidatesFromDb,
 } from '../db.js';
 import { currentSeason, type PlayerGame } from '../nba/client.js';
@@ -23,6 +169,7 @@ import {
 } from './projectionEngine.js';
 import { getNbaCalibrationFeedbackCached } from './nbaCalibrationFeedback.js';
 import type { CalibrationReport } from './slateCalibration.js';
+import { devigPair, devigSingleSide, trueProbForSide } from '../market/devig.js';
 import { classifyArchetype, type ArchetypeReport } from './playerArchetype.js';
 import { buildCombos, type Combo } from './slateCombos.js';
 import { getTodayInjuriesMap, type InjuryEntry } from './slateInjuries.js';
@@ -226,7 +373,10 @@ export async function resolveSlate(
   // Run the today-injuries lookup in parallel — it's cached and rarely
   // refetches but the first slate request of the morning will pay it.
   const uniquePlayerIds = Array.from(new Set(pending.map((p) => p.playerId)));
-  const [logs, injuries, calibrationReport] = await Promise.all([
+  const marketLegs = pending
+    .filter((p) => isProjectable(p.statKey))
+    .map((p) => ({ playerId: p.playerId, statKey: p.statKey, line: p.raw.line }));
+  const [logs, injuries, calibrationReport, marketImpliedProbs] = await Promise.all([
     getPlayerGameLogsBulkFromDb(uniquePlayerIds, currentSeason()),
     getTodayInjuriesMap(),
     // L9 → L6 calibration feedback. Pre-fetch the report once for the
@@ -238,6 +388,12 @@ export async function resolveSlate(
     // DB query throws — the engine treats null as "no feedback layer"
     // and degrades to its pre-feedback behavior.
     getNbaCalibrationFeedbackCached().catch((): CalibrationReport | null => null),
+    // De-vigged sportsbook implied prob per (player, stat, line). Bulk
+    // query over the slate's tuples → one round-trip instead of N+1.
+    // Engine treats absent keys as null → 50% baseline (same as the
+    // pre-iter-9 behavior), so missing market data never blocks a
+    // projection.
+    fetchNbaMarketImpliedProbsBulk(marketLegs),
   ]);
 
   function injuryFor(canonicalName: string): InjuryEntry | undefined {
@@ -398,6 +554,9 @@ export async function resolveSlate(
       const injStatus = mapInjuryStatus(inj?.status);
       // Short-circuit: don't render a projection card for an OUT player.
       if (injStatus !== 'Out') {
+        const marketImpliedProb = marketImpliedProbs.get(
+          nbaMarketKey(p.playerId, p.statKey, p.raw.line),
+        ) ?? null;
         projection = project({
           selectedStat: p.statKey,
           lineValue: p.raw.line,
@@ -406,6 +565,7 @@ export async function resolveSlate(
           isHome: null, // tonight's home/away unknown at slate-build time
           playerInjuryStatus: injStatus,
           calibrationReport,
+          marketImpliedProb,
         });
       }
     }

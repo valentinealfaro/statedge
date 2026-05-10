@@ -37,6 +37,7 @@ function makeProjection(over: Partial<ProjectionResult> = {}): ProjectionResult 
     confidence: { score: 70, label: 'High Confidence' },
     risk: { score: 50, label: 'Moderate Risk' },
     edge: { score: 60, label: 'Moderate Edge', lean: 'Strong Over Lean' },
+    marketImpliedProb: null,
     fragility: {
       score: 35,
       tier: 'Moderate Fragility',
