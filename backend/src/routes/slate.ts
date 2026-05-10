@@ -613,12 +613,15 @@ slateRouter.get('/elite/live-state', async (_req, res) => {
 
 // GET /api/slate/elite/cross-sport/today
 //
-// Cross-sport Elite — combines NBA + MLB legs into ONE ticket and
-// always produces a play. Progressive fallback through quality tiers
-// ensures users get a 3-leg / 2-leg / "best of the day" ticket even
-// when no institutional combination qualifies. Tier name is in the
-// response so the UI shows whether it's an institutional play or a
-// relaxed-fallback "best available."
+// Cross-sport Elite — combines NBA + MLB + UFC legs into ONE ticket
+// and always produces a play. UFC contribution rides on the Phase 136
+// moneyline-anchored projection engine (mma/projectionEngine.projectUfcProp)
+// — same engine /best-bets and /mma/slate consume via /api/mma/slate/projections.
+// Progressive fallback through quality tiers ensures users get a
+// 3-leg / 2-leg / "best of the day" ticket even when no institutional
+// combination qualifies. Tier name is in the response so the UI shows
+// whether it's an institutional play or a relaxed-fallback "best
+// available."
 slateRouter.get('/elite/cross-sport/today', async (_req, res) => {
   if (!isDbConfigured()) {
     res.json({ ticket: null, reason: 'database not configured' });
