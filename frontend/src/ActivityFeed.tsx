@@ -1,9 +1,14 @@
-// ActivityFeed — Phase 148m.
+// ActivityFeed — Phase 148m, mounted across the institutional pages
+// in iter 36-39.
 //
-// Bloomberg-style "what just happened to my picks" ticker on Home.
-// One unified chronological list spanning:
-//   - Elite ticket legs that have resolved today
+// Bloomberg-style "what just happened to my picks" ticker mounted on
+// Home, Dashboard, Best Bets, and Elite — same component, same
+// signal, every institutional surface. One unified chronological
+// list spanning:
+//   - Elite ticket legs that have resolved today (NBA / MLB / UFC)
 //   - Starred props the user is following that have resolved today
+//     (NBA / MLB / UFC; UFC entered when iter 46 removed the stale
+//     'sport !== mma' filter after the live grader was wired)
 //
 // Sorted by event freshness (most recent first). Self-hides when
 // nothing has resolved yet. Each row is click-through to the source
