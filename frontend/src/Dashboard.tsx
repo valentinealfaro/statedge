@@ -1,4 +1,7 @@
-// Cross-sport Command Center — Phase 100 institutional rebuild.
+// Cross-sport Command Center — Phase 100 institutional rebuild,
+// extended through iter 70 (UFC inclusion in collectEdges) + iter 84
+// (StrengthCard slate-path bug fix) + iter 85 (SportAvatar UFC
+// branch) + iter 88 (espnAthleteId in live-poll payload).
 //
 // Mission shift (per Phase 100 spec): stop ranking by hit rate, start
 // ranking by market dislocation. The dashboard is no longer a "best
@@ -7,7 +10,18 @@
 // honest confidence uncertainty.
 //
 // Composed entirely from existing slate + calibration endpoints; the
-// "intelligence density" upgrade is in framing, not new data.
+// "intelligence density" upgrade is in framing, not new data. Sports
+// covered: NBA + MLB + UFC + WNBA (UFC enters via Phase 136 heuristic
+// engine output through /api/mma/slate/projections; UFC's Phase-101
+// market-intel fields are honestly null since the heuristic doesn't
+// produce them).
+//
+// Page surface: TodayAtAGlance ticker, ActivityFeed, AnalystBanner
+// (1-2 sentence narrative), SportFilterTabs, three card rails
+// (Dislocations / Disagreements / Trap Watch), Slate Strength rail
+// (per-sport leg counts + avg edge + high-edge concentration),
+// Model Health (predicted-vs-observed gap), EnginePulseStrip,
+// LatestNewsRail.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
