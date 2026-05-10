@@ -24,6 +24,13 @@ import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
+// User-facing sport labels — 'mma' is internal, audience-facing label
+// is 'UFC'. Mirrors SPORT_LABEL maps in StarredPage / News / Dashboard
+// / NavSearch / CalibrationAudit.
+const SPORT_LABEL: Record<string, string> = {
+  nba: 'NBA', mlb: 'MLB', mma: 'UFC', wnba: 'WNBA',
+};
+
 const SPORT_COLOR: Record<string, string> = {
   mlb:  '#66bb6a',
   nba:  '#7aa2ff',
@@ -206,7 +213,7 @@ export function ClvAudit() {
                       borderRadius: 6,
                     }}>
                       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: SPORT_COLOR[s.sport] ?? 'rgba(255,255,255,0.7)' }}>
-                        {s.sport}
+                        {SPORT_LABEL[s.sport] ?? s.sport}
                       </div>
                       <div style={{ fontSize: 24, fontWeight: 800, marginTop: 2, color: rateColor(s.beatRate) }}>
                         {s.beatRate !== null ? `${s.beatRate.toFixed(1)}%` : '—'}
@@ -248,7 +255,7 @@ export function ClvAudit() {
                             color: SPORT_COLOR[s.sport] ?? 'rgba(255,255,255,0.6)',
                             textTransform: 'uppercase',
                           }}>
-                            {s.sport}
+                            {SPORT_LABEL[s.sport] ?? s.sport}
                           </span>
                         </td>
                         <td style={tdStyle}>{STAT_LABEL[s.stat] ?? s.stat}</td>
@@ -303,7 +310,7 @@ export function ClvAudit() {
                               color: SPORT_COLOR[r.sport] ?? 'rgba(255,255,255,0.6)',
                               textTransform: 'uppercase',
                             }}>
-                              {r.sport}
+                              {SPORT_LABEL[r.sport] ?? r.sport}
                             </span>
                           </td>
                           <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.6)' }}>
