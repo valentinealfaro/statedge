@@ -1,3 +1,33 @@
+// Slate routes — NBA-centric historically (the platform's first
+// surface area was /slate), now hosts the cross-sport Elite +
+// live-grade endpoints that span NBA + MLB + UFC.
+//
+// NBA slate (sport-default, kept on /api/slate/* for back-compat):
+//   GET  /auto           — auto-pulled NBA slate from PrizePicks
+//   POST /parse-image    — admin OCR upload
+//   POST /parse          — admin paste a JSON slate
+//   GET  /today          — today's published NBA slate
+//   POST /today          — admin publish today's NBA slate
+//   GET  /history        — NBA slate history index
+//   GET  /history/:date  — NBA slate snapshot for a date
+//   GET  /calibration    — NBA calibration buckets
+//   POST /insight        — Gemini-powered slate insight summary
+//   POST /analyze        — analyze leg list against the slate engine
+//
+// Cross-sport Elite (NBA + MLB + UFC):
+//   GET /elite/today              — NBA-only Elite ticket
+//   GET /elite/cross-sport/today  — full cross-sport Elite ticket
+//   GET /elite/history            — past tickets ledger
+//   GET /elite/grade / POST same  — manual ticket grading trigger
+//   GET /elite/live-state         — today's persisted ticket + per-leg
+//                                   live verdicts via fightcenter +
+//                                   ESPN scoreboard + StatsAPI feed/live
+//
+// Generic live grader (used by every slate page + watchlist + Best
+// Bets + GlobalNotifications + Activity feed for per-leg HIT/MISS/
+// IN_FLIGHT/UNGRADED state):
+//   POST /live-grade     — accepts up to 50 legs, returns LegLiveState[]
+
 import { Router } from 'express';
 import multer from 'multer';
 import { fetchPrizePicksNba } from '../services/slatePrizePicks.js';
