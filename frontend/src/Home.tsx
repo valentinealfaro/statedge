@@ -102,34 +102,24 @@ export function Home() {
             <h3>Free</h3>
             <div className="price">$0</div>
             <ul>
-              <li>2 comparisons / day</li>
-              <li>Last 5 games only</li>
-              <li>Basic stats</li>
-              <li>No AI</li>
+              <li>Daily comparisons (NBA / MLB / UFC)</li>
+              <li>Last-10 game logs</li>
+              <li>Hit probability vs any line</li>
+              <li>Daily limit on comparisons</li>
             </ul>
-            <Link className="cta" to="/nba/compare">Try it free</Link>
+            <Link className="cta" to="/nba/compare">Try Compare free</Link>
           </div>
           <div className="plan featured">
             <h3>Pro</h3>
-            <div className="price">$19<span>/mo</span></div>
+            <div className="price">$19.99<span>/mo</span></div>
             <ul>
-              <li>Unlimited comparisons</li>
-              <li>Last 10 + season</li>
-              <li>AI summaries</li>
-              <li>Save comparisons</li>
+              <li>Tonight's full prop slate (NBA + MLB + UFC)</li>
+              <li>Pre-built parlays + 6-leg builder</li>
+              <li>Live line override</li>
+              <li>AI &quot;why?&quot; on every prop</li>
+              <li>Saved parlays + favorites</li>
             </ul>
-            <span className="cta primary disabled">Coming soon</span>
-          </div>
-          <div className="plan">
-            <h3>Elite</h3>
-            <div className="price">$49<span>/mo</span></div>
-            <ul>
-              <li>3–5 year history</li>
-              <li>Advanced filters</li>
-              <li>Export reports</li>
-              <li>Alerts</li>
-            </ul>
-            <span className="cta disabled">Coming soon</span>
+            <Link className="cta primary" to="/pricing">Get Pro →</Link>
           </div>
         </div>
       </section>
