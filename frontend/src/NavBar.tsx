@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { MobileBottomNav } from './MobileBottomNav';
 import { NavSearch } from './NavSearch';
 import { usePlan } from './plan';
+import { useLiveGameCounts } from './useLiveGameCounts';
 import { UserMenu } from './UserMenu';
 
 // Sport-grouped navigation per the UX spec ("institutional sports
@@ -80,6 +81,7 @@ export function NavBar() {
   const { plan, isAdmin } = usePlan();
   const isPro = plan === 'pro' || isAdmin;
   const sport = resolveSport(pathname);
+  const liveCounts = useLiveGameCounts();
 
   const subnav =
     sport === 'nba'  ? NBA_SUBNAV
@@ -129,19 +131,22 @@ export function NavBar() {
             </Link>
             <Link
               to="/nba/compare"
-              className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
+              className={`${sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}${liveCounts.nba > 0 ? ' has-live' : ''}`}
+              title={liveCounts.nba > 0 ? `${liveCounts.nba} NBA ${liveCounts.nba === 1 ? 'game' : 'games'} live` : undefined}
             >
               NBA
             </Link>
             <Link
               to="/mlb/compare"
-              className={sport === 'mlb' ? 'navlink active sport-mlb' : 'navlink'}
+              className={`${sport === 'mlb' ? 'navlink active sport-mlb' : 'navlink'}${liveCounts.mlb > 0 ? ' has-live' : ''}`}
+              title={liveCounts.mlb > 0 ? `${liveCounts.mlb} MLB ${liveCounts.mlb === 1 ? 'game' : 'games'} live` : undefined}
             >
               MLB
             </Link>
             <Link
               to="/mma/scoreboard"
-              className={sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}
+              className={`${sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}${liveCounts.ufc > 0 ? ' has-live' : ''}`}
+              title={liveCounts.ufc > 0 ? `${liveCounts.ufc} UFC ${liveCounts.ufc === 1 ? 'fight' : 'fights'} live` : undefined}
             >
               MMA
             </Link>
@@ -189,13 +194,15 @@ export function NavBar() {
             </Link>
             <Link
               to="/nba/compare"
-              className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
+              className={`${sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}${liveCounts.nba > 0 ? ' has-live' : ''}`}
+              title={liveCounts.nba > 0 ? `${liveCounts.nba} NBA ${liveCounts.nba === 1 ? 'game' : 'games'} live` : undefined}
             >
               NBA
             </Link>
             <Link
               to="/mma/scoreboard"
-              className={sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}
+              className={`${sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}${liveCounts.ufc > 0 ? ' has-live' : ''}`}
+              title={liveCounts.ufc > 0 ? `${liveCounts.ufc} UFC ${liveCounts.ufc === 1 ? 'fight' : 'fights'} live` : undefined}
             >
               MMA
             </Link>

@@ -6437,6 +6437,26 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   background: rgba(91,141,239,0.04);
 }
 
+/* ─── NavBar live-game pulse on sport tabs ─── */
+/* Adds a small animated red dot in the upper-right of any sport tab
+   that currently has games in progress. Subtle Bloomberg-feel signal
+   — users see the dot, hover for the count, click straight in. */
+.navlink.has-live {
+  position: relative;
+}
+.navlink.has-live::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: #ef5350;
+  box-shadow: 0 0 0 0 rgba(239,83,80,0.7);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
 /* ─── Clickable lineup rows + team-leader rows ─── */
 .mlb-clickable-row { transition: background-color var(--motion-fast); }
 .mlb-clickable-row:hover { background-color: rgba(91,141,239,0.05); }
