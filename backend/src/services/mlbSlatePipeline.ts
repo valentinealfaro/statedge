@@ -5,10 +5,14 @@
 // clean here — pipeline knows about projections, builder knows about
 // cards.
 //
-// Mission discipline: this is a small, focused layer. PrizePicks
-// scraping, OCR, and Gemini parsing are NBA-specific and not ported
-// here yet — for v1, the admin pastes lines as JSON. The engine
-// works the same way regardless of input source.
+// Ingestion sources funneling lines into this pipeline:
+//   - PrizePicks browser-IP pull (Phase 103g — Vercel datacenter IPs
+//     hit Cloudflare 403, so admin's residential IP fetches and
+//     POSTs back via /api/market/prizepicks/fallback-ingest).
+//   - Admin JSON paste (legacy v1 path; still wired).
+//   - PrizePicks raw text paste (mlbSlateTextParser).
+// The engine works the same regardless of source. OCR / Gemini are
+// NBA-specific and not ported here.
 
 import {
   projectMlbStat,
