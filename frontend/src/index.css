@@ -2796,10 +2796,22 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font-weight: 600;
 }
 
+/* Iter 12 redesign: subtle horizontal rule between legs so the rail
+   reads like a clean institutional list, not 6 rectangles bumping
+   into each other. Last leg drops the separator. */
 .best-pick-leg-block {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.best-pick-leg-block:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+.best-pick-leg-block:first-child {
+  padding-top: 2px;
 }
 .best-pick-wild-evidence {
   font-size: 10px;
@@ -2986,47 +2998,82 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
    Insane-mode cards: the target $1→$X payout if every leg hits.
    Visually loud because users on Insane mode picked it precisely to
    see this. Demon-leg count surfaces the "stacked" payout source. */
+/* Iter 12 redesign: the lottery payout is the call-to-action on
+   Insane cards — make it the loudest, most premium element on the
+   card. Bigger payout digit, layered amber/red/violet gradient with
+   a soft inner glow so it reads like a slot-machine handle the user
+   wants to pull. */
 .best-pick-lottery {
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: linear-gradient(90deg,
-    rgba(255, 152, 0, 0.18),
-    rgba(229, 57, 53, 0.18));
-  border: 1px solid rgba(255, 152, 0, 0.45);
-  font-size: 11px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse 120% 60% at 0% 0%, rgba(255,213,79,0.22), transparent 60%),
+    linear-gradient(120deg, rgba(255, 152, 0, 0.20) 0%, rgba(229, 57, 53, 0.18) 60%, rgba(124,77,255,0.14) 100%);
+  border: 1px solid rgba(255, 184, 71, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(255, 213, 79, 0.10) inset,
+    0 4px 18px rgba(255, 152, 0, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--text-1);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .best-pick-lottery .lottery-payout {
-  font-size: 14px;
-  font-weight: 800;
-  color: #ff9800;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  background: linear-gradient(180deg, #ffd54f 0%, #ff9800 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 14px rgba(255, 152, 0, 0.30);
+  margin-right: 4px;
 }
 .best-pick-lottery .lottery-target {
   font-weight: 600;
   color: var(--text-2);
+  font-size: 11px;
 }
 .best-pick-lottery .lottery-demons {
-  font-weight: 500;
-  color: var(--text-3);
+  font-weight: 600;
+  color: var(--warn);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
-/* Card-level market-disagreement signals. Sits below the EV verdict;
-   four compact stats so the user can read the card's identity
-   without expanding it. Avg Edge, Proj Gap, Trap, Mkt Disagree. */
+/* Iter 12 redesign: card-level signals laid out as a 4-column
+   institutional dashboard strip rather than a 2×2 stack. Reads
+   like a Bloomberg metric panel — uniform column widths, label
+   above value, faint vertical separators. */
 .best-pick-signals {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px 12px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--border-subtle);
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin-top: 10px;
+  padding: 10px 0 6px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, rgba(255,255,255,0.015) 0%, transparent 100%);
 }
 .best-pick-signal {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  padding: 0 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  text-align: center;
+  align-items: center;
+}
+.best-pick-signal:first-child { border-left: 0; }
+@media (max-width: 720px) {
+  .best-pick-signals { grid-template-columns: repeat(2, 1fr); }
+  .best-pick-signal:nth-child(3) { border-left: 0; }
 }
 .best-pick-signal .muted {
   font-size: 9px;
@@ -3073,17 +3120,21 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 
 /* Per-leg EV bar — second row under the leg's main row. Edge %,
    category chip, trap warning when the leg looks public-driven. */
+/* Iter 12 redesign: pad the evbar so chips have breathing room,
+   and let primary edge% chip dominate visually (others recede). */
 .best-pick-leg-evbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   padding-left: 2px;
-  margin-top: -1px;
+  margin-top: 2px;
   font-size: 10px;
 }
 .best-pick-leg-edge {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: -0.2px;
 }
 .best-pick-leg-edge.pos { color: var(--hot); }
 .best-pick-leg-edge.neg { color: var(--cold); }

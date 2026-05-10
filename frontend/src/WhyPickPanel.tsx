@@ -55,11 +55,17 @@ export function WhyPickPanel({ leg, sportColor }: { leg: WhyLeg; sportColor: str
   return (
     <div
       style={{
-        marginTop: 6,
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: 4,
+        marginTop: 4,
+        // Iter 12 redesign: drop the heavy boxed look when collapsed.
+        // A subtle inline row with hairline border on hover keeps the
+        // expand affordance visible without making every leg look
+        // like it has a button attached. The box re-appears when the
+        // panel is open so the expanded content has a container.
+        background: open ? 'rgba(255,255,255,0.02)' : 'transparent',
+        border: open ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
+        borderRadius: 6,
         overflow: 'hidden',
+        transition: 'background 120ms ease, border-color 120ms ease',
       }}
     >
       <button
@@ -73,25 +79,25 @@ export function WhyPickPanel({ leg, sportColor }: { leg: WhyLeg; sportColor: str
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 10px',
+          padding: '4px 8px',
           background: 'transparent',
           border: 0,
-          color: 'rgba(255,255,255,0.7)',
+          color: 'rgba(255,255,255,0.55)',
           cursor: 'pointer',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: '0.04em',
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: '0.03em',
           textAlign: 'left',
         }}
       >
-        <span>
-          <span style={{ color: sportColor }}>WHY THIS PICK</span>
-          {' · '}
-          <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ color: sportColor, fontWeight: 700, letterSpacing: '0.06em', fontSize: 9.5 }}>WHY</span>
+          {'  '}
+          <span style={{ color: 'rgba(255,255,255,0.55)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
             {thesis}
           </span>
         </span>
-        <span style={{ color: 'rgba(255,255,255,0.4)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, marginLeft: 4, flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
       </button>
       {open && (
         <div style={{ padding: '8px 12px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
