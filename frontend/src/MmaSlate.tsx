@@ -213,12 +213,23 @@ function FighterCard({ name, athleteId, lines, moneyline }: {
 
   return (
     <div style={{
-      padding: 14,
-      background: 'rgba(255,255,255,0.02)',
-      border: '1px solid rgba(239,83,80,0.2)',
+      position: 'relative',
+      padding: 16,
+      background: `
+        radial-gradient(ellipse 50% 80% at 0% 0%, rgba(239,83,80,0.06) 0%, transparent 60%),
+        linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+        var(--surface-1)
+      `,
+      border: '1px solid rgba(239,83,80,0.20)',
       borderLeft: `3px solid ${MMA_ACCENT}`,
-      borderRadius: 6,
+      borderRadius: 'var(--radius-lg)',
+      boxShadow: 'var(--shadow-card)',
+      overflow: 'hidden',
     }}>
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(239,83,80,0.45), transparent)',
+      }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           {profileLink ? (
