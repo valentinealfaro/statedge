@@ -26,6 +26,7 @@ import { EliteHeatmap } from './EliteHeatmap';
 import { NavBar } from './NavBar';
 import { PastElitePlays } from './PastElitePlays';
 import { Skeleton } from './Skeleton';
+import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
 
 // Stat-key sets for sport detection — same logic the backend uses to
@@ -181,6 +182,12 @@ export function Elite() {
             can size accordingly. MMA joins when its projection engine ships.
           </p>
         </header>
+
+        {/* Same Bloomberg ticker that leads Home / Dashboard / Best
+            Bets. Pinned above the view selector so users see today's
+            headline state (live games, active edges, Elite verdict,
+            CLV beat-rate) before drilling into the ticket build. */}
+        <TodayAtAGlance />
 
         {/* View selector — Cross-Sport is the default and primary view;
             sport-specific tabs are still available for users who want

@@ -16,6 +16,7 @@ import {
 import { NavBar } from './NavBar';
 import { LiveVerdictPill } from './slateLiveState';
 import { useStarredProps, type StarredProp, type Sport } from './starredProps';
+import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
 
 const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB', mma: 'UFC' };
@@ -94,6 +95,11 @@ export function StarredPage() {
           tonight's games. Stored locally on this device — sign in / out doesn't
           sync across machines yet. Up to 50 props.
         </p>
+
+        {/* Same Bloomberg ticker that leads Home / Dashboard / Best
+            Bets / Elite. Watchlist users see today's headline numbers
+            before scanning their personal list below. */}
+        <TodayAtAGlance />
 
         {items.length === 0 ? (
           <div className="mlb-info-banner">
