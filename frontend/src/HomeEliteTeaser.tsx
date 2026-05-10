@@ -11,15 +11,36 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getCrossSportEliteToday, type CrossSportEliteTicket } from './api';
+import {
+  getCrossSportEliteToday,
+  getEliteLiveState,
+  type CrossSportEliteTicket,
+  type EliteLiveStateResponse,
+} from './api';
 
 export function HomeEliteTeaser() {
   const [ticket, setTicket] = useState<CrossSportEliteTicket | null | undefined>(undefined);
+  const [live, setLive] = useState<EliteLiveStateResponse | null>(null);
 
   useEffect(() => {
     getCrossSportEliteToday()
       .then((r) => setTicket(r.ticket))
       .catch(() => setTicket(null));
+  }, []);
+
+  // Poll live state every 60s while the home page is open. Self-hides
+  // visually if no rollup is available yet — falls back to static
+  // teaser rendering.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () => {
+      getEliteLiveState()
+        .then((r) => { if (!cancelled) setLive(r); })
+        .catch(() => { /* silent — teaser stays static */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
   // Hide while loading or on failure — keep Home clean
@@ -87,6 +108,34 @@ export function HomeEliteTeaser() {
           <div style={{ fontSize: 11, marginTop: 2, color: 'rgba(255,255,255,0.6)' }}>
             Today's play · Cross-sport
           </div>
+          {/* Live rollup mini-chip — only shows once at least one leg
+              has resolved. Self-hides on quiet days. */}
+          {live?.rollup && (live.rollup.hit + live.rollup.miss + live.rollup.inFlight) > 0 && (
+            <div style={{
+              marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+            }}>
+              <span className="live-pulse" style={{
+                display: 'inline-block', width: 6, height: 6, borderRadius: 3,
+                background: live.rollup.ticketVerdict === 'HIT' ? '#66bb6a'
+                  : live.rollup.ticketVerdict === 'MISS' ? '#ef5350'
+                  : '#ffd54f',
+              }} />
+              {live.rollup.ticketVerdict === 'HIT' && (
+                <span style={{ color: '#66bb6a' }}>✓ HIT</span>
+              )}
+              {live.rollup.ticketVerdict === 'MISS' && (
+                <span style={{ color: '#ef5350' }}>✗ MISS</span>
+              )}
+              {!live.rollup.ticketVerdict && (
+                <>
+                  {live.rollup.hit > 0 && <span style={{ color: '#66bb6a' }}>{live.rollup.hit} hit</span>}
+                  {live.rollup.inFlight > 0 && <span style={{ color: '#ffd54f' }}>{live.rollup.inFlight} live</span>}
+                  {live.rollup.miss > 0 && <span style={{ color: '#ef5350' }}>{live.rollup.miss} miss</span>}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Grade */}
