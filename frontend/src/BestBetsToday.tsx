@@ -24,6 +24,7 @@ import { NavBar } from './NavBar';
 import { ProjectionBand } from './ProjectionBand';
 import { Skeleton } from './Skeleton';
 import { LiveVerdictPill } from './slateLiveState';
+import { useStarredProps } from './starredProps';
 import { useTitle } from './useTitle';
 
 type Sport = 'nba' | 'mlb';
@@ -328,6 +329,7 @@ export function BestBetsToday() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
                   <th style={th}>#</th>
+                  <th style={th} title="Star — adds to your /starred watchlist">★</th>
                   <th style={th}>Sport</th>
                   <th style={th}>Player</th>
                   <th style={{ ...th, textAlign: 'left' }}>Stat / Line</th>
@@ -365,10 +367,46 @@ function makeKey(b: { playerId: number; statKey: string; line: number; direction
 
 function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: EliteLegLiveState | null }) {
   const sportColor = SPORT_COLOR[bet.sport];
+  const { isStarred, toggle } = useStarredProps();
+  const starredId = `${bet.sport}-${bet.playerId}-${bet.statKey}-${bet.line}-${bet.direction}`;
+  const starred = isStarred(starredId);
   return (
     <tr style={{ borderBottom: '1px solid var(--border-subtle)' }} className="best-bets-row">
       <td style={{ ...td, color: 'rgba(255,255,255,0.45)', textAlign: 'right', paddingRight: 14 }}>
         {rank}
+      </td>
+      <td style={{ ...td, textAlign: 'center' }}>
+        <button
+          type="button"
+          onClick={() => toggle({
+            sport: bet.sport,
+            playerId: bet.playerId,
+            playerName: bet.playerName,
+            team: bet.team,
+            statKey: bet.statKey,
+            statLabel: bet.statLabel,
+            line: bet.line,
+            direction: bet.direction,
+            snapshot: {
+              probability: bet.probability,
+              edgePercent: bet.edgePercent,
+              projection: bet.projection,
+            },
+          })}
+          title={starred ? 'Unstar — removes from /starred' : 'Star — track on /starred'}
+          aria-label={starred ? 'Unstar' : 'Star'}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: starred ? '#ffd54f' : 'rgba(255,255,255,0.20)',
+            fontSize: 16,
+            padding: '4px 6px',
+            transition: 'color var(--motion-fast), transform var(--motion-fast)',
+          }}
+        >
+          {starred ? '★' : '☆'}
+        </button>
       </td>
       <td style={td}>
         <span style={{

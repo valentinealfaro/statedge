@@ -121,6 +121,13 @@ export function NavBar() {
               Best Bets
             </Link>
             <Link
+              to="/starred"
+              className={pathname === '/starred' ? 'navlink active' : 'navlink'}
+              title="Your starred-props watchlist"
+            >
+              ★
+            </Link>
+            <Link
               to="/nba/compare"
               className={sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}
             >
@@ -172,6 +179,13 @@ export function NavBar() {
               title="Cross-sport unified watchlist — every edge ranked by EV"
             >
               Best Bets
+            </Link>
+            <Link
+              to="/starred"
+              className={pathname === '/starred' ? 'navlink active' : 'navlink'}
+              title="Your starred-props watchlist"
+            >
+              ★
             </Link>
             <Link
               to="/nba/compare"

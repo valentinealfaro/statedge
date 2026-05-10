@@ -29,6 +29,7 @@ import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
+import { StarredPage } from './StarredPage';
 import { WnbaCalibration } from './WnbaCalibration';
 import { WnbaCompare } from './WnbaCompare';
 import { WnbaGameDetail } from './WnbaGameDetail';
@@ -50,6 +51,7 @@ export function App() {
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/best-bets" element={<BestBetsToday />} />
+          <Route path="/starred" element={<StarredPage />} />
           <Route path="/elite" element={<Elite />} />
           <Route path="/clv" element={<ClvAudit />} />
           <Route path="/calibration" element={<CalibrationAudit />} />
