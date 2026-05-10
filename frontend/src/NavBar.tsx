@@ -3,6 +3,7 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { NavSearch } from './NavSearch';
 import { usePlan } from './plan';
 import { useLiveGameCounts } from './useLiveGameCounts';
+import { useStarredLiveTally } from './useStarredLiveTally';
 import { UserMenu } from './UserMenu';
 
 // Sport-grouped navigation per the UX spec ("institutional sports
@@ -82,6 +83,7 @@ export function NavBar() {
   const isPro = plan === 'pro' || isAdmin;
   const sport = resolveSport(pathname);
   const liveCounts = useLiveGameCounts();
+  const starredTally = useStarredLiveTally();
 
   const subnav =
     sport === 'nba'  ? NBA_SUBNAV
@@ -122,13 +124,13 @@ export function NavBar() {
             >
               Best Bets
             </Link>
-            <Link
-              to="/starred"
-              className={pathname === '/starred' ? 'navlink active' : 'navlink'}
-              title="Your starred-props watchlist"
-            >
-              ★
-            </Link>
+            <StarredNavLink
+              active={pathname === '/starred'}
+              total={starredTally.total}
+              live={starredTally.liveInFlight}
+              hit={starredTally.hit}
+              miss={starredTally.miss}
+            />
             <Link
               to="/nba/compare"
               className={`${sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}${liveCounts.nba > 0 ? ' has-live' : ''}`}
@@ -185,13 +187,13 @@ export function NavBar() {
             >
               Best Bets
             </Link>
-            <Link
-              to="/starred"
-              className={pathname === '/starred' ? 'navlink active' : 'navlink'}
-              title="Your starred-props watchlist"
-            >
-              ★
-            </Link>
+            <StarredNavLink
+              active={pathname === '/starred'}
+              total={starredTally.total}
+              live={starredTally.liveInFlight}
+              hit={starredTally.hit}
+              miss={starredTally.miss}
+            />
             <Link
               to="/nba/compare"
               className={`${sport === 'nba' ? 'navlink active sport-nba' : 'navlink'}${liveCounts.nba > 0 ? ' has-live' : ''}`}
@@ -248,5 +250,68 @@ export function NavBar() {
 
       <MobileBottomNav />
     </>
+  );
+}
+
+// ★ NavBar entry with a live-tally badge. Shows the total count of
+// starred props when the user has any; renders a small red pulse dot
+// when at least one is currently in-flight, switching to a gold dot
+// when something has hit (no in-flight), or red when something has
+// missed and nothing is live anymore. Self-hides the badge entirely
+// when the user has zero starred props (just shows ★).
+function StarredNavLink({
+  active,
+  total,
+  live,
+  hit,
+  miss,
+}: {
+  active: boolean;
+  total: number;
+  live: number;
+  hit: number;
+  miss: number;
+}) {
+  const dot =
+    live > 0 ? '#ef5350'
+    : hit > 0 ? '#66bb6a'
+    : miss > 0 ? '#ef5350'
+    : null;
+  const tooltip =
+    total === 0
+      ? 'Your starred-props watchlist'
+      : `★ ${total} starred · ${hit} hit · ${live} in flight · ${miss} miss`;
+
+  return (
+    <Link
+      to="/starred"
+      className={active ? 'navlink active' : 'navlink'}
+      title={tooltip}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <span>★</span>
+      {total > 0 && (
+        <span style={{
+          fontSize: 11, fontWeight: 800,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: 'rgba(255,255,255,0.65)',
+        }}>
+          {total}
+        </span>
+      )}
+      {dot && (
+        <span
+          className="live-pulse"
+          style={{
+            display: 'inline-block',
+            width: 5,
+            height: 5,
+            borderRadius: 2.5,
+            background: dot,
+          }}
+        />
+      )}
+    </Link>
   );
 }
