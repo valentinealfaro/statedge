@@ -1,9 +1,11 @@
-// /mma — UFC scoreboard, Phase 107a foundation.
+// /mma — UFC scoreboard, Phase 107a + 146 + 148p.
 //
 // Lists upcoming + recent UFC events (PPV + Fight Nights) with each
-// card's main matchups. Click an event → ESPN page in new tab for
-// now; deeper fight detail / odds integration lands in subsequent
-// phases.
+// card's main matchups, moneyline odds (via The Odds API), and one-
+// click drill-in to /mma/event/:event/fight/:fight (Phase 146 fight
+// detail with bio + tale-of-tape + live fightcenter stats + tonight's
+// slate panels per corner). Cross-link to /mma/slate sits in the
+// header for direct access to tonight's UFC props.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -87,10 +89,33 @@ export function MmaScoreboard() {
     <div className="app">
       <NavBar />
       <div className="mlb-compare-shell">
-        <h1>UFC</h1>
-        <p className="muted small" style={{ marginTop: 0, marginBottom: 16 }}>
-          Upcoming and recent UFC cards. Fighter profiles, moneylines, and
-          method-of-victory edge analysis land in subsequent phases.
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ margin: 0 }}>UFC</h1>
+          {/* Cross-link strip — Bloomberg-style: every page
+              points at the other surfaces a power user wants
+              one tap away. /mma/slate is the only other UFC
+              surface today (the search, news, and fighter
+              profiles are reachable via NavBar / NavSearch). */}
+          <Link
+            to="/mma/slate"
+            style={{
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              padding: '4px 10px', borderRadius: 'var(--radius-pill)',
+              background: 'rgba(239,83,80,0.10)',
+              border: '1px solid rgba(239,83,80,0.35)',
+              color: '#ef5350',
+              textDecoration: 'none',
+            }}
+            title="Tonight's UFC props with moneylines + matchup chips"
+          >
+            Tonight's slate →
+          </Link>
+        </div>
+        <p className="muted small" style={{ marginTop: 6, marginBottom: 16 }}>
+          Upcoming and recent UFC cards with consensus moneylines and one-click
+          drill-in to fight detail (bio · tale-of-the-tape · live fightcenter stats).
+          Method-of-victory edge analysis lands when the UFC projection engine ships.
         </p>
 
         {/* Truth metric — UFC-scoped. Self-hides until UFC projection
