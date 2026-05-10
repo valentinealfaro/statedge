@@ -35,6 +35,7 @@ import { usePlan } from './plan';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { SlateCalibration } from './SlateCalibration';
+import { LiveVerdictPill, SlateLiveStateProvider, useLiveLegState } from './slateLiveState';
 import { SlateHistory } from './SlateHistory';
 import { SlateManualEntry } from './SlateManualEntry';
 import { SlatePaywall } from './SlatePaywall';
@@ -500,7 +501,7 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
   const [drilldownPlayer, setDrilldownPlayer] = useState<NbaDrilldownPlayer | null>(null);
 
   return (
-    <>
+    <SlateLiveStateProvider lines={lines} topN={40}>
       {/* Pinned favorites — your starred players' props at the top
           of the page so you don't have to scroll the full slate to
           find the names you actually care about. Hidden if you
@@ -625,7 +626,7 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
       {data && data.unresolved.length > 0 && (
         <UnresolvedSection unresolved={data.unresolved} />
       )}
-    </>
+    </SlateLiveStateProvider>
   );
 }
 
@@ -781,6 +782,13 @@ function LineCard({
       {line.projection && !line.projection.noProjection && (
         <ProjectionPanel projection={line.projection} />
       )}
+
+      <LineCardLivePill
+        playerId={line.playerId}
+        statKey={line.statKey}
+        line={line.line}
+        leanDirection={lean === 'OVER' ? 'OVER' : 'UNDER'}
+      />
 
       {canInsight && !insight && !insightLoading && (
         <button className="slate-why" onClick={loadInsight}>
@@ -2028,6 +2036,12 @@ function PropRow({
           edge {Math.round(edgeScoreVal)}
         </span>
       )}
+      <PropRowLivePill
+        playerId={line.playerId}
+        statKey={line.statKey}
+        line={line.line}
+        leanDirection={dir === 'under' ? 'UNDER' : 'OVER'}
+      />
       {isOverridden && (
         <button
           type="button"
@@ -2039,6 +2053,41 @@ function PropRow({
           ↺
         </button>
       )}
+    </div>
+  );
+}
+
+// Live-state pill wrapper for PropRow. Calls the slate-live-state
+// hook (context-backed) and only renders when the state is non-null
+// AND has progressed beyond PENDING. Keeps PropRow clean.
+function PropRowLivePill({
+  playerId, statKey, line, leanDirection,
+}: {
+  playerId: number;
+  statKey: string;
+  line: number;
+  leanDirection: 'OVER' | 'UNDER';
+}) {
+  const state = useLiveLegState(playerId, statKey, line, leanDirection);
+  return <LiveVerdictPill state={state} compact />;
+}
+
+// Same wrapper for the larger LineCard variant — sits inside the card
+// body and shows the same verdict pill (non-compact) once the prop
+// has progressed beyond PENDING.
+function LineCardLivePill({
+  playerId, statKey, line, leanDirection,
+}: {
+  playerId: number;
+  statKey: string;
+  line: number;
+  leanDirection: 'OVER' | 'UNDER';
+}) {
+  const state = useLiveLegState(playerId, statKey, line, leanDirection);
+  if (!state) return null;
+  return (
+    <div style={{ padding: '8px 12px 0', display: 'flex', justifyContent: 'flex-start' }}>
+      <LiveVerdictPill state={state} />
     </div>
   );
 }
