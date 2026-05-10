@@ -29,7 +29,7 @@ export async function fetchMlbBigGameInputs(date: string): Promise<DetectionInpu
   for (const g of finals) {
     try {
       const box = await getBoxscore(g.gamePk);
-      out.push(...inputsFromBoxscore(g, box));
+      out.push(...inputsFromBoxscore(g, box, date));
     } catch (err) {
       console.warn(`big-game: boxscore fetch failed for gamePk=${g.gamePk}`, (err as Error).message);
     }
@@ -46,7 +46,7 @@ async function safeSchedule(date: string): Promise<MlbScheduleGame[]> {
   }
 }
 
-function inputsFromBoxscore(game: MlbScheduleGame, box: MlbBoxscore): DetectionInput[] {
+function inputsFromBoxscore(game: MlbScheduleGame, box: MlbBoxscore, gameDate: string): DetectionInput[] {
   const out: DetectionInput[] = [];
   const sides = [
     { side: 'home' as const, data: box.teams.home },
@@ -69,6 +69,7 @@ function inputsFromBoxscore(game: MlbScheduleGame, box: MlbBoxscore): DetectionI
         },
         game: {
           eventId: String(game.gamePk),
+          gameDate,
           awayTeam: box.teams.away.team?.abbreviation ?? null,
           homeTeam: box.teams.home.team?.abbreviation ?? null,
           awayScore: numOrNull(game.teams.away.score),

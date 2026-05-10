@@ -145,7 +145,7 @@ async function renderBigGameArticle(
     highlight = await findBigGameHighlight({
       playerName: d.player.name,
       team: d.player.team,
-      gameDate: d.game.eventId.slice(0, 10) || todayEt(),
+      gameDate: d.game.gameDate,
       sport: d.sport,
     });
   } catch (err) {
@@ -155,7 +155,11 @@ async function renderBigGameArticle(
   const draft = generateBigGame({
     player: { ...d.player, sport: d.sport },
     game: {
-      date: todayEt(),                     // TODO: derive from game.eventId or pass through
+      // Game date now flows from the fetcher (which knows it from the
+      // cron arg) instead of falling back to the current ET wall clock.
+      // Late-night games that finish past midnight ET get the actual
+      // game date in the slug + byline, not tomorrow's date.
+      date: d.game.gameDate,
       awayTeam: d.game.awayTeam,
       homeTeam: d.game.homeTeam,
       awayScore: d.game.awayScore,

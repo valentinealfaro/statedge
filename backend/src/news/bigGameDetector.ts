@@ -22,6 +22,11 @@ export type DetectionInput = {
   };
   game: {
     eventId: string;
+    // YYYY-MM-DD ET — the date this game was played, threaded through
+    // so the generated article slug + byline use the actual game date
+    // (not the cron's wall clock, which can be the NEXT day for late
+    // games that finish past midnight ET).
+    gameDate: string;
     awayTeam: string | null;
     homeTeam: string | null;
     awayScore: number | null;

@@ -31,6 +31,7 @@ export async function fetchNbaBigGameInputs(date: string): Promise<DetectionInpu
           },
           game: {
             eventId: summary.eventId,
+            gameDate: date,
             awayTeam: summary.away.abbreviation,
             homeTeam: summary.home.abbreviation,
             awayScore: summary.totals.away,
