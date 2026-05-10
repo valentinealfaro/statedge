@@ -1,3 +1,12 @@
+// NBA Last-10 service. Defines the stat-id vocabulary the platform
+// supports (Last10StatId), maps each stat to a PlayerGame field
+// extractor (STAT_MAP), and provides Last-10 distribution helpers
+// (avg / median / stdDev / hit-rate-vs-line). Powers the Last10View
+// on /nba/compare and the projection engine's L1 baseline window.
+//
+// Sport scope: NBA only. MLB / WNBA / UFC have their own stat
+// vocabularies in mlb/stats.ts, wnba/stats.ts, mma/stats.ts.
+
 import type { PlayerGame } from '../nba/client.js';
 
 // Stat ids exposed by the Last 10 menu. We deliberately exclude:
