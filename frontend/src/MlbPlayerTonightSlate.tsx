@@ -166,6 +166,14 @@ export function MlbPlayerTonightSlate({
                     <span style={{ color: '#ef5350' }}>⚠ trap {l.trapScore}</span>
                   )}
                 </div>
+                {l.reasonCodes && l.reasonCodes.length > 0 && (
+                  <ul style={{
+                    margin: '6px 0 0', paddingLeft: 14, fontSize: 10, lineHeight: 1.45,
+                    color: 'rgba(255,255,255,0.55)',
+                  }}>
+                    {l.reasonCodes.slice(0, 2).map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                )}
               </div>
               {l.rangeLow !== undefined && l.rangeHigh !== undefined && (
                 <ProjectionBand

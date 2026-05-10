@@ -129,6 +129,7 @@ export function NbaPlayerTonightSlate({
           const id = `nba-${l.playerId}-${l.statKey}-${l.line}-${lean}`;
           const starred = isStarred(id);
           const live = liveByKey.get(id) ?? null;
+          const notes = l.projection?.modelNotes?.slice(0, 2) ?? [];
           return (
             <li
               key={`${l.statKey}-${l.line}`}
@@ -157,6 +158,14 @@ export function NbaPlayerTonightSlate({
                     {edgePct >= 0 ? '+' : ''}{edgePct.toFixed(1)}pp edge
                   </span>
                 </div>
+                {notes.length > 0 && (
+                  <ul style={{
+                    margin: '6px 0 0', paddingLeft: 14, fontSize: 10, lineHeight: 1.45,
+                    color: 'rgba(255,255,255,0.55)',
+                  }}>
+                    {notes.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                )}
               </div>
               {projection !== null && l.projection && (
                 <ProjectionBand
