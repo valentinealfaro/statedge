@@ -523,6 +523,7 @@ slateRouter.get('/elite/live-state', async (_req, res) => {
     // the EliteTicket.legs shape. Defensive narrow.
     const rawLegs = Array.isArray(today.legsJson) ? today.legsJson as Array<{
       playerId: number | string;
+      espnAthleteId?: string;
       playerName: string;
       statKey: string;
       direction: 'OVER' | 'UNDER';
@@ -530,6 +531,7 @@ slateRouter.get('/elite/live-state', async (_req, res) => {
     }> : [];
     const inputs = rawLegs.map((l) => ({
       playerId: typeof l.playerId === 'number' ? l.playerId : Number(l.playerId) || 0,
+      espnAthleteId: l.espnAthleteId,
       playerName: l.playerName,
       statKey: l.statKey,
       direction: l.direction,

@@ -276,6 +276,7 @@ export async function gradeEliteTickets(): Promise<{ graded: number; pending: nu
       const v = await gradeOneLeg({
         gameDate: t.ticket_date,
         playerId: leg.playerId,
+        espnAthleteId: leg.espnAthleteId,
         playerName: leg.playerName,
         statKey: leg.statKey,
         direction: leg.direction,
@@ -312,6 +313,7 @@ export async function gradeEliteTickets(): Promise<{ graded: number; pending: nu
 async function gradeOneLeg(args: {
   gameDate: Date;
   playerId: number;
+  espnAthleteId?: string;
   playerName: string;
   statKey: string;
   direction: 'OVER' | 'UNDER';
@@ -355,6 +357,7 @@ async function gradeOneLeg(args: {
 async function gradeMmaLegSettled(args: {
   gameDate: Date;
   playerId: number;
+  espnAthleteId?: string;
   playerName: string;
   statKey: string;
   direction: 'OVER' | 'UNDER';
@@ -364,6 +367,7 @@ async function gradeMmaLegSettled(args: {
     const isoDate = args.gameDate.toISOString().slice(0, 10);
     const [state] = await liveGradeElite([{
       playerId: args.playerId,
+      espnAthleteId: args.espnAthleteId,
       playerName: args.playerName,
       statKey: args.statKey,
       direction: args.direction,

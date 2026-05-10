@@ -33,6 +33,12 @@ export type LegInput = {
   statKey: string;
   direction: 'OVER' | 'UNDER';
   line: number;
+  // Optional ESPN athlete id — set by callers (cross-sport elite
+  // builder, persisted ticket grader) for UFC legs where playerId
+  // collapses to 0 because ESPN fighter ids are alphanumeric. The
+  // MMA grader prefers this for the scoreboard-id match path before
+  // falling back to display-name match.
+  espnAthleteId?: string;
 };
 
 export type LegLiveVerdict =
@@ -322,12 +328,16 @@ async function gradeMmaLegLive(leg: LegInput, _gameDate: string): Promise<LegLiv
     const events = await fetchUfcScoreboard().catch(() => []);
     if (!events || events.length === 0) return fallback;
 
-    const playerIdStr = String(leg.playerId);
+    // Prefer the optional alphanumeric ESPN athlete id when the
+    // caller has it (fightcenter ids are not numeric, so playerId=0
+    // is the typical EliteCandidate coerce for UFC). Falls through
+    // to the numeric playerId then to display-name match.
+    const playerIdStr = leg.espnAthleteId ?? String(leg.playerId);
     const targetName = mmaNorm(leg.playerName);
 
     // Find the event + fight + corner containing this fighter. Prefer
-    // numeric id match; fall back to normalized display-name match
-    // (which mirrors how /elite cross-sport pairs fighters).
+    // ESPN athlete id match; fall back to normalized display-name
+    // match (which mirrors how /elite cross-sport pairs fighters).
     type Hit = { eventId: string; fightId: string; eventState: 'pre' | 'in' | 'post'; fightState: 'pre' | 'in' | 'post' };
     let hit: Hit | null = null;
     for (const ev of events) {
