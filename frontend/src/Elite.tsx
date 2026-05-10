@@ -28,7 +28,6 @@ import { NavBar } from './NavBar';
 import { PastElitePlays } from './PastElitePlays';
 import { Skeleton } from './Skeleton';
 import { TodayAtAGlance } from './TodayAtAGlance';
-import { useEliteNotifications } from './useEliteNotifications';
 import {
   notificationPermission,
   requestNotificationPermission,
@@ -115,10 +114,9 @@ export function Elite() {
   // currently writes to elite_tickets, so live grading is keyed off it.
   const [liveState, setLiveState] = useState<EliteLiveStateResponse | null>(null);
   const [notifPerm, setNotifPerm] = useState(notificationPermission);
-  // Wire desktop notifications for the Elite ticket — fires once when
-  // today's ticket transitions to HIT or MISS. Permission-conservative;
-  // hook does nothing without user-granted permission.
-  useEliteNotifications(liveState?.ticketDate ?? null, liveState?.rollup ?? null);
+  // Notifications are mounted globally at the App level (see
+  // GlobalNotifications) so they fire from any page. This page
+  // surfaces only the opt-in button + permission state for UX.
 
   useEffect(() => {
     setData(null);

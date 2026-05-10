@@ -27,6 +27,7 @@ import { News } from './News';
 import { NewsArticle } from './NewsArticle';
 import { PlayerLog } from './PlayerLog';
 import { Pricing } from './Pricing';
+import { GlobalNotifications } from './GlobalNotifications';
 import { Slate } from './Slate';
 import { Standings } from './Standings';
 import { StarredPage } from './StarredPage';
@@ -47,6 +48,12 @@ export function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
+        {/* Global desktop-notification mount — fires for starred-prop
+            verdict transitions and Elite ticket resolutions regardless
+            of which page the user is on. Renders nothing visible.
+            Permission-conservative: opt-in buttons live on /starred
+            and /elite. */}
+        <GlobalNotifications />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />

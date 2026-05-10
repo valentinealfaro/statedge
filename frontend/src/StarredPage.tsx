@@ -19,7 +19,6 @@ import { useStarredProps, type StarredProp, type Sport } from './starredProps';
 import {
   notificationPermission,
   requestNotificationPermission,
-  useStarredNotifications,
 } from './useStarredNotifications';
 import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
@@ -35,10 +34,9 @@ export function StarredPage() {
   const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
   const [sortKey, setSortKey] = useState<StarredSortKey>('date');
   const [notifPerm, setNotifPerm] = useState(notificationPermission);
-  // Wire desktop notifications — fires when a starred prop transitions
-  // to a final verdict (HIT/MISS/PUSH). Hook is permission-aware: it
-  // does nothing unless the user has explicitly granted.
-  useStarredNotifications(items, liveByKey);
+  // Notifications are mounted globally at the App level (see
+  // GlobalNotifications) so they fire from any page. This page
+  // surfaces only the opt-in button + permission state for UX.
 
   // Poll live grading for every starred prop. Capped at 50 because
   // the backend caps the request at 50 legs per call. Skip MMA — the
