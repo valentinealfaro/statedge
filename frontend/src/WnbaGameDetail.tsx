@@ -2,10 +2,13 @@
 // since ESPN's basketball boxscore schema is identical between the
 // two leagues. Differences from NBA:
 //   - Fetches via getWnbaGameSummary
-//   - No Same-Game Parlay section yet (lands in Phase 77 with the
-//     /wnba/slate builder)
-//   - "Full matchup →" link omitted until /wnba/compare ships in
-//     Phase 76
+//   - No Same-Game Parlay section (NBA's SGP block reads from the
+//     NBA slate builder; the parallel /wnba/slate exists but WNBA
+//     SGP wasn't scoped before the 2026-05-09 sport-priorities
+//     decision moved WNBA to maintenance only).
+//   - "Full matchup →" link omitted similarly. /wnba/compare ships
+//     under Phase 76 — could be wired but isn't scoped per the
+//     maintenance-only WNBA stance.
 //
 // Auto-polls every 30s while the game is in progress. Same UX
 // contract as NBA + MLB — users feel ONE platform across leagues.
