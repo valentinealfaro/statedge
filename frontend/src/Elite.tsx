@@ -823,6 +823,30 @@ function NoTicketCard({ reason, candidates }: { reason: string; candidates: numb
         Forcing a ticket on a no-edge day corrupts trust and burns long-term EV. The
         absence of a ticket today IS the product working as designed.
       </p>
+      {/* No-Elite-ticket users still want a path forward — point at the
+          cross-sport watchlist where every individual edge across NBA +
+          MLB + UFC is ranked by EV, even when no combination clears
+          the institutional bar. */}
+      <Link
+        to="/best-bets"
+        style={{
+          display: 'inline-block',
+          marginTop: 14,
+          padding: '8px 16px',
+          fontSize: 12,
+          fontWeight: 800,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          color: '#7aa2ff',
+          textDecoration: 'none',
+          background: 'rgba(122,162,255,0.08)',
+          border: '1px solid rgba(122,162,255,0.30)',
+          borderRadius: 'var(--radius-pill)',
+        }}
+        title="Cross-sport unified edge watchlist — NBA + MLB + UFC ranked by EV"
+      >
+        Browse individual edges →
+      </Link>
     </section>
   );
 }
