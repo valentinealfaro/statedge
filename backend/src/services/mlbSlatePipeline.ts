@@ -21,30 +21,43 @@ import {
 import { computeMlbLast10 } from './mlbLast10Engine.js';
 import { statMeta, type MlbStatKey } from '../mlb/stats.js';
 import { getPool, isDbConfigured } from '../db.js';
+import { devigPair, devigSingleSide, trueProbForSide } from '../market/devig.js';
 
 // ---------- Market-implied prob lookup ----------
 //
-// Iter 3 of the formula loop wires real bookmaker implied probability
-// into the projection engine via market_snapshots. Iter 1 added the
-// optional ProjectionInputs.marketImpliedProb field; iter 2 pivoted
-// to the calibration cap raise. This closes iter 1's loop so the
-// engine actually sees real market data in production.
+// Iter 3 of the formula loop wired raw bookmaker implied probability
+// into the projection engine via market_snapshots. Iter 8 closes the
+// vig hole that left in place: raw implied probabilities are juice-
+// inclusive (e.g. -110/-110 → 52.4%/52.4%, sum 104.8%), so comparing
+// our model output to raw implied was comparing against a "charged"
+// number rather than the book's actual belief. With proper de-vigging,
+// -110/-110 → 50%/50% and our edge math reads against the true market
+// read, not the vig.
 //
 // Strategy:
-//   - Look up the most-recent market_snapshot for this MLB player +
-//     stat + line + direction.
-//   - Filter to real sportsbooks. PrizePicks + Underdog are DFS books
-//     that price symmetric flex payouts (their `implied_probability`
-//     is structurally ~50%, not a market read), so we exclude them
-//     and prefer FanDuel / DraftKings / BetMGM / etc.
-//   - Take the latest captured_at within the last 7 days.
-//   - Returns null when no usable snapshot — engine falls back to
-//     50% baseline (same as iter-1's null path), so missing market
-//     data is honest, not pretend-50.
+//   - For each (player, stat, line), fetch the freshest snapshot per
+//     (bookmaker, direction) over the last 7 days. Exclude DFS books
+//     (PrizePicks/Underdog price flex-payout, not a market read).
+//   - Group by bookmaker. When a book has BOTH over and under captured
+//     within 6 hours of each other, de-vig the pair multiplicatively
+//     (true_p = raw_p / (raw_p_over + raw_p_under)) and return the
+//     book's true belief for the requested side.
+//   - Prefer the most-recent paired bookmaker. Falls back to single-
+//     side approximation (subtract half the typical 4.5% vig) only
+//     when no paired bookmaker exists.
+//   - Returns null when no usable snapshot at all — engine falls back
+//     to 50% baseline (same as iter-1's null path), so missing market
+//     data stays honest, not pretend-50.
 
 // DFS books — their published probability is a flex-payout artifact,
 // not a real bookmaker line. Exclude from the market-implied lookup.
 const DFS_BOOKMAKERS = new Set(['prizepicks', 'underdog']);
+
+// Time window for considering an over/under pair "the same snapshot".
+// Books refresh on different cadences; 6h is wide enough to capture
+// the typical between-side gap and tight enough that we don't pair an
+// over from yesterday with an under from this morning.
+const PAIR_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 async function fetchLatestMlbMarketImpliedProb(args: {
   playerId: number;
@@ -55,33 +68,102 @@ async function fetchLatestMlbMarketImpliedProb(args: {
   if (!isDbConfigured()) return null;
   try {
     const pool = getPool();
-    // Match direction: snapshot direction stored as 'over'/'under'/'both'.
-    // 'both' rows accept either side, so include them as fallback.
-    const dirLower = args.direction === 'OVER' ? 'over' : 'under';
-    const result = await pool.query<{ implied: string | null }>(
-      `SELECT implied_probability::text AS implied
-         FROM market_snapshots
-        WHERE sport = 'mlb'
-          AND internal_player_id = $1::text
-          AND stat_key = $2
-          AND ABS(line_value - $3::numeric) < 0.01
-          AND (direction = $4 OR direction = 'both')
-          AND COALESCE(bookmaker, '') NOT IN ('prizepicks', 'underdog')
-          AND implied_probability IS NOT NULL
-          AND captured_at >= (NOW() - INTERVAL '7 days')
-        ORDER BY captured_at DESC
-        LIMIT 1`,
-      [String(args.playerId), args.statKey, args.line, dirLower],
+    // Pull the freshest snapshot per (bookmaker, direction) over the
+    // last 7 days. ROW_NUMBER lets us pick the latest of each side
+    // per bookmaker without N+1 queries.
+    const result = await pool.query<{
+      bookmaker: string | null;
+      direction: string;
+      implied: string | null;
+      captured_at: Date;
+    }>(
+      `WITH latest AS (
+         SELECT bookmaker, direction, implied_probability, captured_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY bookmaker, direction
+                  ORDER BY captured_at DESC
+                ) AS rn
+           FROM market_snapshots
+          WHERE sport = 'mlb'
+            AND internal_player_id = $1::text
+            AND stat_key = $2
+            AND ABS(line_value - $3::numeric) < 0.01
+            AND COALESCE(bookmaker, '') NOT IN ('prizepicks', 'underdog')
+            AND implied_probability IS NOT NULL
+            AND captured_at >= (NOW() - INTERVAL '7 days')
+       )
+       SELECT bookmaker, direction, implied_probability::text AS implied, captured_at
+         FROM latest
+        WHERE rn = 1`,
+      [String(args.playerId), args.statKey, args.line],
     );
-    const row = result.rows[0];
-    if (!row?.implied) return null;
-    const pct = Number(row.implied);
-    if (!Number.isFinite(pct)) return null;
-    // implied_probability is stored as a 0..1 fraction in market_snapshots.
-    // Convert to 0..100 to match the engine's MarketImpliedProb contract.
-    const asPercent = pct <= 1 ? pct * 100 : pct;
-    // Sanity-clamp to [1, 99] so a freaky stored value can't break edge math.
-    return Math.max(1, Math.min(99, asPercent));
+    const rows = result.rows;
+    if (rows.length === 0) return null;
+
+    type Sided = { rawPct: number; capturedAt: number };
+    const byBook = new Map<string, { over?: Sided; under?: Sided; both?: Sided }>();
+    for (const r of rows) {
+      if (!r.implied) continue;
+      const raw = Number(r.implied);
+      if (!Number.isFinite(raw) || raw <= 0) continue;
+      const pct = raw <= 1 ? raw * 100 : raw;
+      const dir = (r.direction ?? '').toLowerCase();
+      const book = (r.bookmaker ?? '').toLowerCase() || 'unknown';
+      const slot = byBook.get(book) ?? {};
+      const sided: Sided = {
+        rawPct: Math.max(1, Math.min(99, pct)),
+        capturedAt: r.captured_at.getTime(),
+      };
+      if (dir === 'over') slot.over = sided;
+      else if (dir === 'under') slot.under = sided;
+      else if (dir === 'both') slot.both = sided;
+      byBook.set(book, slot);
+    }
+
+    // Prefer paired books, sorted by freshest pair-time. The pair
+    // freshness = max(over.capturedAt, under.capturedAt) so a book
+    // with one fresh side and one stale side ranks below a book with
+    // two equally-fresh sides.
+    type PairedBook = {
+      book: string;
+      over: Sided;
+      under: Sided;
+      pairFreshness: number;
+      pairGapMs: number;
+    };
+    const paired: PairedBook[] = [];
+    for (const [book, slot] of byBook.entries()) {
+      if (!slot.over || !slot.under) continue;
+      const gap = Math.abs(slot.over.capturedAt - slot.under.capturedAt);
+      if (gap > PAIR_WINDOW_MS) continue;
+      paired.push({
+        book,
+        over: slot.over,
+        under: slot.under,
+        pairFreshness: Math.max(slot.over.capturedAt, slot.under.capturedAt),
+        pairGapMs: gap,
+      });
+    }
+    paired.sort((a, b) => b.pairFreshness - a.pairFreshness);
+
+    if (paired.length > 0) {
+      const best = paired[0];
+      const result = devigPair(best.over.rawPct, best.under.rawPct);
+      return trueProbForSide(result, args.direction);
+    }
+
+    // No paired book within the window — fall back to single-side
+    // approximation. Pick the freshest snapshot of the requested side
+    // (or 'both', which we treat as side-agnostic).
+    const candidates: Sided[] = [];
+    for (const slot of byBook.values()) {
+      if (args.direction === 'OVER' && slot.over) candidates.push(slot.over);
+      if (args.direction === 'UNDER' && slot.under) candidates.push(slot.under);
+      if (slot.both) candidates.push(slot.both);
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.capturedAt - a.capturedAt);
+    return devigSingleSide(candidates[0].rawPct);
   } catch {
     return null;     // DB blip → silent fallback, consistent with iter-1
   }
