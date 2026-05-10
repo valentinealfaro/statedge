@@ -119,7 +119,12 @@ export function BestBetsToday() {
         marketImpliedProb: implied,
         trapScore: null,
         fragilityScore: proj.fragility?.score ?? null,
-        href: `/nba/slate?legs=${l.playerId}-${l.statKey}-${l.line}`,
+        // Deep-link target: player profile, which now hosts a
+        // tonight's-slate panel that surfaces this exact prop with
+        // live verdict + star toggle. Better drill-in than the slate
+        // root because the profile keeps the user on the player they
+        // were looking at — and the panel is auto-filtered to them.
+        href: `/nba/player/${l.playerId}`,
         ev,
         projection: proj.projection.final,
         rangeLow: proj.projection.rangeLow,
@@ -153,7 +158,10 @@ export function BestBetsToday() {
             marketImpliedProb: implied,
             trapScore: l.trapScore ?? null,
             fragilityScore: l.fragilityScore ?? null,
-            href: `/mlb/slate`,
+            // Deep-link to the MLB player profile (which now has the
+            // tonight's-slate panel showing this exact prop) instead
+            // of the slate root.
+            href: `/mlb/player/${l.playerId}`,
             ev,
             projection: l.projection ?? null,
             rangeLow: l.rangeLow ?? null,
@@ -421,17 +429,24 @@ function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: Elit
         </span>
       </td>
       <td style={td}>
-        <Link to={bet.href} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 700 }}>
+        <Link
+          to={bet.href}
+          className="best-bets-player-link"
+          style={{ color: 'inherit', textDecoration: 'none', fontWeight: 700, display: 'inline-block' }}
+          title={`Open ${bet.playerName}'s profile (live tracking + tonight's slate panel)`}
+        >
           {bet.playerName}
         </Link>
         {bet.team && <span style={{ marginLeft: 6, color: 'rgba(255,255,255,0.45)' }}>{bet.team}</span>}
       </td>
       <td style={td}>
-        <span style={{ color: 'rgba(255,255,255,0.85)' }}>{bet.statLabel}</span>{' '}
-        <strong>{bet.line}</strong>{' '}
-        <span style={{ color: bet.direction === 'OVER' ? '#66bb6a' : '#ef5350', fontWeight: 800 }}>
-          {bet.direction === 'OVER' ? '↑' : '↓'}
-        </span>
+        <Link to={bet.href} style={{ color: 'inherit', textDecoration: 'none' }}>
+          <span style={{ color: 'rgba(255,255,255,0.85)' }}>{bet.statLabel}</span>{' '}
+          <strong>{bet.line}</strong>{' '}
+          <span style={{ color: bet.direction === 'OVER' ? '#66bb6a' : '#ef5350', fontWeight: 800 }}>
+            {bet.direction === 'OVER' ? '↑' : '↓'}
+          </span>
+        </Link>
       </td>
       <td style={td}>
         {bet.projection !== null && bet.rangeLow !== null && bet.rangeHigh !== null ? (

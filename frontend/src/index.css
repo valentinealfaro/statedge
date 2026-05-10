@@ -6424,6 +6424,19 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   transform: translateY(-1px);
 }
 
+/* ─── Best Bets player-name hover ─── */
+.best-bets-player-link {
+  transition: color var(--motion-fast), text-shadow var(--motion-fast);
+  border-bottom: 1px dashed transparent;
+}
+.best-bets-player-link:hover {
+  color: var(--brand-blue) !important;
+  text-shadow: 0 0 12px rgba(91,141,239,0.30);
+}
+.best-bets-row:hover {
+  background: rgba(91,141,239,0.04);
+}
+
 /* ─── Clickable lineup rows + team-leader rows ─── */
 .mlb-clickable-row { transition: background-color var(--motion-fast); }
 .mlb-clickable-row:hover { background-color: rgba(91,141,239,0.05); }
