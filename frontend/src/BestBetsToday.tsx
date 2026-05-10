@@ -1,13 +1,22 @@
 // /best-bets — cross-sport unified edge watchlist. Phase 147b.
 //
-// One page that pulls every published prop across NBA + MLB + UFC,
-// ranks them by EV (or edge / probability / live status — user picks),
-// and shows live verdicts inline. Bloomberg-watchlist-shaped: dense,
-// numeric, sortable, scannable.
+// One page that pulls every projection-engine-scored prop across the
+// NBA + MLB slates, ranks them by EV (or edge / probability / live
+// status — user picks), and shows live verdicts inline. Bloomberg-
+// watchlist-shaped: dense, numeric, sortable, scannable.
 //
-// Each row links to its source page (slate / Elite / fight detail)
-// so the watchlist is a discovery tool — you find what's interesting
-// here, then drill into the source for the why.
+// UFC is intentionally NOT here yet: its projection engine isn't built,
+// so /mma/slate lists raw PrizePicks lines without edge / probability /
+// EV. Adding UFC rows here would be fake completeness — the watchlist's
+// promise is "every row is EV-ranked", which UFC can't satisfy until
+// the fighter-stat database + projection layer ship. Live grading for
+// UFC props is wired (sig_strikes / takedowns / knockdowns / control_time
+// resolve via fightcenter) — what's missing is the model that decides
+// which UFC props are bets in the first place.
+//
+// Each row links to its source page (player profile with tonight's
+// slate panel) so the watchlist is a discovery tool — you find what's
+// interesting here, then drill into the source for the why.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -269,8 +278,17 @@ export function BestBetsToday() {
         <p className="muted small" style={{ marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
           Every prop the model has flagged across tonight's NBA + MLB slates,
           ranked by expected value. Sortable, filterable, live-tracked. Click
-          any row to drill into the source slate. EV assumes a single-leg
+          any row to drill into the player profile. EV assumes a single-leg
           PrizePicks Flex payout ({SINGLE_LEG_PAYOUT}×).
+          {' '}
+          <span style={{ color: 'rgba(255,255,255,0.40)' }}>
+            UFC props ship here once the fighter-stat projection engine lands —
+            until then they live on{' '}
+            <Link to="/mma/slate" style={{ color: '#ef5350', textDecoration: 'none', fontWeight: 700 }}>
+              /mma/slate
+            </Link>
+            .
+          </span>
         </p>
 
         {/* Same Bloomberg ticker that leads Home + Dashboard.
