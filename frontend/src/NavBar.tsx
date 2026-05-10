@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { MobileBottomNav } from './MobileBottomNav';
 import { NavSearch } from './NavSearch';
 import { usePlan } from './plan';
+import { useEliteLiveTally } from './useEliteLiveTally';
 import { useLiveGameCounts } from './useLiveGameCounts';
 import { useStarredLiveTally } from './useStarredLiveTally';
 import { UserMenu } from './UserMenu';
@@ -84,6 +85,7 @@ export function NavBar() {
   const sport = resolveSport(pathname);
   const liveCounts = useLiveGameCounts();
   const starredTally = useStarredLiveTally();
+  const eliteTally = useEliteLiveTally();
 
   const subnav =
     sport === 'nba'  ? NBA_SUBNAV
@@ -105,11 +107,22 @@ export function NavBar() {
           <div className="nav-links">
             <Link
               to="/elite"
-              className={pathname === '/elite' ? 'navlink active' : 'navlink'}
+              className={`${pathname === '/elite' ? 'navlink active' : 'navlink'}${eliteTally.inFlight > 0 ? ' has-live' : ''}`}
               style={{ color: pathname === '/elite' ? '#0d1117' : '#ffd54f', background: pathname === '/elite' ? 'linear-gradient(135deg, #ffd54f 0%, #f9a825 100%)' : undefined, fontWeight: 800 }}
-              title="Institutional 3-leg service"
+              title={
+                eliteTally.ticketVerdict === 'HIT' ? 'Today\'s Elite ticket: ✓ HIT'
+                : eliteTally.ticketVerdict === 'MISS' ? 'Today\'s Elite ticket: ✗ MISS'
+                : eliteTally.inFlight > 0 ? `Today\'s Elite ticket: ${eliteTally.inFlight} ${eliteTally.inFlight === 1 ? 'leg' : 'legs'} in flight`
+                : 'Institutional 3-leg service'
+              }
             >
               ★ Elite
+              {eliteTally.ticketVerdict === 'HIT' && (
+                <span style={{ marginLeft: 4, color: '#66bb6a', fontSize: 11, fontWeight: 800 }}>✓</span>
+              )}
+              {eliteTally.ticketVerdict === 'MISS' && (
+                <span style={{ marginLeft: 4, color: '#ef5350', fontSize: 11, fontWeight: 800 }}>✗</span>
+              )}
             </Link>
             <Link
               to="/dashboard"

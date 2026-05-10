@@ -11,6 +11,7 @@
 // main NavBar — UFC slate doesn't yet feed live tracking the same way.
 
 import { Link, useLocation } from 'react-router-dom';
+import { useEliteLiveTally } from './useEliteLiveTally';
 import { useLiveGameCounts } from './useLiveGameCounts';
 import { useStarredLiveTally } from './useStarredLiveTally';
 
@@ -37,6 +38,7 @@ export function MobileBottomNav() {
   const { pathname } = useLocation();
   const liveCounts = useLiveGameCounts();
   const starredTally = useStarredLiveTally();
+  const eliteTally = useEliteLiveTally();
 
   function isActive(item: MbnItem): boolean {
     if (item.matchPath) return item.matchPath(pathname);
@@ -48,6 +50,7 @@ export function MobileBottomNav() {
     if (key === 'mlb') return liveCounts.mlb > 0;
     if (key === 'starred') return starredTally.liveInFlight > 0 || starredTally.hit > 0 || starredTally.miss > 0;
     if (key === 'best-bets') return (liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0;
+    if (key === 'elite') return eliteTally.inFlight > 0;
     return false;
   }
 
