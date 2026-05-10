@@ -462,7 +462,9 @@ export function generateBigGame(opts: {
   const lines: string[] = [];
   lines.push(`# ${headline}`);
   lines.push('');
-  lines.push(`*${humanDate(g.date)} · ${p.sport.toUpperCase()}${p.team ? ` · ${p.team}` : ''}*`);
+  // 'mma' is internal; users see 'UFC'.
+  const playerSportLabel = p.sport === 'mma' ? 'UFC' : p.sport.toUpperCase();
+  lines.push(`*${humanDate(g.date)} · ${playerSportLabel}${p.team ? ` · ${p.team}` : ''}*`);
   lines.push('');
 
   const oppLabel = formatOpponent(p.team, g);
@@ -520,7 +522,7 @@ export function generateBigGame(opts: {
 
   lines.push(`---`);
   lines.push('');
-  lines.push(`*Tomorrow's line will likely walk after a performance like this — watch for trap-inflation flags. Check the live ${p.sport.toUpperCase()} dashboard for tonight's projections.*`);
+  lines.push(`*Tomorrow's line will likely walk after a performance like this — watch for trap-inflation flags. Check the live ${playerSportLabel} dashboard for tonight's projections.*`);
 
   return {
     slug,
