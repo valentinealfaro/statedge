@@ -9,8 +9,12 @@
 // Cheap because:
 //  - Reads from useStarredProps (localStorage-backed, free)
 //  - One bulk POST to /api/slate/live-grade per minute
-//  - Skips MMA (UNGRADED by design — wouldn't move the badge anyway)
 //  - Caps at 50 starred props per-poll to match server-side limit
+//
+// All three sports grade now (NBA + MLB + UFC). UFC stat keys outside
+// the supported set (sig_strikes, takedowns, knockdowns, control_time)
+// return UNGRADED honestly — those count as `pending` in the tally,
+// which is the correct behavior for "we have no live signal yet".
 
 import { useEffect, useState } from 'react';
 import { liveGradeLegs, type EliteLegLiveState } from './api';
@@ -28,8 +32,11 @@ export function useStarredLiveTally(): StarredLiveTally {
   const { items } = useStarredProps();
   const [states, setStates] = useState<Map<string, EliteLegLiveState>>(new Map());
 
-  // Pre-filter to gradable sports (skip MMA — always UNGRADED).
-  const gradable = items.filter((p) => p.sport !== 'mma').slice(0, 50);
+  // Cap at 50 to match the server-side /live-grade limit. All sports
+  // grade now — UFC props with unsupported stat keys come back UNGRADED
+  // and roll up into `pending`, which is the honest verdict for "no
+  // live signal".
+  const gradable = items.slice(0, 50);
   const sig = gradable.map((p) => p.id).join('|');
 
   useEffect(() => {

@@ -93,7 +93,10 @@ export function ActivityFeed() {
 
       // Starred props
       try {
-        const gradable: StarredProp[] = starred.filter((p) => p.sport !== 'mma').slice(0, 50);
+        // All sports grade now (NBA + MLB + UFC). UFC stat keys outside
+        // the supported set return UNGRADED, which the rollup filters
+        // out below — only HIT/MISS/ON_PACE_* show up as activity tiles.
+        const gradable: StarredProp[] = starred.slice(0, 50);
         if (gradable.length > 0) {
           const states = await liveGradeLegs(gradable.map((p) => ({
             playerId: p.playerId,

@@ -42,8 +42,10 @@ export function GlobalNotifications() {
         if (!cancelled) setEliteState(elite);
       } catch { /* silent */ }
 
-      // Starred props (skip MMA — UNGRADED by design)
-      const gradable = items.filter((p) => p.sport !== 'mma').slice(0, 50);
+      // Starred props — all sports. UFC stat keys outside the supported
+      // set (sig_strikes/takedowns/knockdowns/control_time) come back
+      // UNGRADED, which the notification hook ignores by design.
+      const gradable = items.slice(0, 50);
       if (gradable.length === 0) {
         if (!cancelled) setLiveByKey(new Map());
         return;

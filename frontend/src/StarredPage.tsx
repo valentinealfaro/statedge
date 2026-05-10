@@ -39,12 +39,10 @@ export function StarredPage() {
   // surfaces only the opt-in button + permission state for UX.
 
   // Poll live grading for every starred prop. Capped at 50 because
-  // the backend caps the request at 50 legs per call. Skip MMA — the
-  // grader stays UNGRADED for those by design.
-  const gradable = useMemo(
-    () => items.filter((p) => p.sport !== 'mma').slice(0, 50),
-    [items],
-  );
+  // the backend caps the request at 50 legs per call. All sports now
+  // grade — UFC stat keys outside the supported set (sig_strikes,
+  // takedowns, knockdowns, control_time) honestly return UNGRADED.
+  const gradable = useMemo(() => items.slice(0, 50), [items]);
   const visibleSig = gradable.map((p) => p.id).join('|');
 
   useEffect(() => {
