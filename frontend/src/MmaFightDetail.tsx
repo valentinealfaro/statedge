@@ -23,6 +23,7 @@ import {
   type UfcFighterBio,
 } from './api';
 import { UfcFighterAvatar } from './Avatar';
+import { MmaFighterTonightSlate } from './MmaFighterTonightSlate';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -376,7 +377,41 @@ export function MmaFightDetail() {
             </div>
           )}
         </section>
+
+        {/* Tonight's slate panels — one per corner. Each panel self-hides
+            when the fighter has no published props on tonight's slate
+            (so the section disappears entirely between events). Reuses
+            the same component the fighter profile uses, including live
+            verdict polling — keeps the prop context that brought users
+            here from the slate's matchup chip. */}
+        <FightSlateContext
+          redId={fight.fighters.red?.id ?? bios.red?.id ?? null}
+          redName={fight.fighters.red?.displayName ?? bios.red?.displayName ?? null}
+          blueId={fight.fighters.blue?.id ?? bios.blue?.id ?? null}
+          blueName={fight.fighters.blue?.displayName ?? bios.blue?.displayName ?? null}
+        />
       </div>
+    </div>
+  );
+}
+
+// Two stacked tonight's-slate panels — red corner then blue. Each
+// renders nothing if its fighter has no slate lines, so the whole
+// container collapses between events. Skipped entirely when either
+// id+name pair is missing (rare; happens for late replacements).
+function FightSlateContext({ redId, redName, blueId, blueName }: {
+  redId: string | null;
+  redName: string | null;
+  blueId: string | null;
+  blueName: string | null;
+}) {
+  const showRed = !!(redId && redName);
+  const showBlue = !!(blueId && blueName);
+  if (!showRed && !showBlue) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      {showRed && <MmaFighterTonightSlate fighterId={redId!} fighterName={redName!} />}
+      {showBlue && <MmaFighterTonightSlate fighterId={blueId!} fighterName={blueName!} />}
     </div>
   );
 }
