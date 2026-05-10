@@ -184,7 +184,11 @@ export function MmaSlate() {
         </div>
 
         <p className="muted small" style={{ marginTop: 4, marginBottom: 16 }}>
-          Tonight's UFC PrizePicks props with consensus moneylines. Projection engine ships in a later phase — this is the foundation: parse, store, render with market context.
+          Tonight's UFC PrizePicks props with consensus moneylines, matchup chips, and
+          per-prop edge / probability badges from the moneyline-anchored projection
+          engine (Phase 136). Live verdicts tick once a minute on supported stat keys
+          (sig strikes / takedowns / knockdowns / control time). Deeper fighter-stat
+          fundamental engine is on the roadmap.
         </p>
 
         {/* UFC-scoped truth metric. Self-hides until UFC projection
