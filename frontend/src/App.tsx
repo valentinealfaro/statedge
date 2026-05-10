@@ -96,9 +96,16 @@ export function App() {
           <Route path="/wnba/game/:eventId" element={<WnbaGameDetail />} />
           <Route path="/wnba" element={<Navigate to="/wnba/compare" replace />} />
 
-          {/* MMA — Phase 107 foundation. UFC scoreboard only for now;
-              fighter profiles + odds integration land in subsequent
-              phases. Replaces WNBA as the third sport per priorities. */}
+          {/* MMA — third focus sport per the 2026-05-09 priorities.
+              Surface area today: scoreboard (107a), fighter profiles
+              (146), fight detail with bio + tale-of-tape + live
+              fightcenter stats (146), slate paste-and-publish (110a)
+              with moneyline-anchored projection engine (Phase 136
+              edge / probability badges via 148r), live verdict
+              grading via fightcenter (148o / iter 44). Calibration
+              + standings still deferred — UFC needs a fighter-stat
+              database for fundamental projection history before those
+              surfaces can ship. */}
           <Route path="/mma" element={<MmaScoreboard />} />
           <Route path="/mma/scoreboard" element={<MmaScoreboard />} />
           <Route path="/mma/slate" element={<MmaSlate />} />
