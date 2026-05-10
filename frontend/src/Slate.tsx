@@ -505,6 +505,38 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
 
   return (
     <SlateLiveStateProvider lines={lines} topN={40}>
+      {/* Slate freshness — show how recently the slate was pulled from
+          PrizePicks so users know whether the lines they're scanning
+          are fresh. fetchedAt = when the slate snapshot landed in the
+          database. Self-hides when no data yet. */}
+      {data?.fetchedAt && (
+        <div className="muted small" style={{
+          marginBottom: 8, fontSize: 11,
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          color: 'rgba(255,255,255,0.55)',
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+            color: '#7aa2ff', textTransform: 'uppercase',
+          }}>
+            <span style={{
+              display: 'inline-block', width: 6, height: 6, borderRadius: 3,
+              background: '#7aa2ff',
+            }} />
+            NBA slate
+          </span>
+          <span title={new Date(data.fetchedAt).toLocaleString()}>
+            {data.lines.length} lines · published {nbaSlateTimeAgo(data.fetchedAt)}
+          </span>
+          {data.source && (
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
+              · source: {data.source.replace('_', ' ')}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Pinned favorites — your starred players' props at the top
           of the page so you don't have to scroll the full slate to
           find the names you actually care about. Hidden if you
@@ -3139,4 +3171,20 @@ function DropZone({ onFile, disabled }: { onFile: (f: File) => void; disabled: b
       </span>
     </div>
   );
+}
+
+// Compact relative-time formatter for the slate-freshness chip. Drops
+// to "just now" under a minute, "Nm" / "Nh" / "Nd" beyond. Tooltip
+// on the consuming element shows the absolute timestamp for users
+// who want the exact moment.
+function nbaSlateTimeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'just now';
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
 }
