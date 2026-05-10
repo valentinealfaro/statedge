@@ -18,12 +18,15 @@ import {
   getTodaySlate,
   getWnbaCalibration,
   getWnbaSlate,
+  liveGradeLegs,
+  type EliteLegLiveState,
   type MlbCalibrationReport,
   type MlbDailySlateResponse,
   type SlateResponse,
   type WnbaCalibrationReport,
   type WnbaSlateResponse,
 } from './api';
+import { LiveVerdictPill } from './slateLiveState';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { EnginePulseStrip } from './EnginePulseStrip';
 import { EngineStatus } from './EngineStatus';
@@ -55,6 +58,7 @@ type UnifiedEdge = {
   playerId: string | number;
   playerName: string;
   team: string | null;
+  statKey: string;       // canonical key, used for live-grade lookups
   statLabel: string;
   line: number;
   direction: 'OVER' | 'UNDER';
@@ -125,6 +129,64 @@ export function Dashboard() {
 
   const allEdges = collectEdges(nba, mlb, wnba);
   const edges = sportFilter === 'all' ? allEdges : allEdges.filter((e) => e.sport === sportFilter);
+
+  // Phase 145 — live verdict polling for the dashboard's visible edges.
+  // Top dislocations + traps + disagreements = at most ~24 unique legs;
+  // we cap at 30 to stay well under the server's 50-leg request limit.
+  const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+  // Build a deterministic signature so we don't re-poll on every render.
+  const visibleEdges = [
+    ...edges.filter((e) => e.edgePercent >= 5).slice(0, 12),
+    ...edges.filter((e) => e.trapScore >= 60).slice(0, 8),
+  ];
+  // Dedupe by leg-id
+  const dedupKey = (e: { sport: string; playerId: string | number; statLabel: string; line: number; direction: 'OVER' | 'UNDER' }) =>
+    `${e.sport}::${e.playerId}::${e.statLabel}::${e.line}::${e.direction}`;
+  const seen = new Set<string>();
+  const uniqueVisible = visibleEdges.filter((e) => {
+    const k = dedupKey(e);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, 30);
+  const visibleSig = uniqueVisible.map(dedupKey).join('|');
+
+  useEffect(() => {
+    if (uniqueVisible.length === 0) {
+      setLiveByKey(new Map());
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      // WNBA isn't supported by the live grader (NBA + MLB only) —
+      // skip those legs honestly rather than fabricating verdicts.
+      const payload = uniqueVisible
+        .filter((e) => e.sport !== 'wnba')
+        .map((e) => ({
+          playerId: typeof e.playerId === 'number' ? e.playerId : Number(e.playerId),
+          playerName: e.playerName,
+          statKey: e.statKey,
+          direction: e.direction,
+          line: e.line,
+        }))
+        .filter((p) => Number.isFinite(p.playerId));
+      if (payload.length === 0) return;
+      liveGradeLegs(payload)
+        .then((states) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < states.length; i++) {
+            const p = payload[i]!;
+            m.set(`${p.playerId}-${p.statKey}-${p.line}-${p.direction}`, states[i]!);
+          }
+          setLiveByKey(m);
+        })
+        .catch(() => { /* silent */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [visibleSig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Phase 100: rank by dislocation strength (market mispricing) NOT
   // raw hit probability. Spec directive: "stop prioritizing highest
@@ -217,7 +279,12 @@ export function Dashboard() {
                 {dislocations.slice(0, 3).length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, marginBottom: 16 }}>
                     {dislocations.slice(0, 3).map((e, i) => (
-                      <DislocationHeroCard key={`${e.sport}-${e.playerId}-${i}`} edge={e} rank={i + 1} />
+                      <DislocationHeroCard
+                        key={`${e.sport}-${e.playerId}-${i}`}
+                        edge={e}
+                        rank={i + 1}
+                        live={liveByKey.get(`${e.playerId}-${e.statKey}-${e.line}-${e.direction}`) ?? null}
+                      />
                     ))}
                   </div>
                 )}
@@ -225,7 +292,11 @@ export function Dashboard() {
                 {dislocations.slice(3, 9).length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 16 }}>
                     {dislocations.slice(3, 9).map((e, i) => (
-                      <DislocationMediumCard key={`${e.sport}-${e.playerId}-${i + 3}`} edge={e} />
+                      <DislocationMediumCard
+                        key={`${e.sport}-${e.playerId}-${i + 3}`}
+                        edge={e}
+                        live={liveByKey.get(`${e.playerId}-${e.statKey}-${e.line}-${e.direction}`) ?? null}
+                      />
                     ))}
                   </div>
                 )}
@@ -248,7 +319,11 @@ export function Dashboard() {
             />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginBottom: 32 }}>
               {disagreements.map((e, i) => (
-                <DisagreementCard key={`d-${e.sport}-${e.playerId}-${i}`} edge={e} />
+                <DisagreementCard
+                  key={`d-${e.sport}-${e.playerId}-${i}`}
+                  edge={e}
+                  live={liveByKey.get(`${e.playerId}-${e.statKey}-${e.line}-${e.direction}`) ?? null}
+                />
               ))}
             </div>
 
@@ -275,7 +350,13 @@ export function Dashboard() {
               <EmptyCard text="No high-trap legs across tonight's slates. Clean board." />
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginBottom: 32 }}>
-                {traps.map((t, i) => <TrapCard key={`${t.sport}-${t.playerId}-${i}`} edge={t} />)}
+                {traps.map((t, i) => (
+                  <TrapCard
+                    key={`${t.sport}-${t.playerId}-${i}`}
+                    edge={t}
+                    live={liveByKey.get(`${t.playerId}-${t.statKey}-${t.line}-${t.direction}`) ?? null}
+                  />
+                ))}
               </div>
             )}
 
@@ -335,6 +416,7 @@ function collectEdges(
           playerId: l.playerId,
           playerName: l.playerName,
           team: l.team,
+          statKey: l.statKey,
           statLabel: l.statLabel,
           line: l.line,
           direction: l.direction,
@@ -374,6 +456,7 @@ function collectEdges(
           playerId: l.playerId,
           playerName: l.playerName,
           team: l.team,
+          statKey: l.statKey,
           statLabel: l.statLabel,
           line: l.line,
           direction: l.direction,
@@ -411,6 +494,7 @@ function collectEdges(
         playerId: l.athleteId,
         playerName: l.playerName,
         team: l.team,
+        statKey: l.statKey,
         statLabel: l.statLabel,
         line: l.line,
         direction: l.direction,
@@ -798,7 +882,7 @@ function EmptyCard({ text }: { text: string }) {
 
 // ---------- Dislocation cards ----------
 
-function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }) {
+function DislocationHeroCard({ edge, rank, live }: { edge: UnifiedEdge; rank: number; live: EliteLegLiveState | null }) {
   const color = SPORT_COLOR[edge.sport];
   const band = confidenceBand(edge);
   const variance = varianceLabel(edge);
@@ -847,8 +931,9 @@ function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }
         </div>
       </div>
 
-      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700 }}>
-        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span>{edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}</span>
+        <LiveVerdictPill state={live} compact />
       </div>
 
       {/* Model vs market */}
@@ -988,7 +1073,7 @@ function DislocationHeroCard({ edge, rank }: { edge: UnifiedEdge; rank: number }
   );
 }
 
-function DislocationMediumCard({ edge }: { edge: UnifiedEdge }) {
+function DislocationMediumCard({ edge, live }: { edge: UnifiedEdge; live: EliteLegLiveState | null }) {
   const color = SPORT_COLOR[edge.sport];
   const band = confidenceBand(edge);
   const variance = varianceLabel(edge);
@@ -1022,8 +1107,9 @@ function DislocationMediumCard({ edge }: { edge: UnifiedEdge }) {
         </div>
       </div>
 
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}</span>
+        <LiveVerdictPill state={live} compact />
       </div>
 
       <div
@@ -1098,7 +1184,7 @@ function DislocationCompactCard({ edge }: { edge: UnifiedEdge }) {
 
 // ---------- Disagreement cards ----------
 
-function DisagreementCard({ edge }: { edge: UnifiedEdge }) {
+function DisagreementCard({ edge, live }: { edge: UnifiedEdge; live: EliteLegLiveState | null }) {
   const color = SPORT_COLOR[edge.sport];
   const implied = marketImplied(edge);
   const variance = varianceLabel(edge);
@@ -1128,8 +1214,9 @@ function DisagreementCard({ edge }: { edge: UnifiedEdge }) {
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}</span>
+        <LiveVerdictPill state={live} compact />
       </div>
       <div
         style={{
@@ -1176,7 +1263,7 @@ function DisagreementCard({ edge }: { edge: UnifiedEdge }) {
 
 // ---------- Trap card (institutional rebuild) ----------
 
-function TrapCard({ edge }: { edge: UnifiedEdge }) {
+function TrapCard({ edge, live }: { edge: UnifiedEdge; live: EliteLegLiveState | null }) {
   const color = SPORT_COLOR[edge.sport];
   const implied = marketImplied(edge);
   const reasons = buildRiskReasons(edge);
@@ -1218,8 +1305,9 @@ function TrapCard({ edge }: { edge: UnifiedEdge }) {
         </span>
       </div>
 
-      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
-        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'}</span>
+        <LiveVerdictPill state={live} compact />
       </div>
 
       <div
