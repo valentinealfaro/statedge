@@ -22,6 +22,7 @@ import {
   type EliteTicket,
 } from './api';
 import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar } from './Avatar';
+import { EliteHeatmap } from './EliteHeatmap';
 import { NavBar } from './NavBar';
 import { PastElitePlays } from './PastElitePlays';
 import { Skeleton } from './Skeleton';
@@ -241,6 +242,10 @@ export function Elite() {
 
         {/* Track record — every prior Elite play the engine has
             published. Self-hides if no historical articles exist. */}
+        {/* 90-day track-record heatmap. Self-hides until ≥ 3 graded
+            days exist so signal-vs-noise stays honest. */}
+        <EliteHeatmap />
+
         <PastElitePlays />
 
         <section style={{
