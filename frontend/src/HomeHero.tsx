@@ -167,6 +167,7 @@ export function HomeHero() {
       {/* CTAs — restrained, sport-color-coded, terminal feel */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <CtaButton to="/elite" gold>★ Elite</CtaButton>
+        <CtaButton to="/best-bets" accent="#7aa2ff">⚡ Best Bets →</CtaButton>
         <CtaButton to="/dashboard" accent="#7aa2ff">Command Center →</CtaButton>
         <CtaButton to="/clv" accent="#66bb6a">Truth Metric →</CtaButton>
         <CtaButton to="/methodology">Methodology</CtaButton>

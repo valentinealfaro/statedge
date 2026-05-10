@@ -129,6 +129,12 @@ export function Home() {
 
       <footer className="footer">
         <p>
+          <Link to="/best-bets" className="footer-link">Best Bets</Link>
+          {' · '}
+          <Link to="/elite" className="footer-link">★ Elite</Link>
+          {' · '}
+          <Link to="/dashboard" className="footer-link">Command Center</Link>
+          {' · '}
           <Link to="/methodology" className="footer-link">How StatEdge works</Link>
           {' · '}
           <Link to="/clv" className="footer-link">CLV report</Link>
