@@ -387,22 +387,29 @@ export function ClvAudit() {
 function DurabilityCard({ label, value, hint, color }: { label: string; value: string; hint: string; color?: string }) {
   return (
     <div style={{
-      padding: 12,
-      background: 'rgba(0,0,0,0.2)',
+      padding: 14,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.28)',
       border: `1px solid ${color ? `${color}33` : 'rgba(255,255,255,0.08)'}`,
       borderLeft: color ? `3px solid ${color}` : '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 6,
+      borderRadius: 8,
+      boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 12px rgba(0,0,0,0.25)',
     }}>
       <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
-        textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)',
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.10em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
       }}>
         {label}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, color: color ?? 'inherit', lineHeight: 1 }}>
+      <div style={{
+        fontSize: 26, fontWeight: 900, marginTop: 6, color: color ?? 'inherit', lineHeight: 1,
+        letterSpacing: '-0.03em',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontVariantNumeric: 'tabular-nums',
+        textShadow: color ? `0 0 18px ${color}40` : 'none',
+      }}>
         {value}
       </div>
-      <div className="muted small" style={{ fontSize: 11, marginTop: 4 }}>
+      <div className="muted small" style={{ fontSize: 11, marginTop: 6, color: 'rgba(255,255,255,0.6)' }}>
         {hint}
       </div>
     </div>
@@ -411,23 +418,37 @@ function DurabilityCard({ label, value, hint, color }: { label: string; value: s
 
 function WindowCard({ label, win }: { label: string; win: ClvTrustWindow }) {
   const rate = win.beatRate;
+  const color = rateColor(rate);
   return (
     <div style={{
-      padding: 16,
-      background: 'rgba(0,0,0,0.25)',
+      position: 'relative',
+      padding: 18,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.30)',
       border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 8,
+      borderRadius: 10,
+      overflow: 'hidden',
+      boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 14px rgba(0,0,0,0.30)',
     }}>
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)',
+      }} />
       <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
-        textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)',
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.10em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
       }}>
         {label}
       </div>
-      <div style={{ fontSize: 36, fontWeight: 800, color: rateColor(rate), marginTop: 6, lineHeight: 1 }}>
+      <div style={{
+        fontSize: 40, fontWeight: 900, color, marginTop: 6, lineHeight: 1,
+        letterSpacing: '-0.03em',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontVariantNumeric: 'tabular-nums',
+        textShadow: rate !== null ? `0 0 24px ${color}55` : 'none',
+      }}>
         {rate !== null ? `${rate.toFixed(1)}%` : '—'}
       </div>
-      <div className="muted small" style={{ fontSize: 12, marginTop: 6 }}>
+      <div className="muted small" style={{ fontSize: 12, marginTop: 8, color: 'rgba(255,255,255,0.6)' }}>
         {win.withClosing > 0
           ? `${win.beatMarket} of ${win.withClosing} props beat the close`
           : 'No graded props in this window yet'}

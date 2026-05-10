@@ -147,16 +147,20 @@ function ArticleCard({ article }: { article: Article }) {
   return (
     <Link
       to={`/news/${article.slug}`}
+      className="news-card"
       style={{
+        position: 'relative',
         display: 'flex',
         gap: 14,
-        padding: 12,
-        background: 'rgba(255,255,255,0.02)',
-        border: `1px solid ${color}33`,
+        padding: 14,
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%), var(--surface-1)',
+        border: `1px solid ${color}30`,
         borderLeft: `3px solid ${color}`,
-        borderRadius: 6,
+        borderRadius: 10,
         textDecoration: 'none',
         color: 'inherit',
+        boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 14px rgba(0,0,0,0.30)',
+        transition: 'transform 200ms cubic-bezier(0.4,0,0.2,1), border-color 200ms, box-shadow 200ms',
       }}
     >
       {article.heroImageUrl && (
@@ -168,9 +172,11 @@ function ArticleCard({ article }: { article: Article }) {
             width: 100,
             height: 100,
             objectFit: 'cover',
-            borderRadius: 4,
+            borderRadius: 6,
             background: 'rgba(255,255,255,0.05)',
             flexShrink: 0,
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.25)',
           }}
         />
       )}

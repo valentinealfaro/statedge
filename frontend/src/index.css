@@ -6336,6 +6336,13 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   transform: translateX(2px);
 }
 
+/* ─── News card hover ─── */
+.news-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 8px 22px rgba(0,0,0,0.40);
+  filter: brightness(1.04);
+}
+
 /* ─── Hero CTA + live pulse + global utilities ─── */
 .hero-cta:hover {
   transform: translateY(-1px);

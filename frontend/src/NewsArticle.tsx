@@ -110,18 +110,20 @@ function ArticleBody({ article }: { article: Article }) {
   const color = SPORT_COLOR[article.sport] ?? '#cccccc';
   const kindLabel = KIND_LABEL[article.kind] ?? article.kind;
   return (
-    <article style={{ marginTop: 16 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 8, flexWrap: 'wrap' }}>
+    <article className="fade-up" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 10, flexWrap: 'wrap' }}>
         <span style={{
-          fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.10em',
           color, textTransform: 'uppercase',
-          padding: '3px 8px', borderRadius: 3, background: `${color}1a`,
+          padding: '4px 10px', borderRadius: 3, background: `${color}18`,
+          border: `1px solid ${color}38`,
         }}>
           {kindLabel}
         </span>
         <span style={{
-          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-          color: 'rgba(255,255,255,0.5)',
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.10em',
+          color: 'rgba(255,255,255,0.55)',
+          textTransform: 'uppercase',
         }}>
           {article.sport === 'cross' ? 'CROSS-SPORT' : article.sport.toUpperCase()}
         </span>
@@ -133,19 +135,31 @@ function ArticleBody({ article }: { article: Article }) {
       </div>
 
       {article.heroImageUrl && (
-        <img
-          src={article.heroImageUrl}
-          alt=""
-          style={{
-            width: '100%',
-            maxHeight: 320,
-            objectFit: 'cover',
-            objectPosition: 'top center',
-            borderRadius: 6,
-            marginBottom: 14,
-            background: 'rgba(255,255,255,0.05)',
-          }}
-        />
+        <div style={{
+          position: 'relative',
+          marginBottom: 18,
+          borderRadius: 10,
+          overflow: 'hidden',
+          border: `1px solid ${color}30`,
+          boxShadow: `0 1px 0 rgba(255,255,255,0.05) inset, 0 12px 32px rgba(0,0,0,0.50)`,
+        }}>
+          <img
+            src={article.heroImageUrl}
+            alt=""
+            style={{
+              display: 'block',
+              width: '100%',
+              maxHeight: 360,
+              objectFit: 'cover',
+              objectPosition: 'top center',
+              background: 'rgba(255,255,255,0.05)',
+            }}
+          />
+          <span aria-hidden style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: `linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 100%)`,
+          }} />
+        </div>
       )}
 
       <Markdown md={article.bodyMd} />
