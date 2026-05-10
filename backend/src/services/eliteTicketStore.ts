@@ -1,12 +1,24 @@
-// Elite ticket persistence + grading — Phase 142.
+// Elite ticket persistence + grading — Phase 142, extended through
+// iter 62 (UFC settle grading via fightcenter) + iter 87 (espnAthleteId
+// pass-through to the live grader).
 //
 // Cross-sport Elite endpoint produces a ticket and publishes an
 // article. To build a TRUE track record we also persist the ticket
 // in a structured table so it can grade against actual game outcomes
-// once they settle. Each leg's hit/miss is derivable from the
-// existing per-sport projection_history rows; we record the
-// ticket-level verdict (HIT iff every leg hit, otherwise MISS) so
-// the historical view can show the full ledger.
+// once they settle. We record the ticket-level verdict (HIT iff
+// every leg hit, otherwise MISS) so the historical view can show
+// the full ledger.
+//
+// Per-leg grade source:
+//   - MLB: derived from mlb_projection_history.hit_or_miss (the MLB
+//          grader populates this when stat tables update).
+//   - NBA: gradeNbaLegLive walks the day's ESPN scoreboard, finds
+//          the COMPLETED game the player was in, pulls box-score,
+//          applies direction-aware outcome rule.
+//   - UFC: gradeMmaLegSettled reuses liveGradeElite (same fightcenter
+//          walk that powers in-flight pills) and only promotes to a
+//          persisted boolean when the fight is final. Unsupported UFC
+//          stat keys honestly stay null rather than fabricate.
 
 import { getPool, isDbConfigured } from '../db.js';
 import { fetchScoreboard, fetchGameSummary, type EspnPlayerLine } from '../nba/espn.js';
