@@ -2878,24 +2878,48 @@ function ParlayTray({
             const lean = l.hitProbability?.lean ?? 'OVER';
             const pct = l.hitProbability?.mightHitPct ?? 0;
             return (
-              <button
+              <ParlayTrayLeg
                 key={`${l.playerId}-${l.statKey}-${l.line}`}
-                className="parlay-leg"
-                onClick={() => onRemove(l)}
-                title="Remove from parlay"
-              >
-                <span className="parlay-leg-name">{l.playerName}</span>
-                <span className="parlay-leg-stat">
-                  {l.statLabel} {l.line} {lean === 'OVER' ? '↑' : '↓'}
-                </span>
-                <span className="parlay-leg-pct">{pct}%</span>
-                <span className="parlay-leg-x" aria-hidden>✕</span>
-              </button>
+                line={l}
+                lean={lean}
+                pct={pct}
+                onRemove={() => onRemove(l)}
+              />
             );
           })}
         </div>
       </div>
     </div>
+  );
+}
+
+// Single parlay-tray leg button. Reads its own live state from the
+// SlateLiveStateProvider context so users see verdict pills tick on
+// the legs they've actively added to a slip.
+function ParlayTrayLeg({
+  line, lean, pct, onRemove,
+}: {
+  line: SlateResolvedLine;
+  lean: 'OVER' | 'UNDER';
+  pct: number;
+  onRemove: () => void;
+}) {
+  const live = useLiveLegState(line.playerId, line.statKey, line.line, lean);
+  return (
+    <button
+      className="parlay-leg"
+      onClick={onRemove}
+      title="Remove from parlay"
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
+    >
+      <span className="parlay-leg-name">{line.playerName}</span>
+      <span className="parlay-leg-stat">
+        {line.statLabel} {line.line} {lean === 'OVER' ? '↑' : '↓'}
+      </span>
+      <span className="parlay-leg-pct">{pct}%</span>
+      <LiveVerdictPill state={live} compact />
+      <span className="parlay-leg-x" aria-hidden>✕</span>
+    </button>
   );
 }
 
