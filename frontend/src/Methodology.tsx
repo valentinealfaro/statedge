@@ -285,7 +285,15 @@ export function Methodology() {
           will land in subsequent phases:
         </p>
         <ul style={{ fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,0.75)' }}>
-          <li>UFC projection engine — fighter-stat database in progress; current /mma/slate stores props but doesn't project them.</li>
+          <li>
+            UFC fundamental projection engine — Phase 136 ships a moneyline-anchored
+            heuristic that produces probability + edge + trap + fragility on every
+            UFC line (consumed by /mma/slate, /best-bets, the cross-sport Elite
+            ticket, and the Dashboard dislocation engine). The deeper fighter-stat
+            engine that replaces it from inside — career strike-volume, takedown-
+            defense, age curves, weight-cut signals — needs a UFCStats / ESPN
+            fighter-bio ingestion pipeline and is the next major UFC build.
+          </li>
           <li>NBA + UFC contributing to the cross-sport CLV/Calibration metric — projection_history needs graded volume to accumulate.</li>
           <li>Per-projection L1-L10 audit trail — clicking a projected probability to see exactly which layer contributed what is on the roadmap.</li>
           <li>Monte Carlo (Layer 6) — currently we ship distributional summaries; full Monte Carlo simulation lands when the projection-error distribution from grading stabilizes.</li>
