@@ -58,6 +58,7 @@ type UnifiedBet = {
 };
 
 type SortKey = 'ev' | 'edge' | 'probability' | 'live';
+type SortDir = 'desc' | 'asc';
 
 const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB' };
 const SPORT_COLOR: Record<Sport, string> = { nba: '#7aa2ff', mlb: '#66bb6a' };
@@ -73,6 +74,7 @@ export function BestBetsToday() {
   const [mlb, setMlb] = useState<MlbDailySlateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('ev');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
   const [minEdge, setMinEdge] = useState<number>(5);
   const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
@@ -192,9 +194,12 @@ export function BestBetsToday() {
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
-    if (sortKey === 'ev') arr.sort((a, b) => b.ev - a.ev);
-    else if (sortKey === 'edge') arr.sort((a, b) => b.edgePercent - a.edgePercent);
-    else if (sortKey === 'probability') arr.sort((a, b) => b.probability - a.probability);
+    // Direction multiplier — desc by default; asc when user clicks
+    // an active header a second time.
+    const m = sortDir === 'asc' ? -1 : 1;
+    if (sortKey === 'ev') arr.sort((a, b) => (b.ev - a.ev) * m);
+    else if (sortKey === 'edge') arr.sort((a, b) => (b.edgePercent - a.edgePercent) * m);
+    else if (sortKey === 'probability') arr.sort((a, b) => (b.probability - a.probability) * m);
     else if (sortKey === 'live') {
       // Sort by live verdict — ON_PACE_HIT/HIT first, then IN_FLIGHT,
       // then PENDING, then ON_PACE_MISS/MISS at the bottom.
@@ -206,14 +211,10 @@ export function BestBetsToday() {
         if (s.verdict === 'PUSH') return 3;
         return 5;     // MISS / ON_PACE_MISS / UNGRADED
       };
-      arr.sort((a, b) => {
-        const sa = liveByKey.get(makeKey(a));
-        const sb = liveByKey.get(makeKey(b));
-        return rank(sa) - rank(sb);
-      });
+      arr.sort((a, b) => (rank(liveByKey.get(makeKey(a))) - rank(liveByKey.get(makeKey(b)))) * m);
     }
     return arr;
-  }, [filtered, sortKey, liveByKey]);
+  }, [filtered, sortKey, sortDir, liveByKey]);
 
   // Live-grade the top 50 visible bets every 60s. Cap matches the
   // server-side limit on /api/slate/live-grade.
@@ -376,10 +377,10 @@ export function BestBetsToday() {
                   <th style={th}>Player</th>
                   <th style={{ ...th, textAlign: 'left' }}>Stat / Line</th>
                   <th style={{ ...th, textAlign: 'left' }}>Projection</th>
-                  <SortHeader label="Prob" align="right" thisKey="probability" sortKey={sortKey} setSortKey={setSortKey} />
-                  <SortHeader label="Edge" align="right" thisKey="edge" sortKey={sortKey} setSortKey={setSortKey} />
-                  <SortHeader label="EV" align="right" thisKey="ev" sortKey={sortKey} setSortKey={setSortKey} />
-                  <SortHeader label="Live" align="right" thisKey="live" sortKey={sortKey} setSortKey={setSortKey} />
+                  <SortHeader label="Prob" align="right" thisKey="probability" sortKey={sortKey} setSortKey={setSortKey} sortDir={sortDir} setSortDir={setSortDir} />
+                  <SortHeader label="Edge" align="right" thisKey="edge" sortKey={sortKey} setSortKey={setSortKey} sortDir={sortDir} setSortDir={setSortDir} />
+                  <SortHeader label="EV" align="right" thisKey="ev" sortKey={sortKey} setSortKey={setSortKey} sortDir={sortDir} setSortDir={setSortDir} />
+                  <SortHeader label="Live" align="right" thisKey="live" sortKey={sortKey} setSortKey={setSortKey} sortDir={sortDir} setSortDir={setSortDir} />
                 </tr>
               </thead>
               <tbody>
@@ -689,20 +690,31 @@ function SegmentedTab({
 // watchlist-style: arrow rendered next to the label when the key
 // matches, click anywhere on the cell to switch.
 function SortHeader({
-  label, align, thisKey, sortKey, setSortKey,
+  label, align, thisKey, sortKey, setSortKey, sortDir, setSortDir,
 }: {
   label: string;
   align: 'left' | 'right';
   thisKey: SortKey;
   sortKey: SortKey;
   setSortKey: (k: SortKey) => void;
+  sortDir: SortDir;
+  setSortDir: (d: SortDir) => void;
 }) {
   const active = sortKey === thisKey;
   return (
     <th
       style={{ ...th, textAlign: align, cursor: 'pointer', userSelect: 'none' }}
-      onClick={() => setSortKey(thisKey)}
-      title={`Sort by ${label}`}
+      onClick={() => {
+        // First click on a non-active header switches the key + sets desc.
+        // Click on the already-active header toggles direction.
+        if (active) {
+          setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+        } else {
+          setSortKey(thisKey);
+          setSortDir('desc');
+        }
+      }}
+      title={`Sort by ${label}${active ? ` (${sortDir === 'asc' ? 'ascending' : 'descending'} — click to reverse)` : ''}`}
     >
       <span style={{
         color: active ? 'var(--text-1)' : undefined,
@@ -715,7 +727,7 @@ function SortHeader({
           opacity: active ? 1 : 0.25,
           color: active ? '#5b8def' : undefined,
         }}>
-          ▼
+          {active && sortDir === 'asc' ? '▲' : '▼'}
         </span>
       </span>
     </th>
