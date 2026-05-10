@@ -1,13 +1,20 @@
-// Global cross-sport intelligence search — Phase 83 + Phase 91 + Phase 148p.
-// Searches NBA + MLB + UFC + WNBA in parallel for player matches, AND on
-// focus (empty input) surfaces "trending edges across tonight's
-// slates" — search is now a discovery surface, not just lookup.
+// Global cross-sport intelligence search — Phase 83 + Phase 91 +
+// Phase 148p (UFC fighter index) + iter 68 (UFC trending edges).
+// Searches NBA + MLB + UFC + WNBA in parallel for player matches,
+// AND on focus (empty input) surfaces "trending edges across
+// tonight's slates" — search is now a discovery surface, not just
+// lookup.
 //
 // UFC fighters are sourced from the ESPN scoreboard (same data the
 // /mma/scoreboard page uses) — no dedicated fighter-search API exists,
 // so we pull the recent + upcoming card once per session and filter
 // client-side by display name. Covers tonight + the next event, which
 // is the entire prime use case for an in-session terminal search.
+//
+// Trending tray (focus + empty input) ranks the top 8 edges across
+// NBA + MLB + UFC + WNBA by edge%, threshold-filtered at ≥5pp. UFC
+// trending uses /api/mma/slate/projections (same Phase 136 heuristic
+// engine output that powers /best-bets and /mma/slate edge badges).
 //
 // Mission: one search box, every player. Plus institutional terminal
 // behavior — when nothing typed, show what's hot tonight.
