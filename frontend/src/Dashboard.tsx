@@ -304,7 +304,11 @@ export function Dashboard() {
                 {dislocations.slice(9).length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8, marginBottom: 32 }}>
                     {dislocations.slice(9, 18).map((e, i) => (
-                      <DislocationCompactCard key={`${e.sport}-${e.playerId}-${i + 9}`} edge={e} />
+                      <DislocationCompactCard
+                        key={`${e.sport}-${e.playerId}-${i + 9}`}
+                        edge={e}
+                        live={liveByKey.get(`${e.playerId}-${e.statKey}-${e.line}-${e.direction}`) ?? null}
+                      />
                     ))}
                   </div>
                 )}
@@ -1150,7 +1154,7 @@ function DislocationMediumCard({ edge, live }: { edge: UnifiedEdge; live: EliteL
   );
 }
 
-function DislocationCompactCard({ edge }: { edge: UnifiedEdge }) {
+function DislocationCompactCard({ edge, live }: { edge: UnifiedEdge; live: EliteLegLiveState | null }) {
   const color = SPORT_COLOR[edge.sport];
   return (
     <Link
@@ -1175,8 +1179,9 @@ function DislocationCompactCard({ edge }: { edge: UnifiedEdge }) {
           {edge.edgePercent >= 0 ? '+' : ''}{edge.edgePercent.toFixed(0)}%
         </span>
       </div>
-      <div className="muted small" style={{ fontSize: 10 }}>
-        {edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'} · {SPORT_LABEL[edge.sport]}
+      <div className="muted small" style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{edge.statLabel} {edge.line} {edge.direction === 'OVER' ? '↑' : '↓'} · {SPORT_LABEL[edge.sport]}</span>
+        <LiveVerdictPill state={live} compact />
       </div>
     </Link>
   );
