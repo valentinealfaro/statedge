@@ -53,8 +53,40 @@ export function NavSearch() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const trendingFetchedRef = useRef(false);
+
+  // Global keyboard shortcut — `/` or Cmd/Ctrl+K focuses the search
+  // (Bloomberg / VSCode / GitHub convention). Don't hijack when the
+  // user is already typing into another input/textarea/contenteditable.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const isEditing = t && (
+        t.tagName === 'INPUT' ||
+        t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' ||
+        t.isContentEditable
+      );
+      if (isEditing) return;
+      const isCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+      const isSlash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (isCmdK || isSlash) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+      // Escape blurs the search (lets users dismiss the trending tray
+      // without clicking elsewhere).
+      if (e.key === 'Escape' && document.activeElement === inputRef.current) {
+        inputRef.current?.blur();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Lazy-load trending edges on first focus. Cached for the session
   // — server-side caches absorb cost across users.
@@ -173,8 +205,9 @@ export function NavSearch() {
   const showTray = open && query.trim().length >= 2;
 
   return (
-    <div className="nav-search" ref={wrapRef}>
+    <div className="nav-search" ref={wrapRef} style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         type="search"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -182,6 +215,31 @@ export function NavSearch() {
         placeholder="Search any player or browse trending…"
         aria-label="Search any player across NBA, MLB, WNBA"
       />
+      {/* Power-user kbd hint — only shown when the input is empty + not
+          focused, so it doesn't crowd the placeholder while typing. */}
+      {!query && !open && (
+        <span
+          aria-hidden
+          className="nav-search-kbd"
+          style={{
+            position: 'absolute',
+            right: 12,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            padding: '2px 6px',
+            fontSize: 10,
+            fontWeight: 700,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            color: 'rgba(255,255,255,0.45)',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 4,
+            pointerEvents: 'none',
+          }}
+        >
+          /
+        </span>
+      )}
       {open && query.trim().length < 2 && trending && trending.length > 0 && (
         <div className="nav-search-results" style={{ maxHeight: 480, overflowY: 'auto' }}>
           <div
