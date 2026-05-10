@@ -245,13 +245,15 @@ function yesterdayEt(): string {
 }
 
 // GET /api/news/cron/big-game — fires once at end-of-night ET. Pulls
-// today's completed MLB + NBA games, runs the detector across both
-// leagues, persists articles. Sport-aggregate response shows what
-// scanned in each league for diagnostics.
+// today's completed MLB + NBA games AND today's completed UFC fights,
+// runs the detector across all three, persists articles (big-game
+// for MLB + NBA, fight-night for UFC). Sport-aggregate response
+// shows what scanned in each league for diagnostics.
 //
-// MLB + NBA wired today; WNBA deprioritized (existing code remains
-// but no new fetcher per the sport-priorities decision); MMA wires
-// in alongside its full provider work.
+// MLB + NBA + UFC wired today (Phase 107e added UFC fight-night via
+// fetchUfcFightNightInputs / generateFightNightArticles). WNBA stays
+// deprioritized — existing code remains but no new fetcher per the
+// 2026-05-09 sport-priorities decision.
 newsRouter.get('/cron/big-game', async (req, res) => {
   const authErr = requireCronAuth(req);
   if (authErr) {
