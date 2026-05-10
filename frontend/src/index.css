@@ -6417,6 +6417,13 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 8px 22px rgba(122,162,255,0.18), 0 2px 6px rgba(0,0,0,0.30) !important;
 }
 
+/* ─── Live deck tiles ─── */
+.live-deck-tile:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.32) !important;
+  border-color: rgba(239,83,80,0.35) !important;
+  transform: translateY(-1px);
+}
+
 /* ─── Clickable lineup rows + team-leader rows ─── */
 .mlb-clickable-row { transition: background-color var(--motion-fast); }
 .mlb-clickable-row:hover { background-color: rgba(91,141,239,0.05); }
