@@ -11,6 +11,7 @@
 import { getPool, isDbConfigured } from '../db.js';
 import { fetchScoreboard, fetchGameSummary, type EspnPlayerLine } from '../nba/espn.js';
 import type { CrossSportTicket } from './crossSportEliteBuilder.js';
+import { liveGradeElite } from './liveEliteGrader.js';
 
 // Stat-key sets for sport detection inside the grader. Mirrors the
 // frontend's detectLegSport() and the cross-sport builder's
@@ -305,7 +306,9 @@ export async function gradeEliteTickets(): Promise<{ graded: number; pending: nu
 // hit_or_miss when stat tables update). NBA legs fetch the day's
 // ESPN scoreboard and resolve the player's box-score line directly
 // — no separate NBA projection_history table needed for grading.
-// MMA stays ungraded for now (no settled-fight stat ingestion yet).
+// MMA legs reuse the live grader's HIT/MISS verdict once the fight
+// is final — the same fightcenter walk that powers in-flight pills
+// is authoritative for settle grading too.
 async function gradeOneLeg(args: {
   gameDate: Date;
   playerId: number;
@@ -339,9 +342,42 @@ async function gradeOneLeg(args: {
     return await gradeNbaLegLive(args);
   }
 
-  // MMA — no graded fight-stat source yet. Tickets with UFC legs
-  // stay ungraded. HONEST per the no-fake-grading rule.
-  return null;
+  return await gradeMmaLegSettled(args);
+}
+
+// MMA settled-leg grade. Reuses the live grader (which already walks
+// the UFC scoreboard + fightcenter for in-flight verdicts) and only
+// promotes the result to a persisted boolean when the fight has
+// reached state === 'final'. Anything else stays null so we don't
+// freeze a leg's verdict mid-fight or fabricate one for an unsupported
+// stat key. PUSH is intentionally null too, mirroring the NBA path
+// (outcomeFromActual returns null on actual === line).
+async function gradeMmaLegSettled(args: {
+  gameDate: Date;
+  playerId: number;
+  playerName: string;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  line: number;
+}): Promise<boolean | null> {
+  try {
+    const isoDate = args.gameDate.toISOString().slice(0, 10);
+    const [state] = await liveGradeElite([{
+      playerId: args.playerId,
+      playerName: args.playerName,
+      statKey: args.statKey,
+      direction: args.direction,
+      line: args.line,
+    }], isoDate);
+    if (!state) return null;
+    if (state.gameStatus !== 'final') return null;
+    if (state.verdict === 'HIT') return true;
+    if (state.verdict === 'MISS') return false;
+    return null;
+  } catch (err) {
+    console.warn('mma settled grade failed', (err as Error).message);
+    return null;
+  }
 }
 
 // Per-NBA-leg live grade. Fetches the day's ESPN scoreboard, finds
