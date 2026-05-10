@@ -28,6 +28,7 @@ import {
 } from './api';
 import { LiveVerdictPill } from './slateLiveState';
 import { ClvTrustBanner } from './ClvTrustBanner';
+import { TodayAtAGlance } from './TodayAtAGlance';
 import { EnginePulseStrip } from './EnginePulseStrip';
 import { EngineStatus } from './EngineStatus';
 import { LatestNewsRail } from './LatestNewsRail';
@@ -234,6 +235,14 @@ export function Dashboard() {
           Live quantitative war room. We rank by market dislocation, not hit rate. Every leg
           surfaces why it's mispriced, what could break it, and where the market disagrees.
         </p>
+
+        {/* Today at a Glance — same Bloomberg ticker that pins above
+            Home. Surfaces live games (per-sport split), active edges,
+            today's Elite verdict, and the 30d CLV beat-rate. Self-hides
+            on quiet days. Command-center users want this BEFORE the
+            engine-pulse strip — it's the headline number, not the
+            operational pulse. */}
+        <TodayAtAGlance />
 
         {/* Compact engine pulse — Bloomberg-feel ticker pinned high
             so command-center users see live activity at a glance. */}
