@@ -76,6 +76,10 @@ const UFC_STAT_LABEL: Record<string, string> = {
 type UnifiedEdge = {
   sport: Sport;
   playerId: string | number;
+  // Optional alphanumeric ESPN athlete id, set on UFC edges so the
+  // backend live grader can match by id instead of falling through
+  // to display-name match. NBA + MLB edges leave it undefined.
+  espnAthleteId?: string;
   playerName: string;
   team: string | null;
   statKey: string;       // canonical key, used for live-grade lookups
@@ -191,6 +195,9 @@ export function Dashboard() {
         .filter((e) => e.sport !== 'wnba')
         .map((e) => ({
           playerId: typeof e.playerId === 'number' ? e.playerId : Number(e.playerId),
+          // UFC alphanumeric id passes through here so the grader
+          // matches by id instead of name fallback.
+          espnAthleteId: e.espnAthleteId,
           playerName: e.playerName,
           statKey: e.statKey,
           direction: e.direction,
@@ -584,6 +591,7 @@ function collectEdges(
       out.push({
         sport: 'mma',
         playerId: p.espnAthleteId ?? 0,
+        espnAthleteId: p.espnAthleteId ?? undefined,
         playerName: p.fighterName,
         team: p.opponentName ? `vs ${p.opponentName}` : null,
         statKey: p.statKey,
