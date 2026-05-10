@@ -75,9 +75,13 @@ const WNBA_SUBNAV: SubnavItem[] = [
 ];
 
 // MMA subnav — Phase 107 foundation + Phase 110a slate + Phase 146
-// fight detail + Phase 148p live-grading wiring. Scoreboard / slate
-// is the institutional surface today; standings + calibration land
-// when the UFC projection engine ships.
+// fight detail + Phase 148p live-grading wiring + Phase 148r
+// projection-engine consumer wiring. Scoreboard / slate is the
+// institutional surface today. Calibration waits on UFC entries
+// accumulating in projection_history (Phase 136 engine doesn't
+// write there yet); standings waits on a UFC-shaped rankings
+// surface (per-weight-class divisional rankings, not the
+// team-record standings NBA/MLB use).
 const MMA_SUBNAV: SubnavItem[] = [
   { label: 'Scoreboard', path: '/mma/scoreboard' },
   { label: 'Slate',      path: '/mma/slate' },
