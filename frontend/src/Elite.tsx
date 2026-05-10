@@ -21,6 +21,7 @@ import {
   type EliteResponse,
   type EliteTicket,
 } from './api';
+import { ActivityFeed } from './ActivityFeed';
 import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar } from './Avatar';
 import { EliteHeatmap } from './EliteHeatmap';
 import { NavBar } from './NavBar';
@@ -299,6 +300,12 @@ export function Elite() {
 
         {/* Track record — every prior Elite play the engine has
             published. Self-hides if no historical articles exist. */}
+        {/* Activity feed — today's resolved picks (Elite legs +
+            starred props). Sits between the ticket and the historical
+            heatmap so users see 'what's resolved today' before
+            scanning the 90-day pattern. */}
+        <ActivityFeed />
+
         {/* 90-day track-record heatmap. Self-hides until ≥ 3 graded
             days exist so signal-vs-noise stays honest. */}
         <EliteHeatmap />

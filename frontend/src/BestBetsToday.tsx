@@ -19,6 +19,7 @@ import {
   type MlbDailySlateResponse,
   type SlateResponse,
 } from './api';
+import { ActivityFeed } from './ActivityFeed';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { NavBar } from './NavBar';
 import { ProjectionBand } from './ProjectionBand';
@@ -277,6 +278,11 @@ export function BestBetsToday() {
             active edges, Elite verdict, CLV beat-rate) before they
             scan the row-level table below. */}
         <TodayAtAGlance />
+
+        {/* Activity feed — Elite + starred picks that have settled or
+            locked today. Pinned above the watchlist so users see
+            'what just happened' first, then scan today's edges. */}
+        <ActivityFeed />
 
         <ClvTrustBanner />
 
