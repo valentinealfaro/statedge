@@ -12,8 +12,12 @@ import type { EliteLeg, EliteTicket, EdgeReason } from './mlbEliteBuilder.js';
 
 export type { EliteTicket, EliteLeg } from './mlbEliteBuilder.js';
 
+// Iter 10 (no-obvious-picks rule): 2-leg payout floor lifted from 3.0×
+// to 3.5× so an Elite ticket can no longer be two ~78% heavy favorites
+// (combined ~60% → fair ≈ 1.65×, well under the new floor). Three-leg
+// floor is unchanged at 6.0× — already strict enough.
 const MIN_FAIR_PAYOUT_3LEG = 6.0;
-const MIN_FAIR_PAYOUT_2LEG = 3.0;
+const MIN_FAIR_PAYOUT_2LEG = 3.5;
 const MIN_PROBABILITY = 60;
 const MAX_TRAP_SCORE = 35;
 const MAX_FRAGILITY = 45;

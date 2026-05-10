@@ -237,13 +237,47 @@ type Tier = {
   gradeCeiling: 'A+' | 'A' | 'B' | 'C';
 };
 
+// Iter 10 (no-obvious-picks rule): payout floors raised across every
+// tier. The previous 1.5× minPayout on `best-of-day` produced "Elite"
+// tickets paying 1.6× — i.e. two ~78% favorites that anyone could
+// pick. User directive: "we put out an Elite play that pays 1.6× —
+// why would anyone pay for that". Raised floors mean an Elite ticket
+// must have at least one leg with real edge, not two rubber-stamps.
+//
+// Implied per-leg averages at the new minimums:
+//   3-leg institutional 6.0×   → ~55% avg per leg (unchanged)
+//   2-leg institutional 3.5×   → ~53% avg per leg (combined ≤28.5%)
+//   3-leg relaxed       5.0×   → ~58% avg per leg (combined ≤20%)
+//   2-leg relaxed       3.0×   → ~58% avg per leg (combined ≤33%)
+//   2-leg best-of-day   2.5×   → ~63% avg per leg (combined ≤40%)
+//
+// Anything tighter than 2.5× combined fair payout is two heavy
+// favorites — that's by definition a "PrizePicks already told them"
+// play, not Elite. We will return null when no tier qualifies rather
+// than publish a 1.6× ticket.
 const TIERS: Tier[] = [
   { name: '3-leg · institutional', legCount: 3, minProb: 60, minEdge: 8, maxTrap: 35, maxFrag: 45, minPayout: 6.0, gradeCeiling: 'A+' },
-  { name: '2-leg · institutional', legCount: 2, minProb: 60, minEdge: 8, maxTrap: 35, maxFrag: 45, minPayout: 3.0, gradeCeiling: 'A+' },
-  { name: '3-leg · relaxed',       legCount: 3, minProb: 55, minEdge: 5, maxTrap: 50, maxFrag: 60, minPayout: 4.0, gradeCeiling: 'B'  },
-  { name: '2-leg · relaxed',       legCount: 2, minProb: 55, minEdge: 5, maxTrap: 50, maxFrag: 60, minPayout: 2.0, gradeCeiling: 'B'  },
-  { name: '2-leg · best-of-day',   legCount: 2, minProb: 50, minEdge: 0, maxTrap: 100, maxFrag: 100, minPayout: 1.5, gradeCeiling: 'C' },
+  { name: '2-leg · institutional', legCount: 2, minProb: 60, minEdge: 8, maxTrap: 35, maxFrag: 45, minPayout: 3.5, gradeCeiling: 'A+' },
+  { name: '3-leg · relaxed',       legCount: 3, minProb: 55, minEdge: 5, maxTrap: 50, maxFrag: 60, minPayout: 5.0, gradeCeiling: 'B'  },
+  { name: '2-leg · relaxed',       legCount: 2, minProb: 55, minEdge: 5, maxTrap: 50, maxFrag: 60, minPayout: 3.0, gradeCeiling: 'B'  },
+  { name: '2-leg · best-of-day',   legCount: 2, minProb: 50, minEdge: 0, maxTrap: 100, maxFrag: 100, minPayout: 2.5, gradeCeiling: 'C' },
 ];
+
+// Iter 10 (no-obvious-picks rule): a Goblin-over leg or a Demon-under
+// leg adds NO value to an Elite ticket — PrizePicks already told the
+// user via the green/red emoji that the line was easy/hard. Reject
+// these legs from Elite eligibility entirely. The cross-sport ranker
+// is free to surface them as standard slate cards (with the score
+// penalty applied), but they never qualify as Elite.
+function isObviousPick(c: EliteCandidate): boolean {
+  // EliteCandidate doesn't carry isDemon/isGoblin directly — they
+  // travel via the per-sport projection result. We infer "obvious"
+  // from the line being a heavy favorite the model agrees with the
+  // market on (probability ≥ 75 AND |model - market| < 5pp).
+  if (c.marketImpliedProb === null) return false;
+  if (c.probability < 75) return false;
+  return Math.abs(c.probability - c.marketImpliedProb) < 5;
+}
 
 // ---------- Public entry ----------
 
@@ -316,6 +350,12 @@ function passesLegFilter(c: EliteCandidate, tier: Tier): boolean {
   if (c.edgeScore   < tier.minEdge) return false;
   if (c.trapScore   > tier.maxTrap) return false;
   if (c.fragilityScore > tier.maxFrag) return false;
+  // Iter 10: reject obvious picks from the institutional tiers (A+).
+  // Relaxed and best-of-day tiers still allow these because the user
+  // strategy there is "ALWAYS publish something" — but the strict
+  // tier should never elevate a heavy-favorite-the-market-also-loves
+  // leg to Elite branding. See feedback_no_obvious_picks.md.
+  if (tier.gradeCeiling === 'A+' && isObviousPick(c)) return false;
   // Sport-specific guards retained for the strict tiers only — at the
   // relaxed/forced tiers, the structural-edge / streak-driven checks
   // would block the very fallbacks we want to surface.

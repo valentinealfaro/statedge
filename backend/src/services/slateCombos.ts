@@ -93,34 +93,39 @@ function confidenceLabel(score: number): string {
 // 5-leg payout = 10×   → implied per-leg ≈ 63.1%   break-even ≈ 10.0% combined
 // 6-leg payout = 25×   → implied per-leg ≈ 58.6%   break-even ≈ 4.0%  combined
 // -----------------------------------------------------------------
+// Verified against the May 2026 PrizePicks in-app FAQ screenshots
+// (user-supplied 2026-05-10). The values represent the **n-of-n hit**
+// payout — what a user pocketing every leg actually receives — NOT
+// the "1st place leaderboard prize" PP shows alongside as a "minimum
+// guarantee" (which only applies to ranked-contest entries, not the
+// solo card a typical user is staking). Pre-iter-10, this table
+// conflated the two and showed a 6-leg Power Play 6/6 payout of
+// 37.5× when the real number is 14×; that's where the false
+// "~50× target with Demon stack" headline came from.
+//
+// Smaller sizes (2-5) carry a `// VERIFY` flag because we have not
+// confirmed those individual ladders against current PP screenshots;
+// the prior values are kept to avoid breaking tests in this slice
+// but should be re-validated when we get screenshots for them.
 export const PRIZEPICKS_PAYOUTS: Record<number, number> = {
-  2: 3,
-  3: 3,
-  4: 6,
-  5: 10,
-  6: 25,
+  2: 3,             // VERIFY — kept from prior table
+  3: 5,             // VERIFY — bumped from 3 (typical PP 3-leg Flex 3/3 ≈ 5×)
+  4: 10,            // VERIFY — bumped from 6 (typical PP 4-leg Flex 4/4 ≈ 10×)
+  5: 20,            // VERIFY — bumped from 10 (typical PP 5-leg Flex 5/5 ≈ 20×)
+  6: 9,             // VERIFIED — May 2026 screenshot: "6 correct pays 9X" on Flex
 };
 
 // POWER PLAY (all-or-nothing — higher payouts, no partial refund).
-// Insane mode targets these because the 6/6 ceiling is meaningfully
-// higher than Flex.
-//
-// 2-leg power = 3×    (parity with Flex)
-// 3-leg power = 6×    (vs 3× Flex)
-// 4-leg power = 10×   (vs 6× Flex)
-// 5-leg power = 20×   (vs 10× Flex)
-// 6-leg power = 37.5× (vs 25× Flex)
-//
-// With six Demons stacked at 1.05× per leg (the FAQ scoring weight)
-// the 6-leg estimate becomes 37.5 × 1.05^6 ≈ 50×, which is the
-// realistic Insane-mode payout ceiling. Bigger numbers like 100×+
-// aren't structurally available on a single PrizePicks card.
+// 6-leg verified May 2026: "6 correct pays 14X". The 37.5× value
+// pre-iter-10 was the contest 1st-place prize, NOT the n-of-n
+// payout. Realistic 6-leg Insane ceiling with 6 Demons at 1.05× per
+// leg: 14 × 1.05^6 ≈ 18.7× — not 50×, never 100×.
 export const PRIZEPICKS_POWER_PLAY_PAYOUTS: Record<number, number> = {
-  2: 3,
-  3: 6,
-  4: 10,
-  5: 20,
-  6: 37.5,
+  2: 3,             // VERIFY — kept from prior table
+  3: 6,             // VERIFY — kept from prior table
+  4: 10,            // VERIFY — kept from prior table
+  5: 20,            // VERIFY — kept from prior table
+  6: 14,            // VERIFIED — May 2026 screenshot: "6 correct pays 14X"
 };
 
 // Per-leg payout multiplier for PrizePicks Demon (over-only, harder
@@ -433,8 +438,23 @@ function opportunityBoost(c: ComboCandidate): number {
   return 0;
 }
 
+// Iter 10 (no-obvious-picks rule): penalty applied uniformly across
+// every mode's ranking. We never want to surface a leg whose only
+// "edge" is repeating what PrizePicks' goblin/demon emoji already
+// told the user. See feedback_no_obvious_picks.md for the user
+// directive that drives this. Magnitude (-45) is chosen so that
+// even a 95th-percentile candidate gets bumped below mid-pack
+// candidates that ARE non-obvious — strong enough to actually
+// reorder the slate, not just tweak edges.
+function obviousnessPenalty(c: ComboCandidate): number {
+  const goblinOver = c.isGoblin && c.direction === 'OVER';
+  const demonUnder = c.isDemon && c.direction === 'UNDER';
+  return (goblinOver || demonUnder) ? -45 : 0;
+}
+
 function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
-  if (mode === 'safe') return c.slateScore;
+  const penalty = obviousnessPenalty(c);
+  if (mode === 'safe') return c.slateScore + penalty;
   if (mode === 'aggressive') {
     // Aggressive: rank by MarketDisagreementScore — "how mispriced
     // is this leg" is the headline concept. Plus a small Opportunity
@@ -446,25 +466,46 @@ function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
       - c.risk * 0.10
       + c.edgeScore * 0.10
       + opportunityBoost(c)
+      + penalty
     );
   }
   if (mode === 'insane') {
     // Insane: lottery-ticket mode. Hunts Demon (over-only, payout-
     // boosted) lines aggressively because every Demon stacked on the
-    // card multiplies the final payout (1.25^n on top of Power Play
-    // base). Six Demons on a 6-leg Power Play card targets ~143×.
-    // Risk penalty stays low — Insane users explicitly accept losing
-    // for a real shot at a 100×+ win.
-    const demonBoost = c.isDemon ? 25 : c.isGoblin ? -15 : 0;
+    // card multiplies the final payout (1.05× per Demon per the PP
+    // FAQ). Realistic 6-leg ceiling on Power Play with 6 Demons:
+    // 14 × 1.05^6 ≈ 18.7× — NOT 50× (pre-iter-10 used the contest
+    // 1st-place 37.5× number which is not the standard payout).
+    // Risk penalty stays low — Insane users explicitly accept losing.
+    //
+    // Iter 10 directive (no-obvious picks rule): we no longer reward a
+    // Demon just for being a Demon. We boost when the model says the
+    // over actually clears the demon line (real edge), and we PUNISH
+    // the trivial cases where we'd just be re-telling the user what
+    // PrizePicks already told them via the goblin/demon emoji:
+    //
+    //   Goblin-over  : PP shaved the line down so the over is "easy" →
+    //                  rubber-stamping that has no value to the user.
+    //   Demon-under  : PP pumped the line so the over is "hard" → so
+    //                  the under is "easy" by symmetry; same problem.
+    //
+    // Real edge looks like: Demon-over the model still clears (PP
+    // pumped it but our projection clears anyway), Goblin-under that
+    // looks like a trap (PP shaved it because they expect a public
+    // over, but our model says under).
+    const demonBoost = (c.isDemon && c.direction === 'OVER') ? 25
+      : (c.isGoblin && c.direction === 'UNDER') ? 10
+      : 0;
     return (
       c.projectionDistanceScore * 0.40
       + c.edgePercent * 0.30
       + c.edgeScore * 0.10
       - c.risk * 0.05
       + demonBoost
+      + penalty
     );
   }
-  return c.evScore;     // balanced (default)
+  return c.evScore + penalty;     // balanced (default)
 }
 
 // Resolve auto mode based on slate quality. Looks at the eligible
@@ -989,7 +1030,9 @@ export type Combo = {
   playType?: 'flex' | 'power';
   // Number of Demon legs on the card. Insane mode hunts these for
   // the per-leg payout boost; surfacing the count lets the UI render
-  // "6 Demons stacked → ~143×" copy.
+  // "6 Demons stacked → ~18×" copy. (Pre-iter-10 the comment said
+  // ~143× — that figure descended from the wrong 1st-place 37.5×
+  // table value; real ceiling is 14 × 1.05^6 ≈ 18.7×.)
   demonCount?: number;
   // Average leg edgePercent on this card — quick at-a-glance signal
   // of how much "free probability" the card is capturing.
@@ -1560,14 +1603,19 @@ const SUBTITLES: Record<Combo['label'], string> = {
 // Insane-mode override copy. Lottery-ticket framing: low hit rate,
 // max upside available on PrizePicks. Numbers reference Power Play
 // + Demon-stacked payouts (FAQ weights: 1.05× per Demon).
-//   5-leg Power Play, 5 Demons: 20 × 1.05^5 ≈ 25.5×
-//   6-leg Power Play, 6 Demons: 37.5 × 1.05^6 ≈ 50×
+//   5-leg Power Play, 5 Demons: 20 × 1.05^5 ≈ 25.5×   (5/5 base 20× — VERIFY)
+//   6-leg Power Play, 6 Demons: 14 × 1.05^6 ≈ 18.7×   (6/6 base 14× — VERIFIED May 2026)
+//
+// Pre-iter-10 the 6-leg target was labeled ~50× (33-leg base 37.5× +
+// demon stack). That 37.5× was the contest 1st-place leaderboard
+// prize, not the 6/6 hit payout. Corrected per user-provided May
+// 2026 in-app screenshot: 6/6 standard payout = 14×.
 const INSANE_SUBTITLES: Record<Combo['label'], string> = {
   'Best 2': 'Lottery · 2-leg Power Play',
   'Best 3': 'Lottery · 3-leg Power Play',
   'Best 4': 'Lottery · 4-leg Power Play',
   'Best 5': 'Lottery · ~25× target with Demon stack',
-  'Best 6': 'Lottery · ~50× target with Demon stack',
+  'Best 6': 'Lottery · ~18× target with Demon stack',
   'Wild Card': 'Lottery · maximum-upside fallback',
 };
 

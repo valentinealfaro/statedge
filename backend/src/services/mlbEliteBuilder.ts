@@ -70,8 +70,13 @@ export type EliteTicket = {
   rationale: string[];
 };
 
+// Iter 10 (no-obvious-picks rule): 2-leg payout floor lifted from 3.0×
+// to 3.5×. Two ~78% heavy favorites combine to ~60% → fair ≈ 1.65×,
+// which the spec'd 3.0× was supposed to filter out but didn't fire on
+// the boundary cases the user pointed at. 3.5× pushes the avg per-leg
+// probability ceiling to ~53% — meaningfully into "real edge" territory.
 const MIN_FAIR_PAYOUT_3LEG = 6.0;       // ≥6× per spec for 3-leg
-const MIN_FAIR_PAYOUT_2LEG = 3.0;       // ≥3× for 2-leg fallback
+const MIN_FAIR_PAYOUT_2LEG = 3.5;       // ≥3.5× for 2-leg fallback (iter 10)
 const MIN_PROBABILITY = 60;             // each leg ≥60% (institutional bar)
 const MAX_TRAP_SCORE = 35;
 const MAX_FRAGILITY = 45;

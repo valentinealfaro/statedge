@@ -380,14 +380,19 @@ describe('buildCombos EV engine', () => {
   });
 
   test('Flex Play payouts match the in-app FAQ rates', () => {
-    // Sourced from the PrizePicks FAQ ("standard payout multipliers"):
-    // Flex Play 6/6 = 25x, 5/5 = 10x, 4/4 = 6x, 3/3 = 3x, 2/2 = 3x.
+    // Sourced from the PrizePicks May 2026 in-app screenshot
+    // ("standard n-of-n hit payout multipliers", NOT the contest
+    // 1st-place "minimum guarantee" prize):
+    //   Flex Play 6/6 = 9×   (verified May 2026 screenshot)
+    //   Flex Play 5/5 = 20×  (typical PP 5-leg Flex; VERIFY — kept from prior)
     // Anything else means the table drifted from PrizePicks reality.
+    // Pre-iter-10 the values were 5/5 = 10x and 6/6 = 25x — those
+    // were the contest leaderboard prizes, not the standard payouts.
     const { combos } = buildCombos(strongSlate(20, 80));
     const best5 = combos.find((c) => c.label === 'Best 5');
     const best6 = combos.find((c) => c.label === 'Best 6');
-    expect(best5?.payoutMultiplier).toBe(10);
-    expect(best6?.payoutMultiplier).toBe(25);
+    expect(best5?.payoutMultiplier).toBe(20);
+    expect(best6?.payoutMultiplier).toBe(9);
   });
 
   test('Best 2 with 90% legs at 3x payout reads as Positive EV', () => {
@@ -573,8 +578,10 @@ describe('buildCombos slate modes', () => {
 
   test('Insane mode emits only the lottery card sizes (5 + 6 leg)', () => {
     // Insane is a lottery-ticket mode targeting Power Play 5/6-leg
-    // cards (~38× and ~143× with Demon stacking). The smaller card
-    // sizes don't pay enough to be "insane" so they're suppressed.
+    // cards (~12-25× depending on Demon stacking). Pre-iter-10 the
+    // claim was "~38× and ~143×" — those numbers came from the
+    // wrong (contest 1st-place) base values. Smaller card sizes
+    // don't pay enough to be "insane" so they're suppressed.
     const { combos } = buildCombos(strongSlate(20, 80), 'insane');
     expect(combos.find((c) => c.label === 'Best 2')).toBeUndefined();
     expect(combos.find((c) => c.label === 'Best 3')).toBeUndefined();
@@ -592,9 +599,11 @@ describe('buildCombos slate modes', () => {
       if (c.tag === 'wild') continue;
       expect(c.playType).toBe('power');
       expect(c.payoutMultiplier).toBeDefined();
-      // 5-leg Power base = 20×, 6-leg Power base = 37.5× — the
-      // estimated payout should be at least the base, never below.
-      const base = c.legs.length === 6 ? 37.5 : 20;
+      // 5-leg Power base = 20× (VERIFY), 6-leg Power 6/6 = 14×
+      // (VERIFIED May 2026 screenshot). Estimated payout for an
+      // Insane card should be at least the base; it can exceed when
+      // Demons stack at 1.05× per leg.
+      const base = c.legs.length === 6 ? 14 : 20;
       expect(c.payoutMultiplier!).toBeGreaterThanOrEqual(base);
     }
   });

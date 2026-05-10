@@ -391,7 +391,7 @@ function avg(nums: number[]): number {
 }
 
 function subtitleFor(mode: WnbaResolvedSlateMode, size: number): string {
-  if (mode === 'insane') return size === 6 ? 'Lottery · ~50× target' : 'Lottery · high ceiling';
+  if (mode === 'insane') return size === 6 ? 'Lottery · ~18× target' : 'Lottery · high ceiling';
   if (mode === 'safe') return 'Safe Core · highest probability';
   if (mode === 'aggressive') return size >= 5 ? 'Aggressive Edge · strongest mispricings' : 'Aggressive Edge · projection gaps';
   if (size <= 2) return 'Safe Core · highest probability';

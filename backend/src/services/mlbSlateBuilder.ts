@@ -667,8 +667,12 @@ function subtitleFor(
   size: number,
 ): string {
   if (mode === 'insane') {
+    // Iter-10 corrected ceilings: 6-leg Power Play 6/6 = 14× verified
+    // May 2026; with all-Demon stack 14 × 1.05⁶ ≈ 18.7×. Pre-iter-10
+    // claimed ~50× — that was the contest 1st-place number, not the
+    // actual 6/6 payout.
     return size === 6
-      ? 'Lottery · ~50× target with Demon stack'
+      ? 'Lottery · ~18× target with Demon stack'
       : 'Lottery · ~25× target with Demon stack';
   }
   if (mode === 'safe') return 'Safe Core · highest probability';

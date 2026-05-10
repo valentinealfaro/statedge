@@ -1280,13 +1280,16 @@ function BestPicksRail({
               </div>
               {/* Insane mode: lottery-payout banner. Power Play +
                   Demon-stacked target payout is the headline number
-                  on these cards — users picked Insane explicitly to
-                  chase a 100×+ ticket, so make the payout the loudest
-                  thing on the card. */}
+                  on these cards. Iter 10 corrected the per-Demon
+                  multiplier label (1.05× per FAQ, not 1.25×) and the
+                  realistic ceiling (~18× on a 6-leg all-Demon card,
+                  not 100×+). The displayed `payoutMultiplier` IS
+                  computed correctly per card from the 14× / 9× base
+                  ladder and demon count. */}
               {c.playType === 'power' && c.payoutMultiplier !== undefined && (
                 <div
                   className="best-pick-lottery"
-                  title={`Power Play (all-or-nothing) target payout. ${c.demonCount ? `${c.demonCount} Demon leg${c.demonCount === 1 ? '' : 's'} stacked at 1.25× each. ` : ''}$1 stake → $${Math.round(c.payoutMultiplier)} if every leg hits. Hit rate is intentionally low — this is a lottery ticket.`}
+                  title={`Power Play (all-or-nothing) target payout. ${c.demonCount ? `${c.demonCount} Demon leg${c.demonCount === 1 ? '' : 's'} stacked at 1.05× each. ` : ''}$1 stake → $${Math.round(c.payoutMultiplier)} if every leg hits. Hit rate is intentionally low — this is a lottery ticket.`}
                 >
                   <span className="lottery-payout">~{Math.round(c.payoutMultiplier)}×</span>
                   <span className="lottery-target"> target · $1 → ${Math.round(c.payoutMultiplier)}</span>
@@ -2655,7 +2658,7 @@ function SlateModeSelector({
     { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
     { id: 'balanced',   label: 'Balanced',   hint: 'Best risk-adjusted EV across all card sizes',       meter: 2, recommended: true },
     { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
-    { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~50× target · Power Play + Demons',   meter: 5 },
+    { id: 'insane',     label: 'Insane',     hint: 'Lottery ticket · ~18× target · Power Play + Demons',   meter: 5 },
     { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
   ];
   const showAutoBadge = mode === 'auto' && resolvedMode !== undefined;
@@ -2694,11 +2697,12 @@ function SlateModeSelector({
       )}
       {mode === 'insane' && (
         <div className="slate-mode-insane-warn">
-          🎟 Lottery-ticket mode. Cards target <strong>~25×</strong> (5-leg)
-          and <strong>~50×</strong> (6-leg) using PrizePicks Power Play +
-          Demon-stacked legs (FAQ scoring weights). Hit rate is intentionally
-          low — most cards will miss. ~50× is the realistic ceiling on a
-          single PrizePicks card.
+          🎟 Lottery-ticket mode. Cards target <strong>~12×</strong> (5-leg
+          all-Demon) and <strong>~18×</strong> (6-leg all-Demon) using
+          PrizePicks Power Play. Verified May 2026: 6-leg 6/6 pays 14×
+          base; with six Demons stacked at 1.05× per leg, the realistic
+          ceiling is 14 × 1.05⁶ ≈ <strong>18.7×</strong> — not 50×.
+          Hit rate is intentionally low — most cards will miss.
         </div>
       )}
     </div>
@@ -3089,15 +3093,18 @@ function ParlayTrayLeg({
   );
 }
 
-// Reference PrizePicks payout multipliers (Power Plays). Used for a
-// rough "if this hits, you'd win Nx your entry" hint — informational,
-// no betting advice in any direction.
+// Reference PrizePicks payout multipliers. Verified against May 2026
+// in-app screenshots — these are the n-of-n hit payouts (the standard
+// payout a user pocketing every leg actually receives), NOT the
+// contest 1st-place leaderboard "minimum guarantee" prize. Pre-iter-10
+// the 6-leg value was 35, descending from a misread of the 1st-place
+// 37.5× number; real 6/6 payout is 14×.
 const PRIZEPICKS_PAYOUTS: Record<number, number | undefined> = {
   2: 3,
   3: 5,
   4: 10,
   5: 20,
-  6: 35,
+  6: 14,            // VERIFIED May 2026: "6 correct pays 14X" on Power Play
 };
 
 
