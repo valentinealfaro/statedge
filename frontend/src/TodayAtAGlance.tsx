@@ -181,7 +181,7 @@ export function TodayAtAGlance() {
         value={String(glance.activeEdges)}
         sub={glance.totalProps > 0 ? `of ${glance.totalProps} props ≥ 5%` : 'no slate published'}
         accent={glance.activeEdges >= 10 ? '#66bb6a' : glance.activeEdges >= 3 ? '#7aa2ff' : 'rgba(255,255,255,0.45)'}
-        href="/dashboard"
+        href="/best-bets"
       />
 
       <Cell
