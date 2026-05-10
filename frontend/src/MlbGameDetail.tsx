@@ -509,10 +509,14 @@ function SameGameParlay({
             {graded.map(({ leg: l, current, grade }, i) => (
               <div key={i} className="best-pick-leg-block">
                 <div className="best-pick-leg">
-                  <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Link
+                    to={`/mlb/player/${l.playerId}`}
+                    className="best-pick-leg-name mlb-leader-link"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}
+                  >
                     <MlbPlayerAvatar playerId={l.playerId} name={l.playerName} size="md" />
                     {l.playerName}
-                  </span>
+                  </Link>
                   <span className="best-pick-leg-stat">
                     {l.statLabel} {l.line}
                   </span>
@@ -721,13 +725,17 @@ function Lineups({ game }: { game: MlbTodayGame }) {
             </thead>
             <tbody>
               {side.map((b) => (
-                <tr key={b.playerId}>
+                <tr key={b.playerId} className="mlb-clickable-row">
                   <td>{b.battingOrder || '—'}</td>
                   <td>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Link
+                      to={`/mlb/player/${b.playerId}`}
+                      className="mlb-player-link"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}
+                    >
                       <MlbPlayerAvatar playerId={b.playerId} name={b.name} size="md" />
                       <strong>{b.name}</strong>
-                    </span>
+                    </Link>
                   </td>
                   <td>{b.position}</td>
                   <td className="num">{b.avg ?? '—'}</td>
@@ -808,13 +816,18 @@ function Leaders({ game }: { game: MlbTodayGame }) {
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Top hitters · AVG</div>
             {side.hittingAvg.map((l) => (
-              <div key={`avg-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Link
+                key={`avg-${l.playerId}`}
+                to={`/mlb/player/${l.playerId}`}
+                className="best-pick-leg mlb-leader-link"
+                style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
                   {l.name}
                 </span>
                 <span className="best-pick-leg-stat">{l.value} <span className="muted small">({l.context})</span></span>
-              </div>
+              </Link>
             ))}
           </div>
         )}
@@ -822,13 +835,18 @@ function Leaders({ game }: { game: MlbTodayGame }) {
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Power · HR</div>
             {side.hittingHr.map((l) => (
-              <div key={`hr-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Link
+                key={`hr-${l.playerId}`}
+                to={`/mlb/player/${l.playerId}`}
+                className="best-pick-leg mlb-leader-link"
+                style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
                   {l.name}
                 </span>
                 <span className="best-pick-leg-stat">{l.value} HR <span className="muted small">({l.context})</span></span>
-              </div>
+              </Link>
             ))}
           </div>
         )}
@@ -836,13 +854,18 @@ function Leaders({ game }: { game: MlbTodayGame }) {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Starting rotation · ERA</div>
             {side.pitchingEra.map((l) => (
-              <div key={`era-${l.playerId}`} className="best-pick-leg">
-                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Link
+                key={`era-${l.playerId}`}
+                to={`/mlb/player/${l.playerId}`}
+                className="best-pick-leg mlb-leader-link"
+                style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <span className="best-pick-leg-name" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <MlbPlayerAvatar playerId={l.playerId} name={l.name} size="md" />
                   {l.name}
                 </span>
                 <span className="best-pick-leg-stat">{l.value} ERA <span className="muted small">({l.context})</span></span>
-              </div>
+              </Link>
             ))}
           </div>
         )}
