@@ -1,3 +1,24 @@
+// Postgres connection + query layer for the entire backend. ~50
+// exported helpers covering NBA + MLB + WNBA persisted state,
+// keyed off DATABASE_URL (Neon connection string in prod, local
+// docker postgres in dev). Tables managed here:
+//
+//   NBA       slate_results · slate_combos · player_game_logs ·
+//             team_game_logs · candidate_lookup
+//   MLB       mlb_daily_slate · mlb_projection_history ·
+//             mlb_calibration · mlb_player_cache
+//   WNBA      wnba_daily_slate · wnba_projection_history ·
+//             wnba_calibration · wnba_team_records
+//   Cross-sport elite_tickets · market_snapshots
+//
+// MMA persistence lives under its own module (mma/slateStore.ts)
+// rather than here — UFC slate is a thinner row shape that pre-dates
+// the sport-grouped consolidation. CLV computation reads
+// market_snapshots × per-sport projection_history from this file.
+//
+// All helpers return null/empty arrays when DB isn't configured —
+// tests + local dev without a DB stay functional.
+
 import pg from 'pg';
 import type { NbaPlayer, PlayerGame, TeamGame } from './nba/client.js';
 
