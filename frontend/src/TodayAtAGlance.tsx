@@ -1,15 +1,17 @@
-// TodayAtAGlance — Phase 147.
+// TodayAtAGlance — Phase 147, extended through iter 67.
 //
-// Bloomberg-style top-strip surfacing the four numbers that matter when
-// a user lands on the site mid-day:
-//   • Live games count (NBA + MLB combined)
-//   • Active edges count (props with edge ≥ 5%)
+// Bloomberg-style top-strip surfacing the four numbers that matter
+// when a user lands on the site mid-day. Mounted across five
+// institutional surfaces (Home, Dashboard, Best Bets, Elite,
+// Starred) so the headline state is the same wherever the user is.
+//   • Live games count (NBA + MLB + UFC, including in-progress fights)
+//   • Active edges count (props with |edge| ≥ 5%, NBA + MLB + UFC)
 //   • Today's Elite ticket verdict (if persisted)
 //   • Tonight's combined CLV beat-rate (truth-metric pulse)
 //
 // Polls every 60s so values reflect the moment users glance at it.
-// Self-hides on quiet days when nothing is moving — the home page
-// stays clean rather than showing a row of zeros.
+// Self-hides on quiet days when nothing is moving — those pages stay
+// clean rather than showing a row of zeros.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
