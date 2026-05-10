@@ -2774,7 +2774,7 @@ function SlateModeSelector({
     { id: 'safe',       label: 'Safe',       hint: 'Higher hit rate · lowest variance · 2-4 leg cards', meter: 1 },
     { id: 'balanced',   label: 'Balanced',   hint: 'Best risk-adjusted EV across all card sizes',       meter: 2, recommended: true },
     { id: 'aggressive', label: 'Aggressive', hint: 'Edge-hunting · projection gaps · 3-6 leg cards',     meter: 4 },
-    { id: 'insane',     label: 'Insane',     hint: 'Market-disagreement lottery · model says hit, book says no',   meter: 5 },
+    { id: 'insane',     label: 'Insane',     hint: 'Market-disagreement lottery · ~160× ceiling on 6 Demons',   meter: 5 },
     { id: 'auto',       label: 'Auto',       hint: 'Adapts to slate quality · picks the right mode',     meter: 3 },
   ];
   const showAutoBadge = mode === 'auto' && resolvedMode !== undefined;
@@ -2817,11 +2817,12 @@ function SlateModeSelector({
           legs where our model says <strong>might hit</strong> AND the
           de-vigged sportsbook market disagrees by{' '}
           <strong>≥12pp</strong>. That gap is the lottery edge — the
-          payout exists because the book thinks it won't hit. Cards
-          target ~12× (5-leg all-Demon) and ~18× (6-leg all-Demon) on
-          PrizePicks Power Play. When the slate has no Demon legs that
-          clear the disagreement bar, Insane shows nothing rather than
-          fabricating a lottery out of consensus picks.
+          payout exists because the book thinks it won't hit. Real
+          PrizePicks Power Play ceiling with 6 Demons stacked is{' '}
+          <strong>~160×</strong> (verified user lineup, May 2026). When
+          the slate has no Demon legs that clear the disagreement bar,
+          Insane shows nothing rather than fabricating a lottery out
+          of consensus picks.
         </div>
       )}
     </div>

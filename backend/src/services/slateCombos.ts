@@ -129,14 +129,15 @@ export const PRIZEPICKS_POWER_PLAY_PAYOUTS: Record<number, number> = {
 };
 
 // Per-leg payout multiplier for PrizePicks Demon (over-only, harder
-// line) and Goblin (under-only, easier line). Sourced from the FAQ
-// scoring weights: "Each correct Demon pick is worth 1.05 points"
-// and "Each correct Goblin pick is worth 0.95 points." This is the
-// canonical PrizePicks weight; previous versions used 1.25 / 0.85
-// based on misread industry estimates. Conservative numbers here
-// prevent the UI from overstating the lottery ceiling.
-const DEMON_LEG_MULTIPLIER = 1.05;
-const GOBLIN_LEG_MULTIPLIER = 0.95;
+// line) and Goblin (under-only, easier line). Iter 20 (user 2026-05-10)
+// updated from 1.05 / 0.95 to 1.5 / 0.85 after a user-supplied real
+// PrizePicks lineup screenshot showed:
+//   6 Demons on Power Play 6/6 = 163× → 14 × 1.5⁶ ≈ 159× (close)
+//   6 Goblins on Power Play 6/6 = 4.25× → 14 × 0.823⁶ ≈ 4.25× (exact)
+// Pre-iter-20 the displayed lottery ceiling was ~18× on a 6-Demon
+// card; real PrizePicks pays ~160×. Off by ~9×.
+const DEMON_LEG_MULTIPLIER = 1.5;
+const GOBLIN_LEG_MULTIPLIER = 0.85;
 
 // Estimate a card's PrizePicks payout, factoring in Demon/Goblin
 // per-leg multipliers and the user's chosen play type. Insane uses
@@ -1619,19 +1620,19 @@ const SUBTITLES: Record<Combo['label'], string> = {
   'Wild Card': 'Higher Risk · Higher Upside',
 };
 
-// Insane-mode override copy. Iter 16 reshape (user 2026-05-10):
-// Insane = market-disagreement lottery. Picks where our formula
-// says might hit AND the de-vigged market disagrees by ≥12pp.
-// Demon-only stays. Numbers reference Power Play + Demon-stacked
-// payouts (FAQ weights: 1.05× per Demon).
-//   5-leg Power Play, 5 Demons: 20 × 1.05^5 ≈ 25.5×   (5/5 base 20× — VERIFY)
-//   6-leg Power Play, 6 Demons: 14 × 1.05^6 ≈ 18.7×   (6/6 base 14× — VERIFIED May 2026)
+// Insane-mode override copy. Iter 20 (user-supplied real PrizePicks
+// Demon ticket 2026-05-10) corrected the Demon multiplier from 1.05
+// to 1.5 per leg. Real ceilings on Power Play with all-Demon stacks:
+//   5-leg, 5 Demons: 20 × 1.5⁵ ≈ 152×    (5/5 base 20× — VERIFY)
+//   6-leg, 6 Demons: 14 × 1.5⁶ ≈ 159×    (6/6 base 14× — VERIFIED May 2026)
+// Real user screenshot showed 6-Demon 6/6 = 163× — within ~3% of our
+// estimate. Pre-iter-20 we labeled this ~18× which was off by ~9×.
 const INSANE_SUBTITLES: Record<Combo['label'], string> = {
   'Best 2': 'Market disagrees · 2-leg Power Play',
   'Best 3': 'Market disagrees · 3-leg Power Play',
   'Best 4': 'Market disagrees · 4-leg Power Play',
-  'Best 5': 'Market disagrees · ~25× target with Demon stack',
-  'Best 6': 'Market disagrees · ~18× target with Demon stack',
+  'Best 5': 'Market disagrees · ~150× target with Demon stack',
+  'Best 6': 'Market disagrees · ~160× target with Demon stack',
   'Wild Card': 'Lottery · maximum-upside fallback',
 };
 

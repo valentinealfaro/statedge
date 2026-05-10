@@ -129,6 +129,14 @@ slateRouter.get('/auto', async (_req, res) => {
     // exactly one of those teams, so the OTHER one is the opponent.
     const raw: RawLine[] = ppLines.map((p) => {
       const opponent = parseOpponent(p.description, p.team);
+      // Iter 21: pass PrizePicks oddsType through to direction so the
+      // demon-only Insane filter and the lottery payout estimator
+      // see real demon/goblin restrictions instead of treating every
+      // NBA prop as a standard 'both' prop.
+      const direction: 'over' | 'under' | 'both' =
+        p.oddsType === 'demon' ? 'over'
+        : p.oddsType === 'goblin' ? 'under'
+        : 'both';
       return {
         playerName: p.playerName,
         team: p.team,
@@ -140,6 +148,7 @@ slateRouter.get('/auto', async (_req, res) => {
         startTime: p.startTime,
         description: p.description,
         opponentAbbr: opponent,
+        direction,
       };
     });
     const out = await resolveSlate(raw, 'prizepicks_auto');
@@ -422,13 +431,21 @@ async function autoPublishFromPrizePicks(): Promise<StoredSlateLine[]> {
     if (!p.playerName || !p.statType) continue;
     if (!Number.isFinite(p.line) || p.line <= 0) continue;
     const opp = parseOpponent(p.description, p.team);
+    // Iter 21: same direction mapping as the auto-resolve path. Without
+    // this the persisted slate had every prop tagged 'both' regardless
+    // of its real PrizePicks Demon/Goblin status, which broke the
+    // demon-only Insane filter on subsequent reads of stored slates.
+    const direction: 'over' | 'under' | 'both' =
+      p.oddsType === 'demon' ? 'over'
+      : p.oddsType === 'goblin' ? 'under'
+      : 'both';
     stored.push({
       playerName: p.playerName,
       statLabel: p.statType,
       line: p.line,
       team: p.team || undefined,
       opponentAbbr: opp,
-      direction: 'both',
+      direction,
     });
   }
   if (stored.length === 0) return [];
