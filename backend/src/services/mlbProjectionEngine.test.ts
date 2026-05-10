@@ -829,3 +829,76 @@ describe('computeMlbProjection — per-stat stddev floors (iter 5)', () => {
     expect(r.probability).toBeGreaterThanOrEqual(5);
   });
 });
+
+describe('computeMlbProjection — compound multiplier cap (iter 7)', () => {
+  // Stack every multiplier toward OVER (Coors + tailwind +
+  // top-of-order + plus BvP + favorite). Without the [0.65, 1.45]
+  // cap a player projecting 0.7 hits would balloon to 1.4+, easily
+  // clearing a 0.5 line and producing 88%+ probability the
+  // calibration loop has to band-aid back down. With the cap,
+  // projection stops at 0.7 * 1.45 = 1.015 — still clearly an
+  // OVER lean but not absurdly inflated.
+  test('Perfect-storm context multipliers cap at 1.45x baseline projection', () => {
+    // Pin every baseline signal at 1.0 so baselineProjection = 1.0
+    // and the test isolates the compound-multiplier cap.
+    const r = computeMlbProjection(inputs({
+      statKey: 'hits',
+      direction: 'OVER',
+      line: 0.5,
+      last10: makeLast10({
+        values: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        sampleSize: 10,
+        last10Average: 1.0,
+        last5Average: 1.0,
+        stddev: 0,
+      }),
+      seasonAverage: 1.0,
+      seasonGames: 100,
+      opponentAverage: 1.0,
+      opponentGames: 10,
+      homeAverage: 1.0,
+      awayAverage: 1.0,
+      isHome: true,
+      // Stack everything toward OVER:
+      parkFactor: { code: 'COL', label: 'Coors Field', factors: { hits: 1.18, home_runs: 1.20, runs: 1.15 } } as any,
+      weather: { tempF: 92, windSpeedMph: 14, windDirection: 'OUT', roofClosed: false } as any,
+      lineupSpot: 3,
+      bvp: { plateAppearances: 40, hits: 20, doubles: 6, triples: 0, homeRuns: 4, walks: 4, strikeouts: 4 } as any,
+      gameScript: 70,
+    }));
+    // Pre-iter-7 the compound multiplier could stack >1.5x and
+    // produce projection >1.5 with 90%+ probability. Capped at
+    // 1.45x of 1.0 baseline → projection ≤ 1.45 → z ≤ ~1.0 →
+    // probability ≤ 85%. Honest given the May 2026 data showed
+    // 85%+ buckets actually hit at 67%.
+    expect(r.projection).toBeLessThanOrEqual(1.45);
+  });
+
+  test('Symmetric — fully suppressive context bottoms at 0.65x baseline', () => {
+    const r = computeMlbProjection(inputs({
+      statKey: 'hits',
+      direction: 'OVER',
+      line: 0.5,
+      last10: makeLast10({
+        values: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        sampleSize: 10,
+        last10Average: 1.0,
+        last5Average: 1.0,
+        stddev: 0,
+      }),
+      seasonAverage: 1.0,
+      seasonGames: 100,
+      opponentAverage: 1.0,
+      opponentGames: 10,
+      homeAverage: 1.0,
+      awayAverage: 1.0,
+      isHome: true,
+      // Stack everything against the hitter:
+      parkFactor: { code: 'SF', label: 'Oracle Park', factors: { hits: 0.85, home_runs: 0.85, runs: 0.85 } } as any,
+      weather: { tempF: 38, windSpeedMph: 18, windDirection: 'IN', roofClosed: false } as any,
+      lineupSpot: 9,
+      gameScript: 28,
+    }));
+    expect(r.projection).toBeGreaterThanOrEqual(0.65);
+  });
+});

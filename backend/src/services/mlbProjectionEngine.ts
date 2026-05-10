@@ -963,9 +963,38 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const pitchArsenalMult = 1.0;     // scaffold — needs Statcast
   const bullpenMult = 1.0;          // scaffold — needs reliever workload tracking
 
-  const totalContextMult =
+  // Iter 7 of the formula loop: cap the compound multiplier at
+  // [0.65, 1.45] so a perfect-storm context doesn't multiply
+  // baseline 2x or compress it to nothing.
+  //
+  // Evidence: the May 2026 calibration showed the engine overclaims
+  // hitter probabilities by 25-65pp across most stats, and even iter
+  // 6's 35pp calibration cap leaves residual gaps. Tracing the
+  // overclaim to source: 7 multipliers compounding multiplicatively
+  // with no cap can stack to 2.0x when context is fully aligned
+  // (park 1.20 × weather 1.15 × lineup 1.15 × BvP 1.20 × gameScript
+  // 1.05 ≈ 2.00). Doubling baseline gets a player from 0.7 singles
+  // baseline to 1.4 projected — easily clears the 0.5 line and
+  // produces 88% probability the calibration loop then has to
+  // band-aid back down.
+  //
+  // 1.45 cap matches industry context-stacking discipline: even on
+  // a "perfect day" (Coors + tailwind + cleanup spot + good BvP +
+  // favorite + plus matchup), a single-game projection rarely
+  // exceeds +45% above baseline in actual MLB data. The 0.65 floor
+  // is symmetric — a fully-suppressive context (away vs ace + cold
+  // wind + 9-spot + bad BvP + heavy underdog) bottoms out at 35%
+  // below baseline, not zero.
+  //
+  // Honest about the limit: this is a coarse cap. A finer fix would
+  // be to weight multipliers by signal strength (e.g. BvP needs
+  // 30+ PAs to count fully) and re-blend non-multiplicatively. That's
+  // larger surgery; for this iteration, the cap closes the worst
+  // of the inflation cheaply.
+  const rawContextMult =
     parkMult * weatherMult * lineupMult * bvpMult * gameScriptMult
     * pitchArsenalMult * bullpenMult;
+  const totalContextMult = Math.max(0.65, Math.min(1.45, rawContextMult));
   const projection = baselineProjection * totalContextMult;
 
   // ----- Probability via normal approximation -----
