@@ -12,6 +12,7 @@ import { fetchUfcScoreboard } from '../mma/espn.js';
 import { generateElitePlay, type ElitePlayLeg } from '../news/templates.js';
 import { upsertArticle } from '../news/store.js';
 import { gradeEliteTickets, listEliteTickets, upsertEliteTicket } from '../services/eliteTicketStore.js';
+import { liveGradeElite } from '../services/liveEliteGrader.js';
 import { resolveSlate, type RawLine, type ResolvedLine } from '../services/slatePipeline.js';
 import { ocrPropBoard } from '../services/slateOcr.js';
 import {
@@ -443,6 +444,84 @@ async function handleGradeElite(_req: Parameters<Parameters<typeof slateRouter.g
 }
 slateRouter.get('/elite/grade', handleGradeElite);
 slateRouter.post('/elite/grade', handleGradeElite);
+
+// GET /api/slate/elite/live-state
+//
+// Live per-leg grading for today's persisted Elite ticket. Returns a
+// real-time scoreboard of every leg's current value + verdict so the
+// /elite UI can show an in-flight track record while games are running.
+// Frontend polls this every ~60s during active windows; cache headers
+// keep edge load reasonable.
+slateRouter.get('/elite/live-state', async (_req, res) => {
+  try {
+    const todayEt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+
+    // Pull today's persisted ticket. We grade the persisted version
+    // (not a fresh build) so the live state always corresponds to the
+    // same ticket users are viewing on /elite.
+    const tickets = await listEliteTickets({ limit: 1 });
+    const today = tickets.find((t) => t.ticketDate === todayEt) ?? tickets[0];
+    if (!today) {
+      res.json({ ticketDate: null, legs: [], rollup: null, reason: 'no ticket persisted yet' });
+      return;
+    }
+
+    // legsJson is `unknown` in storage; trust the writer side wrote
+    // the EliteTicket.legs shape. Defensive narrow.
+    const rawLegs = Array.isArray(today.legsJson) ? today.legsJson as Array<{
+      playerId: number | string;
+      playerName: string;
+      statKey: string;
+      direction: 'OVER' | 'UNDER';
+      line: number;
+    }> : [];
+    const inputs = rawLegs.map((l) => ({
+      playerId: typeof l.playerId === 'number' ? l.playerId : Number(l.playerId) || 0,
+      playerName: l.playerName,
+      statKey: l.statKey,
+      direction: l.direction,
+      line: l.line,
+    }));
+
+    const states = await liveGradeElite(inputs, todayEt);
+
+    // Ticket-level rollup from per-leg verdicts.
+    const tally = { hit: 0, miss: 0, pending: 0, inFlight: 0, ungraded: 0 };
+    for (const s of states) {
+      if (s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT') tally.hit++;
+      else if (s.verdict === 'MISS' || s.verdict === 'ON_PACE_MISS' || s.verdict === 'PUSH') tally.miss++;
+      else if (s.verdict === 'IN_FLIGHT') tally.inFlight++;
+      else if (s.verdict === 'UNGRADED') tally.ungraded++;
+      else tally.pending++;
+    }
+
+    // Edge cache for ~30s — short enough that mid-game updates land,
+    // long enough to dampen polling traffic.
+    res.setHeader('Cache-Control', 'public, max-age=30');
+    res.json({
+      ticketDate: today.ticketDate,
+      ticketId: today.id,
+      legs: states,
+      rollup: {
+        legsTotal: states.length,
+        ...tally,
+        // True-final ticket-level result, only set when every leg is in.
+        ticketVerdict:
+          states.length > 0 && states.every((s) => s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT')
+            ? 'HIT'
+            : states.some((s) => s.verdict === 'MISS' || s.verdict === 'ON_PACE_MISS' || s.verdict === 'PUSH')
+              ? 'MISS'
+              : null,
+      },
+    });
+  } catch (err) {
+    console.error('slate/elite/live-state failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
 
 // GET /api/slate/elite/cross-sport/today
 //

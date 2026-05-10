@@ -2033,6 +2033,52 @@ export async function getEliteHistory(opts?: { limit?: number }): Promise<{ tick
   return (await res.json()) as { tickets: StoredEliteTicket[]; count: number };
 }
 
+// Phase 145 — live per-leg grading for today's persisted Elite ticket.
+// Frontend polls this every ~60s during the live window so users see
+// real-time leg state on /elite without having to refresh.
+export type EliteLegLiveVerdict =
+  | 'PENDING'
+  | 'IN_FLIGHT'
+  | 'ON_PACE_HIT'
+  | 'ON_PACE_MISS'
+  | 'HIT'
+  | 'MISS'
+  | 'PUSH'
+  | 'UNGRADED';
+
+export type EliteLegLiveState = {
+  playerId: number;
+  playerName: string;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  line: number;
+  currentValue: number | null;
+  gameStatus: 'pre' | 'live' | 'final' | 'unknown';
+  verdict: EliteLegLiveVerdict;
+};
+
+export type EliteLiveStateResponse = {
+  ticketDate: string | null;
+  ticketId?: number;
+  legs: EliteLegLiveState[];
+  rollup: {
+    legsTotal: number;
+    hit: number;
+    miss: number;
+    pending: number;
+    inFlight: number;
+    ungraded: number;
+    ticketVerdict: 'HIT' | 'MISS' | null;
+  } | null;
+  reason?: string;
+};
+
+export async function getEliteLiveState(): Promise<EliteLiveStateResponse> {
+  const res = await fetch(`${API_BASE}/api/slate/elite/live-state`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as EliteLiveStateResponse;
+}
+
 export async function getCrossSportEliteToday(): Promise<CrossSportEliteResponse> {
   const res = await fetch(`${API_BASE}/api/slate/elite/cross-sport/today`);
   if (!res.ok) {

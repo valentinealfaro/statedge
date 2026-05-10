@@ -9,12 +9,15 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getCrossSportEliteToday,
+  getEliteLiveState,
   getMlbEliteToday,
   getNbaEliteToday,
   type CrossSportEliteResponse,
   type CrossSportEliteTicket,
   type EliteEdgeReason,
   type EliteLeg,
+  type EliteLegLiveState,
+  type EliteLiveStateResponse,
   type EliteResponse,
   type EliteTicket,
 } from './api';
@@ -99,6 +102,10 @@ export function Elite() {
   const [view, setView] = useState<EliteView>('cross');
   const [data, setData] = useState<EliteResponse | CrossSportEliteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Phase 145 — live per-leg verdict state, refreshed every 60s while
+  // viewing cross-sport ticket. Cross-sport is the only view that
+  // currently writes to elite_tickets, so live grading is keyed off it.
+  const [liveState, setLiveState] = useState<EliteLiveStateResponse | null>(null);
 
   useEffect(() => {
     setData(null);
@@ -112,6 +119,36 @@ export function Elite() {
       .then((r) => setData(r))
       .catch((e: Error) => setError(e.message));
   }, [view]);
+
+  // Poll live grading state for the cross-sport ticket. The endpoint
+  // grades the persisted ticket from elite_tickets, so it works
+  // whether the user is on /elite right now or visiting later in the
+  // day. 60s cadence — generous enough to dampen Vercel function load,
+  // tight enough that mid-game updates feel real-time.
+  useEffect(() => {
+    if (view !== 'cross') {
+      setLiveState(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      getEliteLiveState()
+        .then((r) => { if (!cancelled) setLiveState(r); })
+        .catch(() => { if (!cancelled) setLiveState(null); });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [view]);
+
+  // Build a leg→live-state lookup keyed on `playerId-statKey-direction`
+  // so TicketCard can render live verdicts inline.
+  const liveByLegKey = new Map<string, EliteLegLiveState>();
+  if (liveState?.legs) {
+    for (const s of liveState.legs) {
+      liveByLegKey.set(`${s.playerId}-${s.statKey}-${s.direction}`, s);
+    }
+  }
 
   // CrossSportTicket extends EliteTicket with tierName + sportsCovered.
   // The render path treats them uniformly; tier-specific labeling is
@@ -190,7 +227,14 @@ export function Elite() {
           </div>
         )}
 
-        {data && ticket && <TicketCard ticket={ticket} date={'date' in data ? data.date : undefined} />}
+        {data && ticket && (
+          <TicketCard
+            ticket={ticket}
+            date={'date' in data ? data.date : undefined}
+            liveByLegKey={view === 'cross' ? liveByLegKey : null}
+            rollup={view === 'cross' ? liveState?.rollup ?? null : null}
+          />
+        )}
         {data && !ticket && (
           <NoTicketCard reason={data.reason ?? 'no qualifying edge today'} candidates={candidatesScanned} />
         )}
@@ -256,7 +300,17 @@ function ViewTab({ active, onClick, children, accent }: { active: boolean; onCli
   );
 }
 
-function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTicket; date?: string }) {
+function TicketCard({
+  ticket,
+  date,
+  liveByLegKey,
+  rollup,
+}: {
+  ticket: EliteTicket | CrossSportEliteTicket;
+  date?: string;
+  liveByLegKey: Map<string, EliteLegLiveState> | null;
+  rollup: EliteLiveStateResponse['rollup'] | null;
+}) {
   const gradeColor = ticket.grade === 'A+' ? '#66bb6a' : ticket.grade === 'A' ? '#7aa2ff' : '#ffd54f';
   return (
     <section className="fade-up" style={{
@@ -339,9 +393,47 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTic
         </div>
       </div>
 
+      {/* Live rollup chip — shows when at least one leg has resolved */}
+      {rollup && rollup.legsTotal > 0 && (rollup.hit + rollup.miss + rollup.inFlight) > 0 && (
+        <div style={{
+          marginTop: 14, marginBottom: 4,
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+        }}>
+          <span className="live-pulse" style={{
+            display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+            background: rollup.ticketVerdict === 'HIT' ? '#66bb6a'
+              : rollup.ticketVerdict === 'MISS' ? '#ef5350'
+              : '#ffd54f',
+          }} />
+          <span style={{ color: 'rgba(255,255,255,0.65)' }}>Live</span>
+          {rollup.hit > 0 && <span style={{ color: '#66bb6a' }}>{rollup.hit} hit</span>}
+          {rollup.inFlight > 0 && <span style={{ color: '#ffd54f' }}>{rollup.inFlight} in flight</span>}
+          {rollup.miss > 0 && <span style={{ color: '#ef5350' }}>{rollup.miss} miss</span>}
+          {rollup.pending > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>{rollup.pending} pending</span>}
+          {rollup.ungraded > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>{rollup.ungraded} ungraded</span>}
+          {rollup.ticketVerdict === 'HIT' && (
+            <span style={{
+              padding: '2px 8px', borderRadius: 3, color: '#66bb6a',
+              background: 'rgba(102,187,106,0.14)', border: '1px solid rgba(102,187,106,0.40)',
+            }}>✓ Ticket HIT</span>
+          )}
+          {rollup.ticketVerdict === 'MISS' && (
+            <span style={{
+              padding: '2px 8px', borderRadius: 3, color: '#ef5350',
+              background: 'rgba(239,83,80,0.14)', border: '1px solid rgba(239,83,80,0.40)',
+            }}>✗ Ticket MISS</span>
+          )}
+        </div>
+      )}
+
       {/* Legs */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {ticket.legs.map((leg, i) => <LegCard key={`${leg.playerId}-${leg.statKey}`} leg={leg} index={i} />)}
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ticket.legs.map((leg, i) => {
+          const liveKey = `${leg.playerId}-${leg.statKey}-${leg.direction}`;
+          const live = liveByLegKey?.get(liveKey) ?? null;
+          return <LegCard key={`${leg.playerId}-${leg.statKey}`} leg={leg} index={i} live={live} />;
+        })}
       </div>
 
       {/* Why this ticket */}
@@ -357,7 +449,58 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTic
   );
 }
 
-function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
+// Live verdict pill — colored badge showing where the leg currently
+// stands. Honest about pending / ungraded states (MMA legs and pre-game
+// games don't get fake numbers).
+function LiveVerdictBadge({ live }: { live: EliteLegLiveState | null }) {
+  if (!live) return null;
+  const v = live.verdict;
+  const cur = live.currentValue;
+  let color = '#7aa2ff';
+  let bg = 'rgba(122,162,255,0.10)';
+  let border = 'rgba(122,162,255,0.32)';
+  let label: string = v;
+  if (v === 'HIT' || v === 'ON_PACE_HIT') {
+    color = '#66bb6a'; bg = 'rgba(102,187,106,0.14)'; border = 'rgba(102,187,106,0.40)';
+    label = v === 'HIT' ? '✓ HIT' : '✓ ON PACE';
+  } else if (v === 'MISS' || v === 'ON_PACE_MISS') {
+    color = '#ef5350'; bg = 'rgba(239,83,80,0.14)'; border = 'rgba(239,83,80,0.40)';
+    label = v === 'MISS' ? '✗ MISS' : '✗ LOCKED OUT';
+  } else if (v === 'PUSH') {
+    color = '#ffd54f'; bg = 'rgba(255,213,79,0.12)'; border = 'rgba(255,213,79,0.36)';
+    label = '— PUSH';
+  } else if (v === 'IN_FLIGHT') {
+    color = '#ffd54f'; bg = 'rgba(255,213,79,0.10)'; border = 'rgba(255,213,79,0.32)';
+    label = 'IN FLIGHT';
+  } else if (v === 'PENDING') {
+    color = 'rgba(255,255,255,0.55)'; bg = 'rgba(255,255,255,0.04)'; border = 'rgba(255,255,255,0.12)';
+    label = live.gameStatus === 'pre' ? 'PRE-GAME' : 'PENDING';
+  } else if (v === 'UNGRADED') {
+    color = 'rgba(255,255,255,0.5)'; bg = 'rgba(255,255,255,0.04)'; border = 'rgba(255,255,255,0.10)';
+    label = 'UNGRADED';
+  }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+      padding: '3px 8px', borderRadius: 3, color, background: bg,
+      border: `1px solid ${border}`,
+      whiteSpace: 'nowrap',
+    }}>
+      {(v === 'IN_FLIGHT' || v === 'ON_PACE_HIT' || v === 'ON_PACE_MISS') && (
+        <span className="live-pulse" style={{
+          display: 'inline-block', width: 6, height: 6, borderRadius: 3, background: color,
+        }} />
+      )}
+      {label}
+      {cur !== null && (v === 'IN_FLIGHT' || v === 'ON_PACE_HIT' || v === 'ON_PACE_MISS' || v === 'HIT' || v === 'MISS' || v === 'PUSH') && (
+        <span style={{ fontWeight: 600, opacity: 0.85 }}>· {cur}</span>
+      )}
+    </span>
+  );
+}
+
+function LegCard({ leg, index, live }: { leg: EliteLeg; index: number; live: EliteLegLiveState | null }) {
   const dirColor = leg.direction === 'OVER' ? '#66bb6a' : '#ef5350';
   const sport = detectLegSport(leg);
   const sportColor = sport === 'mlb' ? '#66bb6a' : sport === 'mma' ? '#ef5350' : '#7aa2ff';
@@ -410,12 +553,15 @@ function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
               </span>
               {leg.team && <span className="muted small" style={{ fontSize: 11, marginLeft: 6 }}>{leg.team}</span>}
             </div>
-            <span style={{
-              fontSize: 13, fontWeight: 800,
-              color: dirColor,
-            }}>
-              {leg.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'} {leg.line}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <LiveVerdictBadge live={live} />
+              <span style={{
+                fontSize: 13, fontWeight: 800,
+                color: dirColor,
+              }}>
+                {leg.direction === 'OVER' ? '↑ OVER' : '↓ UNDER'} {leg.line}
+              </span>
+            </div>
           </div>
           <div style={{ marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
             {STAT_LABEL[leg.statKey] ?? leg.statLabel}
