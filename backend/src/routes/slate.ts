@@ -445,6 +445,56 @@ async function handleGradeElite(_req: Parameters<Parameters<typeof slateRouter.g
 slateRouter.get('/elite/grade', handleGradeElite);
 slateRouter.post('/elite/grade', handleGradeElite);
 
+// POST /api/slate/live-grade
+//
+// Generic live grader for any list of legs. Used by slate prop cards,
+// suggested parlay banners, and same-game parlay leg lists so every
+// pick on the site shows real-time verdict state when applicable.
+// Body: { legs: [{ playerId, playerName, statKey, direction, line }] }
+// Response: { legs: LegLiveState[] } in the same order.
+//
+// Cache header is 30s — short enough for real-time feel, long enough
+// to dampen polling. Frontend re-fetches on the same cadence.
+slateRouter.post('/live-grade', async (req, res) => {
+  try {
+    const todayEt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+
+    const body = req.body as {
+      legs?: Array<{
+        playerId: number | string;
+        playerName: string;
+        statKey: string;
+        direction: 'OVER' | 'UNDER';
+        line: number;
+      }>;
+      gameDate?: string;
+    } | undefined;
+    const rawLegs = Array.isArray(body?.legs) ? body!.legs : [];
+    if (rawLegs.length === 0) {
+      res.json({ legs: [] });
+      return;
+    }
+    // Cap how many legs we'll grade per request to keep cold-start fast
+    const capped = rawLegs.slice(0, 50);
+    const inputs = capped.map((l) => ({
+      playerId: typeof l.playerId === 'number' ? l.playerId : Number(l.playerId) || 0,
+      playerName: String(l.playerName ?? ''),
+      statKey: String(l.statKey ?? ''),
+      direction: (l.direction === 'UNDER' ? 'UNDER' : 'OVER') as 'OVER' | 'UNDER',
+      line: Number(l.line) || 0,
+    }));
+    const states = await liveGradeElite(inputs, body?.gameDate ?? todayEt);
+    res.setHeader('Cache-Control', 'public, max-age=30');
+    res.json({ legs: states });
+  } catch (err) {
+    console.error('slate/live-grade failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /api/slate/elite/live-state
 //
 // Live per-leg grading for today's persisted Elite ticket. Returns a

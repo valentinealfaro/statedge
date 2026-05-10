@@ -2079,6 +2079,28 @@ export async function getEliteLiveState(): Promise<EliteLiveStateResponse> {
   return (await res.json()) as EliteLiveStateResponse;
 }
 
+// Generic live-grade endpoint: takes an arbitrary list of legs and
+// returns per-leg live state. Used by slate prop cards, suggested
+// parlays, SGP leg blocks — anywhere we want real-time HIT/MISS/IN
+// FLIGHT state for a pick. Capped at 50 legs server-side per request.
+export async function liveGradeLegs(legs: Array<{
+  playerId: number;
+  playerName: string;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  line: number;
+}>): Promise<EliteLegLiveState[]> {
+  if (legs.length === 0) return [];
+  const res = await fetch(`${API_BASE}/api/slate/live-grade`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ legs }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { legs: EliteLegLiveState[] };
+  return body.legs;
+}
+
 export async function getCrossSportEliteToday(): Promise<CrossSportEliteResponse> {
   const res = await fetch(`${API_BASE}/api/slate/elite/cross-sport/today`);
   if (!res.ok) {
