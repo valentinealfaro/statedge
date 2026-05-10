@@ -122,8 +122,28 @@ h1 {
   background-clip: text;
   color: transparent;
 }
-h2 { font-size: 20px; margin: 28px 0 14px; color: var(--text-2); font-weight: 700; letter-spacing: -0.3px; }
-h3 { font-size: 17px; margin: 28px 0 12px; color: var(--text-2); font-weight: 700; letter-spacing: -0.2px; }
+/* Iter 22: site-wide H2 + H3 leveled up. Slightly bigger, gradient
+   text matching the H1 treatment, tighter letter-spacing. Reads as
+   premium across every page (Compare / Player / NBA / MLB / Elite /
+   Calibration / etc) without changing layout. Pages that already
+   override these (best-picks-head h3) keep their custom styles. */
+h2 {
+  font-size: 22px;
+  margin: 28px 0 14px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(180deg, var(--text-1) 0%, var(--text-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+h3 {
+  font-size: 18px;
+  margin: 28px 0 12px;
+  color: var(--text-1);
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
 .tag { color: var(--text-3); font-size: 15px; margin-bottom: 24px; line-height: 1.5; max-width: 720px; }
 @media (max-width: 720px) {
   h1 { font-size: 32px; letter-spacing: -0.8px; }
@@ -2940,7 +2960,11 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   font: inherit;
   cursor: pointer;
   text-align: left;
-  overflow: hidden;
+  /* Iter 23: overflow visible so the Recommended badge (top: -8px)
+     and orbital-ring decoration on the recommended card render
+     fully outside the card edges. The ::before stripe is at top:0
+     so it doesn't need clipping. */
+  overflow: visible;
   transition: border-color var(--motion-fast), color var(--motion-fast),
               background var(--motion-fast), transform var(--motion-fast);
 }
@@ -2962,9 +2986,13 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   color: var(--text-1);
 }
 
-/* ── Per-mode color identity ── */
+/* ── Per-mode color identity ──
+   Iter 23 (user 2026-05-10): Balanced switched from brand-blue to a
+   vibrant cyan/teal (#22d3ee) so it doesn't visually conflict with
+   the brand-blue Recommended badge sitting above it. Each mode now
+   has its own distinct hue. */
 .slate-mode-btn.mode-safe::before       { background: var(--hot); }
-.slate-mode-btn.mode-balanced::before   { background: var(--brand-blue); }
+.slate-mode-btn.mode-balanced::before   { background: #22d3ee; }
 .slate-mode-btn.mode-aggressive::before { background: var(--warn); }
 .slate-mode-btn.mode-insane::before     { background: linear-gradient(90deg, #ef5350 0%, #7c4dff 100%); }
 .slate-mode-btn.mode-auto::before       { background: var(--text-3); }
@@ -2975,8 +3003,9 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   background: linear-gradient(180deg, rgba(109,208,122,0.10) 0%, rgba(109,208,122,0.02) 100%), var(--surface-1);
 }
 .slate-mode-btn.mode-balanced.active {
-  border-color: var(--brand-blue);
-  background: linear-gradient(180deg, rgba(91,141,239,0.10) 0%, rgba(91,141,239,0.02) 100%), var(--surface-1);
+  border-color: #22d3ee;
+  background: linear-gradient(180deg, rgba(34,211,238,0.12) 0%, rgba(34,211,238,0.02) 100%), var(--surface-1);
+  box-shadow: 0 0 0 1px rgba(34,211,238,0.15) inset;
 }
 .slate-mode-btn.mode-aggressive.active {
   border-color: var(--warn);
@@ -2999,11 +3028,16 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
    has selected another mode; reads cleanly without doubling up when
    Balanced is also currently selected. Mission-aligned: informational
    transparency, not a marketing nudge. */
+/* Iter 23 (user 2026-05-10): the recommended card gets a real
+   premium treatment now. Light-cyan tinted bg matching the iter-23
+   Balanced color palette, an orbital "ball of light" that traces
+   the card border (CSS animation), and the badge sits a bit further
+   above the card edge so there's no clipping. */
 .slate-mode-btn.recommended {
   position: relative;
-  border-color: rgba(91, 141, 239, 0.45);
+  border-color: rgba(34, 211, 238, 0.45);
   background:
-    linear-gradient(135deg, rgba(91, 141, 239, 0.04), rgba(124, 77, 255, 0.03)),
+    linear-gradient(135deg, rgba(34, 211, 238, 0.06), rgba(91, 141, 239, 0.04)),
     var(--surface-1);
 }
 .slate-mode-btn.recommended:not(.active) .slate-mode-label {
@@ -3011,18 +3045,62 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .slate-mode-recommended-badge {
   position: absolute;
-  top: -8px;
-  right: 10px;
+  top: -10px;
+  right: 12px;
+  z-index: 3;
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: var(--radius-pill);
-  background: var(--brand-blue);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(91, 141, 239, 0.30);
+  background: linear-gradient(90deg, #22d3ee 0%, #5b8def 100%);
+  color: #0b1117;
+  box-shadow:
+    0 2px 10px rgba(34, 211, 238, 0.40),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
   white-space: nowrap;
+}
+
+/* Orbital ring — rotating conic gradient masked to a 1px border so a
+   bright cyan "comet" appears to travel around the card perimeter.
+   Uses CSS mask-composite (well-supported in evergreen browsers).
+   Static fallback shows a soft cyan glow. */
+.slate-mode-btn.recommended::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--radius-md);
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 60%,
+    rgba(34, 211, 238, 0.7) 75%,
+    #22d3ee 85%,
+    rgba(91, 141, 239, 0.6) 92%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: recommended-orbit 4.5s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes recommended-orbit {
+  to { transform: rotate(1turn); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slate-mode-btn.recommended::after {
+    animation: none;
+    background: linear-gradient(135deg, rgba(34,211,238,0.35), rgba(91,141,239,0.25));
+  }
 }
 .slate-mode-label {
   font-size: 13px;
@@ -3059,6 +3137,7 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .mode-meter-bar.filled                             { background: var(--brand-blue); }
 .mode-safe .mode-meter-bar.filled                  { background: var(--hot); }
+.mode-balanced .mode-meter-bar.filled              { background: #22d3ee; }
 .mode-aggressive .mode-meter-bar.filled            { background: var(--warn); }
 .mode-insane .mode-meter-bar.filled                {
   background: linear-gradient(90deg, #ef5350 0%, #7c4dff 100%);
