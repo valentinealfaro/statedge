@@ -808,6 +808,32 @@ function LineCard({
         leanDirection={lean === 'OVER' ? 'OVER' : 'UNDER'}
       />
 
+      {/* Engine reasoning — modelNotes from the projection. Free-tier
+          surface; appears alongside the Pro AI-insight button so users
+          on either plan see WHY the model picked this leg. */}
+      {line.projection?.modelNotes && line.projection.modelNotes.length > 0 && (
+        <div style={{
+          margin: '8px 12px 0',
+          padding: '8px 10px',
+          background: 'rgba(122,162,255,0.06)',
+          border: '1px solid rgba(122,162,255,0.18)',
+          borderLeft: '2px solid rgba(122,162,255,0.45)',
+          borderRadius: 'var(--radius-sm)',
+        }}>
+          <div style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: '#7aa2ff', marginBottom: 4,
+          }}>
+            Why this pick
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 14, fontSize: 11, lineHeight: 1.5, color: 'rgba(255,255,255,0.78)' }}>
+            {line.projection.modelNotes.slice(0, 3).map((n, i) => (
+              <li key={i} style={{ marginBottom: 1 }}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {canInsight && !insight && !insightLoading && (
         <button className="slate-why" onClick={loadInsight}>
           Why? <span className="slate-why-icon" aria-hidden>✨</span>
