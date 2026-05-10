@@ -2507,20 +2507,50 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 
 /* "Best Picks" rail — pre-built parlays (Best 2..6 + Wild Card) */
+/* Iter 15: section header levels up. The h3 now leads with a subtle
+   accent stripe + tighter typography so the "Pre-built parlays"
+   section reads as a deliberate panel rather than a generic header. */
 .best-picks {
-  margin: 20px 0;
+  margin: 28px auto;
+  max-width: 820px;
 }
 .best-picks-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
 }
 .best-picks-head h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 800;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.5px;
+  background: linear-gradient(180deg, var(--text-1) 0%, var(--text-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  position: relative;
+  padding-left: 14px;
+}
+.best-picks-head h3::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+  box-shadow: 0 0 12px rgba(91, 141, 239, 0.45);
+}
+.best-picks-head .muted {
+  flex: 1 1 320px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 540px;
 }
 /* Iter 14 (user 2026-05-10): the 3-column rail packs the cards into
    ~280px columns where every leg has to wrap — user said "looking
@@ -2593,10 +2623,10 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   gap: 8px;
 }
 .best-pick-label {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--text-1);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 .best-pick-card.wild .best-pick-label {
   background: linear-gradient(90deg, var(--warn) 0%, var(--brand-purple) 100%);
@@ -2614,29 +2644,36 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* Iter 15: cards are now full-width so the headline % can carry
+   real visual weight. Bump to 56px with tighter letter-spacing —
+   this is the FIRST number the user sees on each card and it
+   should read like a market quote on a Bloomberg terminal. */
 .best-pick-pct {
-  font-size: 32px;
+  font-size: 56px;
   font-weight: 900;
-  letter-spacing: -1.2px;
+  letter-spacing: -2px;
   background: linear-gradient(135deg, var(--brand-blue) 0%, var(--hot) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  line-height: 1;
-  margin-top: 2px;
+  line-height: 0.95;
+  margin-top: 6px;
+  text-shadow: 0 0 32px rgba(91, 141, 239, 0.15);
 }
 .best-pick-card.wild .best-pick-pct {
   background: linear-gradient(135deg, var(--warn) 0%, var(--brand-purple) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  text-shadow: 0 0 32px rgba(255, 184, 107, 0.15);
 }
 .best-pick-pct-label {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-3);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.10em;
   font-weight: 700;
+  margin-top: 6px;
 }
 .best-pick-legs {
   display: flex;
@@ -3098,15 +3135,15 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   gap: 4px;
 }
 .best-pick-lottery .lottery-payout {
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 900;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.8px;
   background: linear-gradient(180deg, #ffd54f 0%, #ff9800 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 0 14px rgba(255, 152, 0, 0.30);
-  margin-right: 4px;
+  text-shadow: 0 0 16px rgba(255, 152, 0, 0.35);
+  margin-right: 6px;
 }
 .best-pick-lottery .lottery-target {
   font-weight: 600;
