@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { fetchUfcScoreboard, fetchUfcFightCenter, type UfcEvent, type UfcFight } from '../mma/espn.js';
 import { getUfcMoneylines } from '../mma/odds.js';
+import { projectUfcProp } from '../mma/projectionEngine.js';
 import {
   getLatestMmaDailySlate,
   getMmaDailySlate,
@@ -206,6 +207,93 @@ mmaRouter.get('/slate/today', async (_req, res) => {
     });
   } catch (err) {
     console.error('mma/slate/today failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/mma/slate/projections
+//
+// Phase 148q. Returns today's UFC slate enriched with the moneyline-
+// anchored projection engine's output (probability / edge / trap /
+// fragility / projection value / rationale) per line. Same pipeline
+// the cross-sport Elite builder runs internally — exposed here so
+// /best-bets can include UFC alongside NBA + MLB once the frontend
+// wires it up. Lines without a scoreboard pairing (rare; usually a
+// late-replacement) are skipped: projectUfcProp needs the opponent
+// to compute defensive context.
+mmaRouter.get('/slate/projections', async (_req, res) => {
+  try {
+    const today = todayEt();
+    const slate = (await getMmaDailySlate(today)) ?? (await getLatestMmaDailySlate());
+    if (!slate) {
+      res.json({ today, slate: null, projections: [] });
+      return;
+    }
+
+    const [moneylinesResp, scoreboard] = await Promise.all([
+      getUfcMoneylines().catch(() => ({ events: [] as Array<{ fighterA: { fighterName: string; fairProbability: number }; fighterB: { fighterName: string; fairProbability: number } }> })),
+      fetchUfcScoreboard().catch(() => [] as UfcEvent[]),
+    ]);
+
+    // Same diacritic-strip used by crossSportEliteBuilder so that
+    // PrizePicks paste names ('C. Carpenter', accents, etc.) line up
+    // with Odds API + ESPN display names.
+    const fighterNorm = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
+
+    const fairByFighter = new Map<string, number>();
+    for (const ev of moneylinesResp.events) {
+      fairByFighter.set(fighterNorm(ev.fighterA.fighterName), ev.fighterA.fairProbability);
+      fairByFighter.set(fighterNorm(ev.fighterB.fighterName), ev.fighterB.fairProbability);
+    }
+
+    const opponentByFighter = new Map<string, string>();
+    for (const ev of scoreboard) {
+      for (const f of ev.fights) {
+        const red = f.fighters.red;
+        const blue = f.fighters.blue;
+        if (red?.displayName && blue?.displayName) {
+          opponentByFighter.set(fighterNorm(red.displayName), blue.displayName);
+          opponentByFighter.set(fighterNorm(blue.displayName), red.displayName);
+        }
+      }
+    }
+
+    const projections = slate.lines.flatMap((line) => {
+      const norm = fighterNorm(line.fighterName);
+      const opponent = opponentByFighter.get(norm);
+      if (!opponent) return [];   // honest skip — no opponent context
+      const fair = fairByFighter.get(norm) ?? null;
+      try {
+        const projection = projectUfcProp({
+          fighterName: line.fighterName,
+          opponentName: opponent,
+          fairProbability: fair,
+          statKey: line.statKey,
+          line: line.line,
+          direction: line.direction,
+        });
+        return [{
+          fighterName: line.fighterName,
+          opponentName: opponent,
+          statKey: line.statKey,
+          line: line.line,
+          direction: line.direction,
+          fairProbability: fair,
+          ...projection,
+        }];
+      } catch (err) {
+        console.warn('projectUfcProp failed', line.fighterName, line.statKey, (err as Error).message);
+        return [];
+      }
+    });
+
+    // 5-minute browser cache mirrors /api/slate (NBA) / /api/mlb/slate
+    // freshness expectations. Edge functions / CDN absorb burst load.
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({ today, slate, projections });
+  } catch (err) {
+    console.error('mma/slate/projections failed', err);
     res.status(500).json({ error: (err as Error).message });
   }
 });
