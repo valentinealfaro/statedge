@@ -2459,6 +2459,37 @@ export async function getUfcSlateToday(): Promise<UfcSlateTodayResponse> {
   return (await res.json()) as UfcSlateTodayResponse;
 }
 
+// UFC slate enriched with the moneyline-anchored projection engine
+// output. Mirror of the cross-sport Elite builder's internal pipeline,
+// exposed so the slate UI + best-bets watchlist can render edge /
+// probability / trap / fragility per UFC line. Lines without a
+// scoreboard opponent pairing are honestly skipped server-side.
+export type UfcSlateProjection = {
+  fighterName: string;
+  opponentName: string;
+  statKey: string;
+  line: number;
+  direction: 'over' | 'under' | 'both';
+  fairProbability: number | null;
+  projectionValue: number;
+  probability: number;          // 0-100, direction-aware
+  modelDirection: 'OVER' | 'UNDER';
+  edgePercent: number;          // 0-100
+  trapScore: number;            // 0-100
+  fragilityScore: number;       // 0-100
+  rationale: string[];
+};
+export type UfcSlateProjectionsResponse = {
+  today: string;
+  slate: UfcDailySlate | null;
+  projections: UfcSlateProjection[];
+};
+export async function getUfcSlateProjections(): Promise<UfcSlateProjectionsResponse> {
+  const res = await fetch(`${API_BASE}/api/mma/slate/projections`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcSlateProjectionsResponse;
+}
+
 export async function getUfcStats(): Promise<{ stats: UfcStatMeta[] }> {
   const res = await fetch(`${API_BASE}/api/mma/stats`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -1,4 +1,4 @@
-// /mma/slate — UFC slate paste-and-publish page, Phase 110a.
+// /mma/slate — UFC slate paste-and-publish page, Phase 110a + 148r.
 //
 // Two-mode page mirroring MlbSlate. Public visitors see today's
 // published UFC props grouped by fighter + stat category, with The
@@ -6,22 +6,28 @@
 // click "Admin →", paste their PrizePicks pipe-format slate, preview
 // the parse, and publish.
 //
-// No projection engine yet — that needs a UFC fighter-stat database
-// which is its own multi-phase build. This phase ships the foundation:
-// parse → store → render with market context. Edge analysis layers
-// on later.
+// Projections: Phase 136 shipped the moneyline-anchored heuristic
+// (mma/projectionEngine.projectUfcProp), Phase 148q exposed it via
+// /api/mma/slate/projections, and this page now consumes that
+// endpoint to render per-prop edge / probability badges. NOT a
+// fundamental fighter-stat engine — those numbers are conservative
+// market-anchored estimates; honest about its limits via a small
+// note in the section header. The deeper fundamental engine lands
+// when the fighter-stat database ships.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getUfcMoneylines,
   getUfcScoreboard,
+  getUfcSlateProjections,
   getUfcSlateToday,
   parseUfcSlateText,
   publishUfcSlate,
   type UfcDailySlate,
   type UfcMoneylineEvent,
   type UfcSlateParseResult,
+  type UfcSlateProjection,
   type UfcStoredLine,
 } from './api';
 import { UfcFighterAvatar } from './Avatar';
@@ -64,6 +70,11 @@ export function MmaSlate() {
   // link to the fight detail page. Carries fightState so live fights
   // get a red dot and finished fights are dimmed.
   const [matchupByFighter, setMatchupByFighter] = useState<Map<string, FighterMatchup>>(new Map());
+  // Per-line projection lookup, keyed by `${fighterNameNorm}|${statKey}|${line}|${direction}`.
+  // The endpoint may return fewer projections than slate.lines (lines
+  // missing scoreboard pairing are honestly skipped) — we just render
+  // the chip without an edge badge in those cases.
+  const [projByKey, setProjByKey] = useState<Map<string, UfcSlateProjection>>(new Map());
 
   useEffect(() => {
     setTodayError(null);
@@ -76,6 +87,19 @@ export function MmaSlate() {
     getUfcMoneylines()
       .then((r) => setMoneylines(r.events))
       .catch(() => setMoneylines([]));
+    // Best-effort projections fetch. Failures (empty slate, missing
+    // scoreboard, etc.) just leave the chips without edge badges —
+    // the page still renders the raw slate. 5-minute cache server-
+    // side absorbs any retry burst.
+    getUfcSlateProjections()
+      .then((r) => {
+        const m = new Map<string, UfcSlateProjection>();
+        for (const p of r.projections) {
+          m.set(projKey(p.fighterName, p.statKey, p.line, p.direction), p);
+        }
+        setProjByKey(m);
+      })
+      .catch(() => setProjByKey(new Map()));
     // Pull the scoreboard so we can resolve slate fighter names to
     // ESPN athlete ids for avatar rendering AND pair each fighter with
     // tonight's opponent. Best-effort: if it fails, FighterCard falls
@@ -177,6 +201,7 @@ export function MmaSlate() {
             moneylineByFighter={moneylineByFighter}
             fighterIdByName={fighterIdByName}
             matchupByFighter={matchupByFighter}
+            projByKey={projByKey}
             loading={today === undefined}
           />
         )}
@@ -200,6 +225,7 @@ function PublicTodaySlate({
   moneylineByFighter,
   fighterIdByName,
   matchupByFighter,
+  projByKey,
   loading,
 }: {
   slate: UfcDailySlate | null;
@@ -208,6 +234,7 @@ function PublicTodaySlate({
   moneylineByFighter: Map<string, { american: number; implied: number; fair: number }>;
   fighterIdByName: Map<string, string>;
   matchupByFighter: Map<string, FighterMatchup>;
+  projByKey: Map<string, UfcSlateProjection>;
   loading: boolean;
 }) {
   if (error) {
@@ -245,19 +272,27 @@ function PublicTodaySlate({
           const ml = moneylineByFighter.get(normalizeName(name));
           const athleteId = fighterIdByName.get(normalizeName(name)) ?? '';
           const matchup = matchupByFighter.get(normalizeName(name));
-          return <FighterCard key={name} name={name} athleteId={athleteId} lines={lines} moneyline={ml} matchup={matchup} />;
+          return <FighterCard key={name} name={name} athleteId={athleteId} lines={lines} moneyline={ml} matchup={matchup} projByKey={projByKey} />;
         })}
       </div>
+      <p className="muted small" style={{ marginTop: 16, fontSize: 11, color: 'rgba(255,255,255,0.50)', maxWidth: 720 }}>
+        Edge / probability badges come from the moneyline-anchored
+        UFC projection engine (Phase 136). Honest about its limits —
+        these are conservative market-anchored estimates, not deep
+        fundamental projections. The fighter-stat database that
+        powers a deeper engine is on the roadmap.
+      </p>
     </div>
   );
 }
 
-function FighterCard({ name, athleteId, lines, moneyline, matchup }: {
+function FighterCard({ name, athleteId, lines, moneyline, matchup, projByKey }: {
   name: string;
   athleteId: string;
   lines: UfcStoredLine[];
   moneyline?: { american: number; implied: number; fair: number };
   matchup?: FighterMatchup;
+  projByKey: Map<string, UfcSlateProjection>;
 }) {
   const grouped = groupLinesByCategory(lines);
   const profileLink = athleteId ? `/mma/fighter/${athleteId}` : null;
@@ -329,7 +364,13 @@ function FighterCard({ name, athleteId, lines, moneyline, matchup }: {
               {GROUP_LABEL[group]}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
-              {groupLines.map((l, i) => <PropChip key={i} line={l} />)}
+              {groupLines.map((l, i) => (
+                <PropChip
+                  key={i}
+                  line={l}
+                  projection={projByKey.get(projKey(name, l.statKey, l.line, l.direction))}
+                />
+              ))}
             </div>
           </div>
         );
@@ -388,7 +429,7 @@ function MatchupChip({ matchup, fightLink }: { matchup: FighterMatchup; fightLin
   return <span style={baseStyle}>{inner}</span>;
 }
 
-function PropChip({ line }: { line: UfcStoredLine }) {
+function PropChip({ line, projection }: { line: UfcStoredLine; projection?: UfcSlateProjection }) {
   const dirColor =
     line.direction === 'over'  ? '#66bb6a'
     : line.direction === 'under' ? '#ef5350'
@@ -397,6 +438,19 @@ function PropChip({ line }: { line: UfcStoredLine }) {
     line.direction === 'over'  ? '↑'
     : line.direction === 'under' ? '↓'
     : '↕';
+  // Edge badge color tracks the same green / amber / red bands the
+  // NBA + MLB slate cards use, so the visual language carries across
+  // sports. Only render when the engine's confidence is meaningful
+  // (probability ≥ 55 with a positive edge, or ≤ 45 with a negative
+  // edge — i.e. the model has a real lean).
+  const edgePct = projection?.edgePercent ?? null;
+  const prob = projection?.probability ?? null;
+  const edgeColor = edgePct === null ? null
+    : edgePct >= 10 ? '#66bb6a'
+    : edgePct >= 5  ? '#ffd54f'
+    : edgePct >= 0  ? 'rgba(255,255,255,0.45)'
+    : '#ef5350';
+  const showEdge = projection !== undefined && prob !== null && edgePct !== null;
   return (
     <div style={{
       padding: '6px 10px',
@@ -404,16 +458,37 @@ function PropChip({ line }: { line: UfcStoredLine }) {
       border: '1px solid rgba(255,255,255,0.06)',
       borderRadius: 4,
       display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: 8,
+      flexDirection: 'column',
+      gap: 4,
     }}>
-      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-        {STAT_LABEL[line.statKey] ?? line.statKey}
-      </span>
-      <span style={{ fontSize: 13, fontWeight: 700, color: dirColor, whiteSpace: 'nowrap' }}>
-        {dirSymbol} {line.line}
-      </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+          {STAT_LABEL[line.statKey] ?? line.statKey}
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: dirColor, whiteSpace: 'nowrap' }}>
+          {dirSymbol} {line.line}
+        </span>
+      </div>
+      {showEdge && (
+        <div
+          title={`Model: ${projection!.modelDirection} · prob ${prob!.toFixed(1)}% · projection ${projection!.projectionValue.toFixed(1)}`}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 10, fontWeight: 700,
+            color: 'rgba(255,255,255,0.55)',
+            paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.04)',
+          }}
+        >
+          <span style={{ color: edgeColor ?? undefined }}>
+            {edgePct! >= 0 ? '+' : ''}{edgePct!.toFixed(1)}pp edge
+          </span>
+          <span>
+            <span style={{ color: prob! >= 60 ? '#66bb6a' : 'rgba(255,255,255,0.65)' }}>{prob!.toFixed(0)}%</span>
+            <span style={{ marginLeft: 4, color: 'rgba(255,255,255,0.30)' }}>{projection!.modelDirection}</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -606,6 +681,15 @@ function groupLinesByCategory(lines: UfcStoredLine[]): {
 
 function normalizeName(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Composite key for the projections map: name (normalized) | statKey |
+// line | direction. Mirrors the server-side identification of a slate
+// row — same fighter can have OVER + UNDER variants of the same stat,
+// and the projection direction is shared across both 'over'/'under'/'both'
+// in the slate but the engine returns the model's own direction.
+function projKey(fighterName: string, statKey: string, line: number, direction: string): string {
+  return `${normalizeName(fighterName)}|${statKey}|${line}|${direction}`;
 }
 
 // Suppress unused-import lint when Link isn't actively rendered; it's
