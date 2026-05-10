@@ -1072,6 +1072,11 @@ function BestPicksRail({
           anchors the safest picks; smaller cards draw fresh ones.
         </span>
       </div>
+      {/* Iter 14 (user 2026-05-10): "Safe core, value, positive ev,
+          elite, medium what does all that mean". The chip vocabulary
+          is internal jargon — surface a plain-English glossary
+          inline so users can read the cards without guessing. */}
+      <PicksGlossary />
       {liveSummary && (
         <div
           style={{
@@ -1416,7 +1421,18 @@ function BestPicksRail({
                       <span className={`best-pick-leg-dir ${l.direction === 'OVER' ? 'over' : 'under'}`}>
                         {l.direction === 'OVER' ? '↑' : '↓'} {Math.round(l.probability)}%
                       </span>
-                      <span className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}>
+                      <span
+                        className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}
+                        title={
+                          l.confidenceLabel === 'Elite'
+                            ? 'Elite confidence — model has 75-100 conviction (deep sample, multiple windows agree, low variance).'
+                            : l.confidenceLabel === 'Strong'
+                            ? 'Strong confidence — 65-74. Most signals align; small concerns prevent Elite tier.'
+                            : l.confidenceLabel === 'Medium'
+                            ? 'Medium confidence — 50-64. Mixed signals; usable but not a lock.'
+                            : 'Low confidence — under 50. Sample is thin or windows disagree; treat with caution.'
+                        }
+                      >
                         {l.confidenceLabel}
                       </span>
                       <NbaComboLegStar leg={l} />
@@ -1437,7 +1453,20 @@ function BestPicksRail({
                           </span>
                         )}
                         {l.category && (
-                          <span className={`best-pick-leg-cat cat-${l.category.toLowerCase().replace(' ', '-')}`}>
+                          <span
+                            className={`best-pick-leg-cat cat-${l.category.toLowerCase().replace(' ', '-')}`}
+                            title={
+                              l.category === 'Safe Core'
+                                ? 'Safe Core — high-probability anchor leg, low variance. The kind of leg you build a card around.'
+                                : l.category === 'Value'
+                                ? 'Value — model thinks the line is mispriced (real edge vs the de-vigged market). The bet you make money on long-run.'
+                                : l.category === 'Ceiling'
+                                ? 'Ceiling — high-upside leg. Player has blow-out potential when the matchup or pace breaks right.'
+                                : l.category === 'Contrarian'
+                                ? 'Contrarian — model disagrees with public sentiment / market consensus. Risky but high-edge when right.'
+                                : `${l.category} — leg category`
+                            }
+                          >
                             {l.category}
                           </span>
                         )}
@@ -1524,6 +1553,84 @@ function BestPicksRail({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Iter 14 — plain-English glossary for the chip vocabulary. User
+// directive 2026-05-10: "Safe core, value, positive ev, elite, medium
+// what does all that mean". Renders a collapsed-by-default help row
+// under the picks header. Definition strings are deliberately short
+// and concrete; if a user wants the math, the per-chip title tooltips
+// carry it.
+function PicksGlossary() {
+  const [open, setOpen] = useState(false);
+  const items: Array<[string, string]> = [
+    ['Elite',       'Confidence 75-100. Deep sample, multiple windows agree, low variance.'],
+    ['Strong',      'Confidence 65-74. Most signals align; minor concerns hold it back from Elite.'],
+    ['Medium',      'Confidence 50-64. Mixed signals; usable but not a lock.'],
+    ['Safe Core',   'High-probability anchor leg, low variance. The kind of leg you build a card around.'],
+    ['Value',       'Model thinks the line is mispriced (real edge vs the de-vigged sportsbook). Where long-run profit comes from.'],
+    ['Ceiling',     'High-upside leg. Player has blow-out potential when matchup or pace breaks right.'],
+    ['Contrarian',  'Model disagrees with public sentiment. Risky but high-edge when right.'],
+    ['Positive EV', 'Card is +EV: win-prob × payout > 1. Profitable long-run even if individual cards lose.'],
+    ['Neutral EV',  'Card breaks even. No real edge over PrizePicks pricing.'],
+    ['Negative EV', 'Card is −EV: payout doesn\'t beat the implied break-even. Don\'t play.'],
+  ];
+  return (
+    <div style={{
+      margin: '0 0 14px',
+      borderRadius: 10,
+      border: '1px solid rgba(255,255,255,0.08)',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.005) 100%)',
+      overflow: 'hidden',
+    }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 0,
+          color: 'rgba(255,255,255,0.65)',
+          padding: '10px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          textAlign: 'left',
+        }}
+      >
+        <span>
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
+            textTransform: 'uppercase', color: '#7aa2ff', marginRight: 8,
+          }}>
+            Legend
+          </span>
+          What do <em style={{ fontStyle: 'normal', color: 'var(--text-1)' }}>Safe Core, Value, Elite, Positive EV</em> mean?
+        </span>
+        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{open ? '▾ hide' : '▸ show'}</span>
+      </button>
+      {open && (
+        <div style={{
+          padding: '4px 14px 14px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '8px 16px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+        }}>
+          {items.map(([term, def]) => (
+            <div key={term} style={{ fontSize: 12, lineHeight: 1.45 }}>
+              <strong style={{ color: 'var(--text-1)', fontWeight: 700, marginRight: 6 }}>{term}</strong>
+              <span style={{ color: 'rgba(255,255,255,0.65)' }}>{def}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
