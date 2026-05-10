@@ -21,6 +21,7 @@ import {
 } from './api';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { NavBar } from './NavBar';
+import { ProjectionBand } from './ProjectionBand';
 import { Skeleton } from './Skeleton';
 import { LiveVerdictPill } from './slateLiveState';
 import { useTitle } from './useTitle';
@@ -45,6 +46,10 @@ type UnifiedBet = {
   // Computed: EV per $1 stake = probability × payout − 1, where payout
   // is the standard 2x for a single-leg PrizePicks Flex.
   ev: number;                // -1..N
+  // Projection band for confidence-interval rendering.
+  projection: number | null;
+  rangeLow: number | null;
+  rangeHigh: number | null;
 };
 
 type SortKey = 'ev' | 'edge' | 'probability' | 'live';
@@ -115,6 +120,9 @@ export function BestBetsToday() {
         fragilityScore: proj.fragility?.score ?? null,
         href: `/nba/slate?legs=${l.playerId}-${l.statKey}-${l.line}`,
         ev,
+        projection: proj.projection.final,
+        rangeLow: proj.projection.rangeLow,
+        rangeHigh: proj.projection.rangeHigh,
       });
     }
 
@@ -146,6 +154,9 @@ export function BestBetsToday() {
             fragilityScore: l.fragilityScore ?? null,
             href: `/mlb/slate`,
             ev,
+            projection: l.projection ?? null,
+            rangeLow: null,
+            rangeHigh: null,
           });
         }
       }
@@ -320,6 +331,7 @@ export function BestBetsToday() {
                   <th style={th}>Sport</th>
                   <th style={th}>Player</th>
                   <th style={{ ...th, textAlign: 'left' }}>Stat / Line</th>
+                  <th style={{ ...th, textAlign: 'left' }}>Projection</th>
                   <th style={{ ...th, textAlign: 'right' }}>Prob</th>
                   <th style={{ ...th, textAlign: 'right' }}>Edge</th>
                   <th style={{ ...th, textAlign: 'right' }}>EV</th>
@@ -382,6 +394,24 @@ function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: Elit
         <span style={{ color: bet.direction === 'OVER' ? '#66bb6a' : '#ef5350', fontWeight: 800 }}>
           {bet.direction === 'OVER' ? '↑' : '↓'}
         </span>
+      </td>
+      <td style={td}>
+        {bet.projection !== null && bet.rangeLow !== null && bet.rangeHigh !== null ? (
+          <ProjectionBand
+            rangeLow={bet.rangeLow}
+            projection={bet.projection}
+            rangeHigh={bet.rangeHigh}
+            line={bet.line}
+            lean={bet.direction}
+            compact
+          />
+        ) : bet.projection !== null ? (
+          <span style={{ color: 'rgba(255,255,255,0.65)', fontVariantNumeric: 'tabular-nums' }}>
+            μ {bet.projection.toFixed(1)}
+          </span>
+        ) : (
+          <span style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>
+        )}
       </td>
       <td style={{ ...td, textAlign: 'right' }}>
         <strong style={{ color: bet.probability >= 60 ? '#66bb6a' : '#fff' }}>

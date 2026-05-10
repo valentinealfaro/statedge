@@ -32,6 +32,7 @@ import { NavBar } from './NavBar';
 import { NbaPlayerDrilldown, type NbaDrilldownPlayer } from './NbaPlayerDrilldown';
 import { WhyPickPanel } from './WhyPickPanel';
 import { usePlan } from './plan';
+import { ProjectionBand } from './ProjectionBand';
 import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { SlateCalibration } from './SlateCalibration';
@@ -782,6 +783,18 @@ function LineCard({
 
       {line.projection && !line.projection.noProjection && (
         <ProjectionPanel projection={line.projection} />
+      )}
+
+      {line.projection && !line.projection.noProjection && (
+        <div style={{ padding: '6px 12px 0' }}>
+          <ProjectionBand
+            rangeLow={line.projection.projection.rangeLow}
+            projection={line.projection.projection.final}
+            rangeHigh={line.projection.projection.rangeHigh}
+            line={line.line}
+            lean={(line.projection.edge.lean ?? '').toLowerCase().includes('under') ? 'UNDER' : 'OVER'}
+          />
+        </div>
       )}
 
       <LineCardLivePill
