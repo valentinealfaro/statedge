@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ActivityFeed } from './ActivityFeed';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { EnginePulseStrip } from './EnginePulseStrip';
 import { HomeEliteTeaser } from './HomeEliteTeaser';
@@ -45,6 +46,12 @@ export function Home() {
           actually in progress. Bloomberg-Terminal framing: when markets
           are live, that's what users see first. */}
       <LiveDeck />
+
+      {/* Activity feed — every Elite leg + starred prop that has
+          settled or locked today, in one chronological view. Bloomberg
+          'what just happened to my picks' ticker. Self-hides until at
+          least one event has resolved. */}
+      <ActivityFeed />
 
       <section className="home-recents">
         <RecentsRail heading="Pick up where you left off" />
