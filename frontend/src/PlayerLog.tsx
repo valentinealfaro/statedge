@@ -20,6 +20,7 @@ import {
   type PlayerGame,
 } from './api';
 import { NavBar } from './NavBar';
+import { NbaPlayerTonightSlate } from './NbaPlayerTonightSlate';
 import { PlayerNewsSection } from './PlayerNewsSection';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
@@ -233,6 +234,11 @@ export function PlayerLog() {
             stat={selectedStat}
             line={lineInput.trim() === '' ? null : Number(lineInput)}
           />
+        )}
+
+        {/* Tonight's slate — self-hides when this player isn't featured */}
+        {player && Number.isFinite(playerId) && (
+          <NbaPlayerTonightSlate playerId={playerId} />
         )}
 
         {player && (playerName || player.teamAbbreviation) && (
