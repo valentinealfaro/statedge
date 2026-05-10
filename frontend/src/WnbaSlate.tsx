@@ -1,4 +1,4 @@
-// WNBA Slate page — Phase 77 v1.
+// WNBA Slate page — Phase 77 v1 + 77b card construction shipped.
 //
 // Admin pastes pipe-format lines, backend resolves athlete IDs via
 // ESPN search, projects every leg via the lightweight ESPN-gamelog
@@ -6,13 +6,12 @@
 //   - Top Institutional Edges hero (top 5)
 //   - Filter chips (unified vocab: All / High Edge / Low Risk /
 //     Trap Watch / Value / Momentum)
+//   - Best 2-6 institutional combo cards (Phase 77b)
 //   - Full projected slate sorted by edge%
 //
-// Phase 77b will layer the Best 2-6 + Wild Card builder on top of
-// the same projection layer once it's battle-tested. For now the
-// public surface is "every projected line, sorted by conviction"
-// — all the institutional intelligence, just without the card
-// construction.
+// Per the 2026-05-09 sport-priorities decision WNBA is on
+// maintenance only — these surfaces stay live but no new WNBA
+// features are scoped (MMA replaced WNBA as the third focus sport).
 
 import { useEffect, useMemo, useState } from 'react';
 import { WnbaPlayerAvatar, WnbaTeamLogo } from './Avatar';
@@ -189,9 +188,10 @@ export function WnbaSlate() {
           )}
         </div>
         <p className="muted small">
-          Tonight's projected WNBA props sorted by model edge. v1 uses
-          ESPN gamelog data + L5/L10/season blended projections; the
-          institutional Best 2-6 + Wild Card builder lands in Phase 77b.
+          Tonight's projected WNBA props sorted by model edge. Uses
+          ESPN gamelog data + L5/L10/season blended projections, with
+          institutional Best 2-6 combo cards rendered below the
+          per-line table.
         </p>
 
         {error && <div className="mlb-info-banner mlb-info-error">{error}</div>}
