@@ -27,6 +27,11 @@ import { NavBar } from './NavBar';
 import { PastElitePlays } from './PastElitePlays';
 import { Skeleton } from './Skeleton';
 import { TodayAtAGlance } from './TodayAtAGlance';
+import { useEliteNotifications } from './useEliteNotifications';
+import {
+  notificationPermission,
+  requestNotificationPermission,
+} from './useStarredNotifications';
 import { useTitle } from './useTitle';
 
 // Stat-key sets for sport detection — same logic the backend uses to
@@ -108,6 +113,11 @@ export function Elite() {
   // viewing cross-sport ticket. Cross-sport is the only view that
   // currently writes to elite_tickets, so live grading is keyed off it.
   const [liveState, setLiveState] = useState<EliteLiveStateResponse | null>(null);
+  const [notifPerm, setNotifPerm] = useState(notificationPermission);
+  // Wire desktop notifications for the Elite ticket — fires once when
+  // today's ticket transitions to HIT or MISS. Permission-conservative;
+  // hook does nothing without user-granted permission.
+  useEliteNotifications(liveState?.ticketDate ?? null, liveState?.rollup ?? null);
 
   useEffect(() => {
     setData(null);
@@ -173,7 +183,47 @@ export function Elite() {
           }}>
             STATEDGE ELITE
           </div>
-          <h1 style={{ margin: '4px 0 8px', fontSize: 28 }}>Institutional 3-Leg Service</h1>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+            <h1 style={{ margin: '4px 0 8px', fontSize: 28 }}>Institutional 3-Leg Service</h1>
+            {/* Desktop-notification opt-in. Same pattern as /starred —
+                respects existing permission, never auto-prompts. Fires
+                once when today's ticket resolves HIT or MISS. */}
+            {(notifPerm === 'default' || notifPerm === 'denied') && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const result = await requestNotificationPermission();
+                  setNotifPerm(result);
+                }}
+                disabled={notifPerm === 'denied'}
+                title={notifPerm === 'denied'
+                  ? 'Browser blocked notifications — enable in browser site settings to re-prompt'
+                  : 'Get a desktop ping when today\'s Elite ticket hits or misses'}
+                style={{
+                  padding: '4px 10px', borderRadius: 4,
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  background: notifPerm === 'denied' ? 'transparent' : 'rgba(255,213,79,0.14)',
+                  color: notifPerm === 'denied' ? 'rgba(255,255,255,0.40)' : '#ffd54f',
+                  border: `1px solid ${notifPerm === 'denied' ? 'rgba(255,255,255,0.10)' : 'rgba(255,213,79,0.40)'}`,
+                  cursor: notifPerm === 'denied' ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {notifPerm === 'denied' ? '🔕 Notifications blocked' : '🔔 Notify when ticket resolves'}
+              </button>
+            )}
+            {notifPerm === 'granted' && (
+              <span style={{
+                padding: '4px 10px', borderRadius: 4,
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase',
+                color: '#66bb6a',
+                background: 'rgba(102,187,106,0.10)',
+                border: '1px solid rgba(102,187,106,0.30)',
+              }}>
+                🔔 Notifications on
+              </span>
+            )}
+          </div>
           <p className="muted small" style={{ margin: 0, fontSize: 13, lineHeight: 1.6, maxWidth: 720 }}>
             Cross-sport ticket combining the day's strongest legs from MLB and NBA into
             ONE play. Target: 3-leg at 6× payout, full institutional filter. Fallbacks:
