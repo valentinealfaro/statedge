@@ -133,9 +133,10 @@ export function BestBetsToday() {
         projection: proj.projection.final,
         rangeLow: proj.projection.rangeLow,
         rangeHigh: proj.projection.rangeHigh,
-        // NBA SlateProjection doesn't surface reasonCodes on the
-        // frontend type today — chevron self-hides for NBA rows.
-        reasonCodes: [],
+        // NBA exposes its reason codes as `modelNotes` (the projection
+        // engine's natural-language audit trail). Same role as MLB's
+        // reasonCodes; we surface them through the same expand UX.
+        reasonCodes: proj.modelNotes ?? [],
       });
     }
 
