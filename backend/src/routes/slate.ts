@@ -869,7 +869,28 @@ slateRouter.get('/elite/today', async (_req, res) => {
     return;
   }
   try {
-    const stored = await getDailySlateFromDb();
+    let stored = await getDailySlateFromDb();
+    // Iter 25: same stale-slate detection as /slate/today. Slates
+    // persisted before iter 21 (PrizePicks odds_type wiring) were
+    // stored with all-'both' directions, which makes Insane mode
+    // impossible. Refresh transparently when we detect zero
+    // demon/goblin tagging so Elite picks see real PP markers.
+    const isStale = stored
+      && stored.lines.length > 0
+      && stored.lines.every((l) => !l.direction || l.direction === 'both');
+    if (!stored || stored.lines.length === 0 || isStale) {
+      try {
+        if (!autoPublishInflight) {
+          autoPublishInflight = autoPublishFromPrizePicks().finally(() => {
+            autoPublishInflight = null;
+          });
+        }
+        await autoPublishInflight;
+        stored = await getDailySlateFromDb();
+      } catch (err) {
+        console.warn('elite/today auto-publish skipped:', (err as Error).message);
+      }
+    }
     if (!stored || stored.lines.length === 0) {
       res.json({ ticket: null, reason: 'no slate published yet' });
       return;
@@ -908,7 +929,21 @@ slateRouter.get('/today', async (req, res) => {
     // Empty-for-today → try the auto-publish fallback. PP can 403 from
     // Vercel egress IPs, so we treat any failure as "nothing to show"
     // and let the admin paste path remain available.
-    if (!stored || stored.lines.length === 0) {
+    //
+    // Iter 25 (user 2026-05-10): ALSO trigger auto-publish when the
+    // stored slate has zero demon/goblin tagged legs. Slates persisted
+    // before iter 21 were stored with `direction: 'both'` for every
+    // leg because fetchPrizePicksNba wasn't reading PP's odds_type
+    // attribute. Those stale rows make Insane mode impossible (the
+    // demon-only filter rejects everything). Real PrizePicks slates
+    // virtually always have SOME demons or goblins on them — zero is
+    // the smoking gun. Force a refresh to overwrite with correctly-
+    // tagged data. Once a fresh slate is written, the condition
+    // self-resolves on subsequent loads.
+    const isStale = stored
+      && stored.lines.length > 0
+      && stored.lines.every((l) => !l.direction || l.direction === 'both');
+    if (!stored || stored.lines.length === 0 || isStale) {
       try {
         if (!autoPublishInflight) {
           autoPublishInflight = autoPublishFromPrizePicks().finally(() => {
