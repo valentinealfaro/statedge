@@ -16,6 +16,11 @@ import {
 import { NavBar } from './NavBar';
 import { LiveVerdictPill } from './slateLiveState';
 import { useStarredProps, type StarredProp, type Sport } from './starredProps';
+import {
+  notificationPermission,
+  requestNotificationPermission,
+  useStarredNotifications,
+} from './useStarredNotifications';
 import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
 
@@ -29,6 +34,11 @@ export function StarredPage() {
   const { items, unstar, clear } = useStarredProps();
   const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
   const [sortKey, setSortKey] = useState<StarredSortKey>('date');
+  const [notifPerm, setNotifPerm] = useState(notificationPermission);
+  // Wire desktop notifications — fires when a starred prop transitions
+  // to a final verdict (HIT/MISS/PUSH). Hook is permission-aware: it
+  // does nothing unless the user has explicitly granted.
+  useStarredNotifications(items, liveByKey);
 
   // Poll live grading for every starred prop. Capped at 50 because
   // the backend caps the request at 50 legs per call. Skip MMA — the
@@ -92,7 +102,48 @@ export function StarredPage() {
         }}>
           STATEDGE WATCHLIST · YOUR STARRED PROPS
         </div>
-        <h1 style={{ margin: '4px 0 8px' }}>Starred props</h1>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ margin: '4px 0 8px' }}>Starred props</h1>
+          {/* Desktop-notification opt-in. Renders only when items
+              exist (no use opting in with an empty list) and the
+              permission isn't already granted. Suppressed on
+              unsupported browsers. */}
+          {items.length > 0 && (notifPerm === 'default' || notifPerm === 'denied') && (
+            <button
+              type="button"
+              onClick={async () => {
+                const result = await requestNotificationPermission();
+                setNotifPerm(result);
+              }}
+              disabled={notifPerm === 'denied'}
+              title={notifPerm === 'denied'
+                ? 'Browser blocked notifications — enable in your browser site settings to re-prompt'
+                : 'Get a desktop ping when a starred prop hits or misses'}
+              style={{
+                padding: '4px 10px', borderRadius: 4,
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                background: notifPerm === 'denied' ? 'transparent' : 'rgba(122,162,255,0.14)',
+                color: notifPerm === 'denied' ? 'rgba(255,255,255,0.40)' : '#7aa2ff',
+                border: `1px solid ${notifPerm === 'denied' ? 'rgba(255,255,255,0.10)' : 'rgba(122,162,255,0.40)'}`,
+                cursor: notifPerm === 'denied' ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {notifPerm === 'denied' ? '🔕 Notifications blocked' : '🔔 Enable notifications'}
+            </button>
+          )}
+          {items.length > 0 && notifPerm === 'granted' && (
+            <span style={{
+              padding: '4px 10px', borderRadius: 4,
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase',
+              color: '#66bb6a',
+              background: 'rgba(102,187,106,0.10)',
+              border: '1px solid rgba(102,187,106,0.30)',
+            }}>
+              🔔 Notifications on
+            </span>
+          )}
+        </div>
         <p className="muted small" style={{ marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
           Props you've starred from anywhere on the site. Live-graded against
           tonight's games. Stored locally on this device — sign in / out doesn't
