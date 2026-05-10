@@ -51,6 +51,9 @@ type UnifiedBet = {
   projection: number | null;
   rangeLow: number | null;
   rangeHigh: number | null;
+  // Per-leg reason codes from the projection engine — surfaced via
+  // an inline-expand row so users can audit why the model picked it.
+  reasonCodes: string[];
 };
 
 type SortKey = 'ev' | 'edge' | 'probability' | 'live';
@@ -72,6 +75,7 @@ export function BestBetsToday() {
   const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
   const [minEdge, setMinEdge] = useState<number>(5);
   const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +133,9 @@ export function BestBetsToday() {
         projection: proj.projection.final,
         rangeLow: proj.projection.rangeLow,
         rangeHigh: proj.projection.rangeHigh,
+        // NBA SlateProjection doesn't surface reasonCodes on the
+        // frontend type today — chevron self-hides for NBA rows.
+        reasonCodes: [],
       });
     }
 
@@ -166,6 +173,7 @@ export function BestBetsToday() {
             projection: l.projection ?? null,
             rangeLow: l.rangeLow ?? null,
             rangeHigh: l.rangeHigh ?? null,
+            reasonCodes: l.reasonCodes ?? [],
           });
         }
       }
@@ -352,7 +360,14 @@ export function BestBetsToday() {
                 {sorted.slice(0, 50).map((b, i) => {
                   const live = liveByKey.get(makeKey(b)) ?? null;
                   return (
-                    <BetRow key={makeKey(b)} bet={b} rank={i + 1} live={live} />
+                    <BetRow
+                      key={makeKey(b)}
+                      bet={b}
+                      rank={i + 1}
+                      live={live}
+                      expanded={expandedKey === makeKey(b)}
+                      onToggleExpand={() => setExpandedKey((k) => k === makeKey(b) ? null : makeKey(b))}
+                    />
                   );
                 })}
               </tbody>
@@ -373,14 +388,42 @@ function makeKey(b: { playerId: number; statKey: string; line: number; direction
   return `${b.playerId}-${b.statKey}-${b.line}-${b.direction}`;
 }
 
-function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: EliteLegLiveState | null }) {
+function BetRow({ bet, rank, live, expanded, onToggleExpand }: {
+  bet: UnifiedBet;
+  rank: number;
+  live: EliteLegLiveState | null;
+  expanded: boolean;
+  onToggleExpand: () => void;
+}) {
   const sportColor = SPORT_COLOR[bet.sport];
   const { isStarred, toggle } = useStarredProps();
   const starredId = `${bet.sport}-${bet.playerId}-${bet.statKey}-${bet.line}-${bet.direction}`;
   const starred = isStarred(starredId);
+  const hasReasons = bet.reasonCodes.length > 0;
   return (
+    <>
     <tr style={{ borderBottom: '1px solid var(--border-subtle)' }} className="best-bets-row">
-      <td style={{ ...td, color: 'rgba(255,255,255,0.45)', textAlign: 'right', paddingRight: 14 }}>
+      <td style={{ ...td, color: 'rgba(255,255,255,0.45)', textAlign: 'right', paddingRight: 14, position: 'relative' }}>
+        {hasReasons && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+            title={expanded ? 'Collapse reasoning' : 'Why this pick?'}
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            style={{
+              position: 'absolute',
+              left: 0, top: '50%', transform: 'translateY(-50%)',
+              background: 'transparent', border: 'none',
+              color: expanded ? '#7aa2ff' : 'rgba(255,255,255,0.30)',
+              fontSize: 10, fontWeight: 800,
+              padding: '4px 6px',
+              cursor: 'pointer',
+              transition: 'color var(--motion-fast), transform var(--motion-fast)',
+            }}
+          >
+            {expanded ? '▼' : '▸'}
+          </button>
+        )}
         {rank}
       </td>
       <td style={{ ...td, textAlign: 'center' }}>
@@ -492,6 +535,32 @@ function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: Elit
         <LiveVerdictPill state={live} compact />
       </td>
     </tr>
+    {expanded && hasReasons && (
+      <tr className="best-bets-expanded">
+        <td colSpan={10} style={{
+          padding: '10px 14px 14px 32px',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'rgba(122,162,255,0.04)',
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: '#7aa2ff', marginBottom: 6,
+          }}>
+            Why this pick
+          </div>
+          <ul style={{
+            margin: 0, paddingLeft: 18,
+            fontSize: 12, lineHeight: 1.55,
+            color: 'rgba(255,255,255,0.85)',
+            fontFamily: 'var(--font-sans, system-ui)',
+            fontVariantNumeric: 'normal',
+          }}>
+            {bet.reasonCodes.map((r, i) => <li key={i} style={{ marginBottom: 2 }}>{r}</li>)}
+          </ul>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
