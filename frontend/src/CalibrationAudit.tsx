@@ -32,6 +32,22 @@ const SPORT_COLOR: Record<string, string> = {
   mma:  '#ef5350',
 };
 
+// User-facing sport labels — 'mma' is internal, audience-facing label
+// is 'UFC'. Mirrors the SPORT_LABEL maps in StarredPage / News /
+// Dashboard / NavSearch.
+const SPORT_LABEL: Record<string, string> = {
+  nba: 'NBA', mlb: 'MLB', mma: 'UFC', wnba: 'WNBA',
+};
+
+// /<sport>/calibration deep-link, with safe fallback for sports that
+// don't have a per-sport calibration page yet (UFC waits on the
+// fighter-stat database that powers a fundamental projection engine).
+function calibrationDetailHref(sport: string): string | null {
+  if (sport === 'mlb' || sport === 'wnba' || sport === 'nba') return `/${sport}/calibration`;
+  if (sport === 'mma') return '/mma/slate';     // no /mma/calibration yet — slate is the closest surface
+  return null;
+}
+
 export function CalibrationAudit() {
   useTitle(['Calibration', 'Truth Metric']);
   const [data, setData] = useState<CrossSportCalibration | null>(null);
@@ -189,7 +205,7 @@ export function CalibrationAudit() {
                       borderRadius: 6,
                     }}>
                       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: SPORT_COLOR[s.sport] ?? 'rgba(255,255,255,0.7)' }}>
-                        {s.sport}
+                        {SPORT_LABEL[s.sport] ?? s.sport}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
                         <span style={{ fontSize: 22, fontWeight: 800 }}>{s.overallHitRate.toFixed(1)}%</span>
@@ -198,12 +214,14 @@ export function CalibrationAudit() {
                       <div style={{ fontSize: 11, marginTop: 4, color: gapColor(s.calibrationGap) }}>
                         {s.calibrationGap >= 0 ? '+' : ''}{s.calibrationGap.toFixed(1)}pp gap · {s.totalGraded} graded
                       </div>
-                      <Link
-                        to={s.sport === 'mlb' ? '/mlb/calibration' : s.sport === 'wnba' ? '/wnba/calibration' : `/${s.sport}/calibration`}
-                        style={{ fontSize: 11, fontWeight: 700, color: SPORT_COLOR[s.sport] ?? '#7aa2ff', textDecoration: 'none', marginTop: 8, display: 'inline-block' }}
-                      >
-                        Sport detail →
-                      </Link>
+                      {calibrationDetailHref(s.sport) && (
+                        <Link
+                          to={calibrationDetailHref(s.sport)!}
+                          style={{ fontSize: 11, fontWeight: 700, color: SPORT_COLOR[s.sport] ?? '#7aa2ff', textDecoration: 'none', marginTop: 8, display: 'inline-block' }}
+                        >
+                          {s.sport === 'mma' ? 'UFC slate →' : 'Sport detail →'}
+                        </Link>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -245,7 +263,7 @@ export function CalibrationAudit() {
                               color: SPORT_COLOR[r.sport] ?? 'rgba(255,255,255,0.6)',
                               textTransform: 'uppercase',
                             }}>
-                              {r.sport}
+                              {SPORT_LABEL[r.sport] ?? r.sport}
                             </span>
                           </td>
                           <td style={{ ...tdStyle, color: 'rgba(255,255,255,0.6)' }}>
