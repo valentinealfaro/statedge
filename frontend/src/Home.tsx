@@ -168,6 +168,10 @@ export function Home() {
           {' · '}
           <Link to="/nba/slate" className="footer-link">NBA slate</Link>
           {' · '}
+          <Link to="/nba/slate/history" className="footer-link">NBA history</Link>
+          {' · '}
+          <Link to="/nba/calibration" className="footer-link">NBA calibration</Link>
+          {' · '}
           <Link to="/mlb/standings" className="footer-link">MLB standings</Link>
           {' · '}
           <Link to="/mlb/slate" className="footer-link">MLB slate</Link>
