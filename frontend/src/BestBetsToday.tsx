@@ -1,0 +1,475 @@
+// /best-bets — cross-sport unified edge watchlist. Phase 147b.
+//
+// One page that pulls every published prop across NBA + MLB + UFC,
+// ranks them by EV (or edge / probability / live status — user picks),
+// and shows live verdicts inline. Bloomberg-watchlist-shaped: dense,
+// numeric, sortable, scannable.
+//
+// Each row links to its source page (slate / Elite / fight detail)
+// so the watchlist is a discovery tool — you find what's interesting
+// here, then drill into the source for the why.
+
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  getMlbDailySlate,
+  getTodaySlate,
+  liveGradeLegs,
+  type EliteLegLiveState,
+  type MlbDailySlateResponse,
+  type SlateResponse,
+} from './api';
+import { ClvTrustBanner } from './ClvTrustBanner';
+import { NavBar } from './NavBar';
+import { Skeleton } from './Skeleton';
+import { LiveVerdictPill } from './slateLiveState';
+import { useTitle } from './useTitle';
+
+type Sport = 'nba' | 'mlb';
+
+type UnifiedBet = {
+  sport: Sport;
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;       // 0..100
+  edgePercent: number;       // can be negative
+  marketImpliedProb: number | null;  // 0..100
+  trapScore: number | null;
+  fragilityScore: number | null;
+  href: string;
+  // Computed: EV per $1 stake = probability × payout − 1, where payout
+  // is the standard 2x for a single-leg PrizePicks Flex.
+  ev: number;                // -1..N
+};
+
+type SortKey = 'ev' | 'edge' | 'probability' | 'live';
+
+const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB' };
+const SPORT_COLOR: Record<Sport, string> = { nba: '#7aa2ff', mlb: '#66bb6a' };
+
+// Single-leg payout assumption for EV computation. PrizePicks Flex
+// pays roughly 2x on a 1-leg pick; this is the same constant the rest
+// of the platform uses for honest EV math.
+const SINGLE_LEG_PAYOUT = 2;
+
+export function BestBetsToday() {
+  useTitle(['Best Bets Today']);
+  const [nba, setNba] = useState<SlateResponse | null>(null);
+  const [mlb, setMlb] = useState<MlbDailySlateResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('ev');
+  const [sportFilter, setSportFilter] = useState<Sport | 'all'>('all');
+  const [minEdge, setMinEdge] = useState<number>(5);
+  const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.allSettled([
+      getTodaySlate('balanced'),
+      getMlbDailySlate(),
+    ]).then(([n, m]) => {
+      if (cancelled) return;
+      if (n.status === 'fulfilled') setNba(n.value.resolved);
+      else setError((n.reason as Error)?.message ?? 'NBA slate failed');
+      if (m.status === 'fulfilled') setMlb(m.value);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Build the unified bet list once both slates land. Recomputed on
+  // every render — it's bounded by slate size (< 200 props per sport)
+  // and the work is cheap.
+  const allBets = useMemo<UnifiedBet[]>(() => {
+    const out: UnifiedBet[] = [];
+
+    // NBA — pulls from `lines` directly. Each line carries a
+    // projection block with edge.score + probability per direction.
+    for (const l of nba?.lines ?? []) {
+      const proj = l.projection;
+      if (!proj || proj.noProjection) continue;
+      const lean = (proj.edge.lean ?? '').toLowerCase();
+      const direction: 'OVER' | 'UNDER' = lean.includes('under') ? 'UNDER' : 'OVER';
+      const prob = direction === 'OVER' ? proj.probability.over : proj.probability.under;
+      const edgePct = proj.edge.score ?? 0;
+      // Backsolve implied from edge: implied = prob - edgePct (in pp).
+      const implied = prob - edgePct;
+      const ev = (prob / 100) * SINGLE_LEG_PAYOUT - 1;
+      out.push({
+        sport: 'nba',
+        playerId: l.playerId,
+        playerName: l.playerName,
+        team: l.team,
+        statKey: l.statKey,
+        statLabel: l.statLabel,
+        line: l.line,
+        direction,
+        probability: prob,
+        edgePercent: edgePct,
+        marketImpliedProb: implied,
+        trapScore: null,
+        fragilityScore: proj.fragility?.score ?? null,
+        href: `/nba/slate?legs=${l.playerId}-${l.statKey}-${l.line}`,
+        ev,
+      });
+    }
+
+    // MLB — combine across the day's combos with a leg-id de-dup so
+    // legs that appear on multiple cards count once.
+    if (mlb?.resolved) {
+      const seen = new Set<string>();
+      for (const slot of mlb.resolved.combos) {
+        if (!slot.combo) continue;
+        for (const l of slot.combo.legs) {
+          const key = `${l.playerId}::${l.statKey}::${l.line}::${l.direction}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const implied = l.probability - l.edgePercent;
+          const ev = (l.probability / 100) * SINGLE_LEG_PAYOUT - 1;
+          out.push({
+            sport: 'mlb',
+            playerId: l.playerId,
+            playerName: l.playerName,
+            team: l.team,
+            statKey: l.statKey,
+            statLabel: l.statLabel,
+            line: l.line,
+            direction: l.direction,
+            probability: l.probability,
+            edgePercent: l.edgePercent,
+            marketImpliedProb: implied,
+            trapScore: l.trapScore ?? null,
+            fragilityScore: l.fragilityScore ?? null,
+            href: `/mlb/slate`,
+            ev,
+          });
+        }
+      }
+    }
+
+    return out;
+  }, [nba, mlb]);
+
+  const filtered = useMemo(() => {
+    return allBets
+      .filter((b) => sportFilter === 'all' || b.sport === sportFilter)
+      .filter((b) => Math.abs(b.edgePercent) >= minEdge);
+  }, [allBets, sportFilter, minEdge]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    if (sortKey === 'ev') arr.sort((a, b) => b.ev - a.ev);
+    else if (sortKey === 'edge') arr.sort((a, b) => b.edgePercent - a.edgePercent);
+    else if (sortKey === 'probability') arr.sort((a, b) => b.probability - a.probability);
+    else if (sortKey === 'live') {
+      // Sort by live verdict — ON_PACE_HIT/HIT first, then IN_FLIGHT,
+      // then PENDING, then ON_PACE_MISS/MISS at the bottom.
+      const rank = (s: EliteLegLiveState | undefined) => {
+        if (!s) return 4;
+        if (s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT') return 0;
+        if (s.verdict === 'IN_FLIGHT') return 1;
+        if (s.verdict === 'PENDING') return 2;
+        if (s.verdict === 'PUSH') return 3;
+        return 5;     // MISS / ON_PACE_MISS / UNGRADED
+      };
+      arr.sort((a, b) => {
+        const sa = liveByKey.get(makeKey(a));
+        const sb = liveByKey.get(makeKey(b));
+        return rank(sa) - rank(sb);
+      });
+    }
+    return arr;
+  }, [filtered, sortKey, liveByKey]);
+
+  // Live-grade the top 50 visible bets every 60s. Cap matches the
+  // server-side limit on /api/slate/live-grade.
+  const visible = sorted.slice(0, 50);
+  const visibleSig = visible.map(makeKey).join('|');
+  useEffect(() => {
+    if (visible.length === 0) { setLiveByKey(new Map()); return; }
+    let cancelled = false;
+    const tick = () => {
+      const payload = visible.map((b) => ({
+        playerId: b.playerId,
+        playerName: b.playerName,
+        statKey: b.statKey,
+        direction: b.direction,
+        line: b.line,
+      }));
+      liveGradeLegs(payload)
+        .then((states) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < states.length; i++) {
+            const b = visible[i]!;
+            m.set(makeKey(b), states[i]!);
+          }
+          setLiveByKey(m);
+        })
+        .catch(() => { /* silent */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [visibleSig]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isLoading = nba === null && mlb === null;
+
+  return (
+    <div className="app">
+      <NavBar />
+      <div className="mlb-compare-shell">
+        <div style={{ marginBottom: 8 }}>
+          <Link to="/" className="muted small">← Home</Link>
+        </div>
+
+        <div style={{
+          fontSize: 11, fontWeight: 800, letterSpacing: '0.10em',
+          textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
+        }}>
+          STATEDGE BEST BETS · CROSS-SPORT
+        </div>
+        <h1 style={{ margin: '4px 0 8px' }}>Best Bets Today</h1>
+        <p className="muted small" style={{ marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
+          Every prop the model has flagged across tonight's NBA + MLB slates,
+          ranked by expected value. Sortable, filterable, live-tracked. Click
+          any row to drill into the source slate. EV assumes a single-leg
+          PrizePicks Flex payout ({SINGLE_LEG_PAYOUT}×).
+        </p>
+
+        <ClvTrustBanner />
+
+        {error && <div className="mlb-info-banner mlb-info-error" style={{ marginBottom: 12 }}>{error}</div>}
+
+        {/* Filter bar: sport + sort + min-edge */}
+        <div style={{
+          display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
+          marginBottom: 16, padding: '10px 14px',
+          background: 'rgba(0,0,0,0.20)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+        }}>
+          <SegmentedTab options={[
+            { value: 'all', label: 'All' },
+            { value: 'nba', label: 'NBA' },
+            { value: 'mlb', label: 'MLB' },
+          ]} value={sportFilter} onChange={(v) => setSportFilter(v as Sport | 'all')} />
+          <span style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
+          <SegmentedTab options={[
+            { value: 'ev', label: 'EV' },
+            { value: 'edge', label: 'Edge' },
+            { value: 'probability', label: 'Prob' },
+            { value: 'live', label: 'Live' },
+          ]} value={sortKey} onChange={(v) => setSortKey(v as SortKey)} />
+          <span style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
+          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            min edge
+            <input
+              type="number"
+              value={minEdge}
+              onChange={(e) => setMinEdge(Number(e.target.value) || 0)}
+              style={{
+                width: 60, padding: '4px 8px', fontSize: 12,
+                background: 'var(--surface-0)',
+                border: '1px solid var(--border-default)',
+                color: 'inherit', borderRadius: 4,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              }}
+              step="1"
+              min="0"
+              max="50"
+            />
+            <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>%</span>
+          </label>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+            {sorted.length} {sorted.length === 1 ? 'pick' : 'picks'} · top 50 live-tracked
+          </span>
+        </div>
+
+        {isLoading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} width="100%" height={42} />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && sorted.length === 0 && (
+          <div className="mlb-info-banner">
+            <strong>No props match these filters.</strong>
+            {' '}
+            Lower the min-edge threshold or change the sport filter.
+            If both slates haven't published yet today, check back closer to game time.
+          </div>
+        )}
+
+        {!isLoading && sorted.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{
+              width: '100%', borderCollapse: 'collapse', fontSize: 13,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
+                  <th style={th}>#</th>
+                  <th style={th}>Sport</th>
+                  <th style={th}>Player</th>
+                  <th style={{ ...th, textAlign: 'left' }}>Stat / Line</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Prob</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Edge</th>
+                  <th style={{ ...th, textAlign: 'right' }}>EV</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Live</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.slice(0, 50).map((b, i) => {
+                  const live = liveByKey.get(makeKey(b)) ?? null;
+                  return (
+                    <BetRow key={makeKey(b)} bet={b} rank={i + 1} live={live} />
+                  );
+                })}
+              </tbody>
+            </table>
+            {sorted.length > 50 && (
+              <p className="muted small" style={{ marginTop: 8, fontSize: 11 }}>
+                Showing top 50 of {sorted.length} matching picks. Live tracking is capped at the visible 50 to bound API traffic.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function makeKey(b: { playerId: number; statKey: string; line: number; direction: 'OVER' | 'UNDER' }): string {
+  return `${b.playerId}-${b.statKey}-${b.line}-${b.direction}`;
+}
+
+function BetRow({ bet, rank, live }: { bet: UnifiedBet; rank: number; live: EliteLegLiveState | null }) {
+  const sportColor = SPORT_COLOR[bet.sport];
+  return (
+    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }} className="best-bets-row">
+      <td style={{ ...td, color: 'rgba(255,255,255,0.45)', textAlign: 'right', paddingRight: 14 }}>
+        {rank}
+      </td>
+      <td style={td}>
+        <span style={{
+          fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+          color: sportColor,
+          padding: '2px 6px',
+          background: `${sportColor}14`,
+          border: `1px solid ${sportColor}40`,
+          borderRadius: 3,
+        }}>
+          {SPORT_LABEL[bet.sport]}
+        </span>
+      </td>
+      <td style={td}>
+        <Link to={bet.href} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 700 }}>
+          {bet.playerName}
+        </Link>
+        {bet.team && <span style={{ marginLeft: 6, color: 'rgba(255,255,255,0.45)' }}>{bet.team}</span>}
+      </td>
+      <td style={td}>
+        <span style={{ color: 'rgba(255,255,255,0.85)' }}>{bet.statLabel}</span>{' '}
+        <strong>{bet.line}</strong>{' '}
+        <span style={{ color: bet.direction === 'OVER' ? '#66bb6a' : '#ef5350', fontWeight: 800 }}>
+          {bet.direction === 'OVER' ? '↑' : '↓'}
+        </span>
+      </td>
+      <td style={{ ...td, textAlign: 'right' }}>
+        <strong style={{ color: bet.probability >= 60 ? '#66bb6a' : '#fff' }}>
+          {bet.probability.toFixed(1)}%
+        </strong>
+        {bet.marketImpliedProb !== null && (
+          <span style={{ marginLeft: 4, fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+            (mkt {Math.round(bet.marketImpliedProb)}%)
+          </span>
+        )}
+      </td>
+      <td style={{
+        ...td, textAlign: 'right', fontWeight: 800,
+        color: bet.edgePercent >= 10 ? '#66bb6a' : bet.edgePercent >= 5 ? '#ffd54f' : '#ef5350',
+      }}>
+        {bet.edgePercent >= 0 ? '+' : ''}{bet.edgePercent.toFixed(1)}pp
+      </td>
+      <td style={{
+        ...td, textAlign: 'right', fontWeight: 800,
+        color: bet.ev >= 0.10 ? '#66bb6a' : bet.ev >= 0 ? '#ffd54f' : '#ef5350',
+      }}>
+        {bet.ev >= 0 ? '+' : ''}{(bet.ev * 100).toFixed(1)}%
+      </td>
+      <td style={{ ...td, textAlign: 'right' }}>
+        <LiveVerdictPill state={live} compact />
+      </td>
+    </tr>
+  );
+}
+
+function SegmentedTab({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{
+      display: 'inline-flex',
+      padding: 2,
+      background: 'var(--surface-0)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 'var(--radius-pill)',
+      gap: 2,
+    }}>
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-pill)',
+              border: 'none',
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              background: active ? 'var(--brand-gradient)' : 'transparent',
+              color: active ? '#fff' : 'var(--text-3)',
+              boxShadow: active ? 'var(--shadow-brand-glow)' : 'none',
+              transition: 'all var(--motion-fast)',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const th: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '8px 10px',
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'rgba(255,255,255,0.55)',
+};
+
+const td: React.CSSProperties = {
+  padding: '10px 10px',
+  fontSize: 13,
+};
