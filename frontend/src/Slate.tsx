@@ -8,9 +8,11 @@ import {
   getSlateAuto,
   getSlateInsight,
   getTodaySlate,
+  liveGradeLegs,
   postSlateImage,
   type BackendVersion,
   type DataFreshness,
+  type EliteLegLiveState,
   type NbaLiveTodayPlayer,
   type NbaLiveTodayResponse,
   type SlateCombo,
@@ -2103,6 +2105,39 @@ function SuggestedParlay({
     .slice(0, 3)
     .map((r) => r.line);
 
+  // Live verdict polling — keyed on the suggested legs so the chip
+  // updates without a full slate refresh while games are in progress.
+  const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+  const legsKey = top3.map((l) => `${l.playerId}-${l.statKey}-${l.line}`).join('|');
+  useEffect(() => {
+    if (top3.length === 0) { setLiveByKey(new Map()); return; }
+    let cancelled = false;
+    const tick = () => {
+      const payload = top3.map((l) => ({
+        playerId: l.playerId,
+        playerName: l.playerName,
+        statKey: l.statKey,
+        // Suggested parlay always leans the model's preferred direction.
+        direction: (l.hitProbability?.lean === 'UNDER' ? 'UNDER' : 'OVER') as 'OVER' | 'UNDER',
+        line: l.line,
+      }));
+      liveGradeLegs(payload)
+        .then((legs) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < legs.length; i++) {
+            const t = top3[i]!;
+            m.set(`${t.playerId}-${t.statKey}-${t.line}`, legs[i]!);
+          }
+          setLiveByKey(m);
+        })
+        .catch(() => { /* silent — chip stays static */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [legsKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   if (top3.length < 3) return null;
 
   // Combined hit % assuming independence (matches the tray's math).
@@ -2112,6 +2147,15 @@ function SuggestedParlay({
 
   const legs = top3.map((l) => `${l.playerId}-${l.statKey}-${l.line}`);
 
+  // Roll up the live state into a quick chip.
+  let liveHit = 0, liveMiss = 0, liveInFlight = 0;
+  for (const s of liveByKey.values()) {
+    if (s.verdict === 'HIT' || s.verdict === 'ON_PACE_HIT') liveHit++;
+    else if (s.verdict === 'MISS' || s.verdict === 'ON_PACE_MISS' || s.verdict === 'PUSH') liveMiss++;
+    else if (s.verdict === 'IN_FLIGHT') liveInFlight++;
+  }
+  const showLive = (liveHit + liveMiss + liveInFlight) > 0;
+
   return (
     <div className="suggested-parlay">
       <div className="suggested-parlay-head">
@@ -2119,14 +2163,46 @@ function SuggestedParlay({
         <span className="muted small">
           combined ≈ {combined}% · pays {PRIZEPICKS_PAYOUTS[3]}× on PrizePicks
         </span>
+        {showLive && (
+          <span style={{
+            marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            <span className="live-pulse" style={{
+              display: 'inline-block', width: 6, height: 6, borderRadius: 3,
+              background: liveMiss > 0 ? '#ef5350' : liveInFlight > 0 ? '#ffd54f' : '#66bb6a',
+            }} />
+            {liveHit > 0 && <span style={{ color: '#66bb6a' }}>{liveHit} hit</span>}
+            {liveInFlight > 0 && <span style={{ color: '#ffd54f' }}>{liveInFlight} live</span>}
+            {liveMiss > 0 && <span style={{ color: '#ef5350' }}>{liveMiss} miss</span>}
+          </span>
+        )}
       </div>
       <div className="suggested-parlay-legs">
-        {top3.map((l) => (
-          <span key={`${l.playerId}-${l.statKey}-${l.line}`} className="suggested-parlay-leg">
-            <strong>{l.playerName}</strong> {l.statLabel} {l.line}{' '}
-            <span className="muted">{l.hitProbability?.lean === 'OVER' ? '↑' : '↓'}</span>
-          </span>
-        ))}
+        {top3.map((l) => {
+          const liveKey = `${l.playerId}-${l.statKey}-${l.line}`;
+          const live = liveByKey.get(liveKey) ?? null;
+          let liveLabel: string | null = null;
+          let liveColor = 'inherit';
+          if (live) {
+            const v = live.verdict;
+            if (v === 'HIT' || v === 'ON_PACE_HIT') { liveLabel = '✓'; liveColor = '#66bb6a'; }
+            else if (v === 'MISS' || v === 'ON_PACE_MISS') { liveLabel = '✗'; liveColor = '#ef5350'; }
+            else if (v === 'PUSH') { liveLabel = '—'; liveColor = '#ffd54f'; }
+            else if (v === 'IN_FLIGHT' && live.currentValue !== null) { liveLabel = String(live.currentValue); liveColor = '#ffd54f'; }
+          }
+          return (
+            <span key={liveKey} className="suggested-parlay-leg">
+              <strong>{l.playerName}</strong> {l.statLabel} {l.line}{' '}
+              <span className="muted">{l.hitProbability?.lean === 'OVER' ? '↑' : '↓'}</span>
+              {liveLabel && (
+                <span style={{ marginLeft: 6, color: liveColor, fontWeight: 800, fontSize: 11 }}>
+                  · {liveLabel}
+                </span>
+              )}
+            </span>
+          );
+        })}
       </div>
       <button className="cta primary" onClick={() => onAccept(legs)}>
         Try this slip →
