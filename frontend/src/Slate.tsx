@@ -1377,8 +1377,9 @@ function BestPicksRail({
                   className={`best-pick-weakest weakest-${(c.cardFragility ?? '').toLowerCase().replace(/ /g, '-')}`}
                   title="The leg most likely to short this card. If you're going to trim, start here."
                 >
-                  ⚠ Weakest leg: <strong>{c.weakestLegName}</strong>
+                  <span>Weakest leg: <strong>{c.weakestLegName}</strong>
                   {c.weakestLegReason && <> — {c.weakestLegReason}</>}
+                  </span>
                 </div>
               )}
               <div className="best-pick-legs">
@@ -1542,7 +1543,7 @@ function BestPicksRail({
               {c.warnings.length > 0 && (
                 <div className="best-pick-warnings">
                   {c.warnings.map((w, i) => (
-                    <span key={i} className="best-pick-warning">⚠ {w}</span>
+                    <span key={i} className="best-pick-warning"><span>{w}</span></span>
                   ))}
                 </div>
               )}

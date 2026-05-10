@@ -2906,18 +2906,36 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .best-pick-leg-conf.conf-strong { background: var(--hot-bg); color: var(--hot); }
 .best-pick-leg-conf.conf-medium { background: rgba(255,184,107,0.12); color: var(--warn); }
 .best-pick-leg-conf.conf-low { background: var(--cold-bg); color: var(--cold); }
+/* Iter 26: card-level trap warnings now read as a proper amber
+   banner block with a leading icon glyph instead of dashed-divider
+   muted text. Each warning gets its own tinted row inside a shared
+   container so multiple warnings stack cleanly. */
 .best-pick-warnings {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border-subtle);
+  gap: 4px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 184, 107, 0.06) 0%, rgba(255, 184, 107, 0.02) 100%);
+  border: 1px solid rgba(255, 184, 107, 0.22);
+  border-radius: var(--radius-md);
 }
 .best-pick-warning {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--warn);
   font-weight: 600;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.best-pick-warning::before {
+  content: '⚠';
+  font-size: 12px;
+  flex-shrink: 0;
+  line-height: 1.3;
+  opacity: 0.9;
 }
 
 /* Iter 17: leg-block now has a subtle hover state + tighter rhythm.
@@ -3353,25 +3371,42 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 
 /* Weakest-leg call-out — sits between the signals row and the legs.
    Color-keyed to fragility tier (red for "Do Not Use", amber for
-   Fragile). Strong/Acceptable cards skip rendering this entirely. */
+   Fragile). Strong/Acceptable cards skip rendering this entirely.
+   Iter 26: matches the new warnings banner aesthetic — gradient bg,
+   leading icon, tighter spacing, premium edge. */
 .best-pick-weakest {
-  margin-top: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  line-height: 1.45;
+  margin-top: 10px;
+  padding: 10px 14px 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.best-pick-weakest::before {
+  content: '⚠';
+  font-size: 14px;
+  flex-shrink: 0;
+  line-height: 1.3;
+  opacity: 0.9;
 }
 .best-pick-weakest.weakest-fragile {
-  background: rgba(255, 184, 107, 0.10);
-  border: 1px solid rgba(255, 184, 107, 0.25);
+  background:
+    linear-gradient(180deg, rgba(255, 184, 107, 0.10) 0%, rgba(255, 184, 107, 0.03) 100%);
+  border: 1px solid rgba(255, 184, 107, 0.30);
   color: var(--warn);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
-.best-pick-weakest.weakest-do-not-use {
-  background: rgba(239, 106, 106, 0.10);
-  border: 1px solid rgba(239, 106, 106, 0.25);
+.best-pick-weakest.weakest-do-not-use,
+.best-pick-weakest.weakest-very-fragile {
+  background:
+    linear-gradient(180deg, rgba(239, 106, 106, 0.10) 0%, rgba(239, 106, 106, 0.03) 100%);
+  border: 1px solid rgba(239, 106, 106, 0.30);
   color: var(--cold);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
-.best-pick-weakest strong { color: inherit; font-weight: 800; }
+.best-pick-weakest strong { color: var(--text-1); font-weight: 800; }
 
 /* Per-leg EV bar — second row under the leg's main row. Edge %,
    category chip, trap warning when the leg looks public-driven. */
@@ -6750,11 +6785,21 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   filter: brightness(1.04);
 }
 
-/* ─── Elite leg card hover ─── */
+/* ─── Elite leg card (Best Bets / Elite ticket page) ─── */
+/* Iter 26: rest-state polish layered on top of the inline styles
+   in Elite.tsx. Adds inner highlight + subtle shadow at rest, and
+   replaces the janky horizontal hover shift with a proper
+   translateY lift matching the slate-card hover language. */
+.elite-leg-card {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 2px 8px rgba(0,0,0,0.18);
+}
 .elite-leg-card:hover {
-  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.34);
-  border-color: rgba(255,255,255,0.16);
-  transform: translateX(2px);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.36);
+  border-color: rgba(255,255,255,0.20);
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 8px 24px rgba(0,0,0,0.32);
 }
 
 /* ─── News card hover ─── */
@@ -6765,9 +6810,10 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 
 /* ─── MMA fight row hover ─── */
+/* Iter 26: drop the lateral translate (felt janky) and use a soft
+   tinted row hover — same pattern best-pick-leg-block uses. */
 .mma-fight-row:hover {
   background: rgba(239,83,80,0.08) !important;
-  transform: translateX(2px);
 }
 
 /* ─── Today-at-a-glance ticker cells ─── */
