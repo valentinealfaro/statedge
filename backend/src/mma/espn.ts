@@ -1,15 +1,20 @@
-// ESPN UFC scoreboard fetcher — Phase 107a.
+// ESPN UFC scoreboard + fightcenter fetcher — Phase 107a foundation,
+// extended through Phase 146 (fight detail) and Phase 148o (live
+// grading via fightcenter).
 //
-// MMA replaces WNBA as the third sport per the sport-priorities
-// decision. The Odds API already maps 'mma' → 'mma_mixed_martial_arts',
-// so Market Brain ingestion plumbing reuses without changes; what we
-// don't yet have is anything to SHOW for the sport. This client gives
-// us upcoming UFC events + completed event results from ESPN's public
-// site API. PPV and Fight Night cards both surface here.
+// UFC is the third focus sport per the 2026-05-09 sport-priorities
+// decision. This client gives the platform: upcoming UFC events +
+// completed results (scoreboard), fight-by-fight detail + live
+// in-fight stats (fightcenter). Together they power /mma/scoreboard,
+// /mma/fight/:event/:fight, /mma/fighter/:id, the cross-sport Elite
+// ticket UFC contribution, and live-verdict pills on every starred
+// or Elite UFC leg.
 //
 // ESPN endpoints used:
 //   /scoreboard?dates=YYYYMMDD-YYYYMMDD  → range listing
 //   /summary?event=:eventId              → fight card + results
+//   fightcenter (per-fight stats)        → live sig_strikes / takedowns /
+//                                          knockdowns / control_time
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/mma/ufc';
 
