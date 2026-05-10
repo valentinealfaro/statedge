@@ -17,6 +17,20 @@
 // Each row links to its source page (player profile with tonight's
 // slate panel) so the watchlist is a discovery tool — you find what's
 // interesting here, then drill into the source for the why.
+//
+// Power-user surface (added across the loop):
+//   - Bidirectional sort headers (▼/▲) on EV / Edge / Probability /
+//     Live verdict columns — click to switch key, click again to
+//     reverse direction.
+//   - Sport filter pills (All / NBA / MLB / UFC).
+//   - Min-edge numeric filter (default 5pp).
+//   - CSV export of the current filtered + sorted view (RFC 4180
+//     escaping, filename auto-stamps date).
+//   - Per-row chevron expand → 'Why this pick' reasonCodes /
+//     modelNotes / rationale audit trail.
+//   - Star toggle in column 2 — every row can be ★'d into /starred.
+//   - Live-tracked top 50 visible rows (server caps the request at
+//     50 legs); rest fall back to static probability + edge.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
