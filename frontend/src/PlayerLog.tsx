@@ -321,6 +321,7 @@ function NbaGameLogTable({
                 <th>Matchup</th>
                 <th>Min</th>
                 <th className="num">Value</th>
+                <th>Stat line</th>
                 {includeLine && <th>Vs line</th>}
               </tr>
             </thead>
@@ -336,6 +337,14 @@ function NbaGameLogTable({
                     <td>{g.matchup}</td>
                     <td>{g.minutes.toFixed(0)}</td>
                     <td className="num"><strong>{v}</strong></td>
+                    <td style={{
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                      fontSize: 12,
+                      color: 'rgba(255,255,255,0.75)',
+                    }}>
+                      {formatNbaStatLine(g)}
+                    </td>
                     {includeLine && (
                       <td style={{ color: cleared ? 'var(--hot, #66bb6a)' : tied ? 'var(--text-3)' : '#ef5350' }}>
                         {cleared ? '✓ Hit' : tied ? '— Push' : '✗ Miss'}
@@ -350,4 +359,20 @@ function NbaGameLogTable({
       </div>
     </>
   );
+}
+
+// Compact NBA box-score for one game. PTS / REB / AST always shown
+// (the canonical triple). Steals/blocks/turnovers/3PM appended only
+// when non-zero so the line stays scannable. Mirrors MLB's
+// formatStatLine convention for cross-sport visual parity.
+function formatNbaStatLine(g: PlayerGame): string {
+  const parts: string[] = [];
+  parts.push(`${g.points}P`);
+  parts.push(`${g.rebounds}R`);
+  parts.push(`${g.assists}A`);
+  if (g.fg3m && g.fg3m > 0) parts.push(`${g.fg3m}3PM`);
+  if (g.steals && g.steals > 0) parts.push(`${g.steals}STL`);
+  if (g.blocks && g.blocks > 0) parts.push(`${g.blocks}BLK`);
+  if (g.turnovers && g.turnovers > 0) parts.push(`${g.turnovers}TO`);
+  return parts.join(' · ');
 }
