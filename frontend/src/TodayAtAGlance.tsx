@@ -20,16 +20,20 @@ import {
   getMlbLiveToday,
   getNbaLiveToday,
   getTodaySlate,
+  getUfcScoreboard,
   type ClvTrustScoreResponse,
   type EliteLiveStateResponse,
   type MlbDailySlateResponse,
   type MlbLiveTodayResponse,
   type NbaLiveTodayResponse,
   type SlateResponse,
+  type UfcEvent,
 } from './api';
 
 type Glance = {
   liveGames: number;
+  // Per-sport split for the tooltip / sub-line.
+  liveBySport: { nba: number; mlb: number; ufc: number };
   activeEdges: number;
   eliteVerdict: 'HIT' | 'MISS' | 'IN_FLIGHT' | null;
   eliteLegRollup: { hit: number; miss: number; inFlight: number } | null;
@@ -48,6 +52,7 @@ export function TodayAtAGlance() {
         mlbSlateRes,
         nbaLiveRes,
         mlbLiveRes,
+        ufcRes,
         eliteRes,
         clvRes,
       ] = await Promise.allSettled([
@@ -55,6 +60,7 @@ export function TodayAtAGlance() {
         getMlbDailySlate().catch(() => null),
         getNbaLiveToday().catch(() => null),
         getMlbLiveToday().catch(() => null),
+        getUfcScoreboard().catch(() => null),
         getEliteLiveState().catch(() => null),
         getClvTrustScore().catch(() => null),
       ]);
@@ -64,20 +70,33 @@ export function TodayAtAGlance() {
       const mlbSlate = mlbSlateRes.status === 'fulfilled' ? mlbSlateRes.value as MlbDailySlateResponse | null : null;
       const nbaLive = nbaLiveRes.status === 'fulfilled' ? nbaLiveRes.value as NbaLiveTodayResponse | null : null;
       const mlbLive = mlbLiveRes.status === 'fulfilled' ? mlbLiveRes.value as MlbLiveTodayResponse | null : null;
+      const ufcSb = ufcRes.status === 'fulfilled' ? ufcRes.value as { events: UfcEvent[] } | null : null;
       const elite = eliteRes.status === 'fulfilled' ? eliteRes.value as EliteLiveStateResponse | null : null;
       const clv = clvRes.status === 'fulfilled' ? clvRes.value as ClvTrustScoreResponse | null : null;
 
-      let liveGames = 0;
+      let nbaLiveCount = 0;
+      let mlbLiveCount = 0;
+      let ufcLiveCount = 0;
       if (nbaLive) {
         for (const g of Object.values(nbaLive.byGame ?? {})) {
-          if ((g as { state?: string }).state === 'live') liveGames++;
+          if ((g as { state?: string }).state === 'live') nbaLiveCount++;
         }
       }
       if (mlbLive) {
         for (const g of Object.values(mlbLive.byGame ?? {})) {
-          if ((g as { state?: string }).state === 'live') liveGames++;
+          if ((g as { state?: string }).state === 'live') mlbLiveCount++;
         }
       }
+      if (ufcSb?.events) {
+        // UFC: count in-progress fights across in-progress events.
+        for (const ev of ufcSb.events) {
+          if (ev.state !== 'in') continue;
+          for (const f of ev.fights) {
+            if (f.state === 'in') ufcLiveCount++;
+          }
+        }
+      }
+      const liveGames = nbaLiveCount + mlbLiveCount + ufcLiveCount;
 
       // Active edges across published slates. NBA reads `resolved.lines`
       // with each line's projection.edge.score; MLB combos.legs each
@@ -118,6 +137,7 @@ export function TodayAtAGlance() {
 
       setGlance({
         liveGames,
+        liveBySport: { nba: nbaLiveCount, mlb: mlbLiveCount, ufc: ufcLiveCount },
         activeEdges,
         eliteVerdict,
         eliteLegRollup,
@@ -170,7 +190,11 @@ export function TodayAtAGlance() {
       <Cell
         label="Live now"
         value={glance.liveGames > 0 ? String(glance.liveGames) : '—'}
-        sub={glance.liveGames > 0 ? `${glance.liveGames === 1 ? 'game' : 'games'} in progress` : 'no games live'}
+        sub={
+          glance.liveGames > 0
+            ? perSportSub(glance.liveBySport)
+            : 'no games live'
+        }
         accent={glance.liveGames > 0 ? '#ef5350' : 'rgba(255,255,255,0.45)'}
         pulse={glance.liveGames > 0}
         href="/dashboard"
@@ -281,4 +305,17 @@ function Cell({
     return <Link to={href} className="glance-cell" style={wrapStyle}>{inner}</Link>;
   }
   return <div style={wrapStyle}>{inner}</div>;
+}
+
+// Compact per-sport split for the Live-now sub-line. Skips zeroes so
+// "3 NBA · 1 UFC" reads tighter than "3 NBA · 0 MLB · 1 UFC". Falls
+// back to "in progress" wording when somehow none of the per-sport
+// counts are populated.
+function perSportSub(s: { nba: number; mlb: number; ufc: number }): string {
+  const parts: string[] = [];
+  if (s.nba > 0) parts.push(`${s.nba} NBA`);
+  if (s.mlb > 0) parts.push(`${s.mlb} MLB`);
+  if (s.ufc > 0) parts.push(`${s.ufc} UFC`);
+  if (parts.length === 0) return 'games in progress';
+  return parts.join(' · ');
 }
