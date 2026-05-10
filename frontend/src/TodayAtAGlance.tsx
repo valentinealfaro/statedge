@@ -21,6 +21,7 @@ import {
   getNbaLiveToday,
   getTodaySlate,
   getUfcScoreboard,
+  getUfcSlateProjections,
   type ClvTrustScoreResponse,
   type EliteLiveStateResponse,
   type MlbDailySlateResponse,
@@ -28,6 +29,7 @@ import {
   type NbaLiveTodayResponse,
   type SlateResponse,
   type UfcEvent,
+  type UfcSlateProjectionsResponse,
 } from './api';
 
 type Glance = {
@@ -36,8 +38,10 @@ type Glance = {
   liveBySport: { nba: number; mlb: number; ufc: number };
   activeEdges: number;
   // Per-sport split of active edges (≥5%) by sport, for the
-  // Active-edges cell sub-line.
-  edgesBySport: { nba: number; mlb: number };
+  // Active-edges cell sub-line. UFC entered the count in iter 67
+  // once /api/mma/slate/projections shipped — heuristic engine output
+  // satisfies the ≥5% bar without a fundamental fighter-stat model.
+  edgesBySport: { nba: number; mlb: number; ufc: number };
   eliteVerdict: 'HIT' | 'MISS' | 'IN_FLIGHT' | null;
   eliteLegRollup: { hit: number; miss: number; inFlight: number } | null;
   beatRate30d: number | null;
@@ -56,6 +60,7 @@ export function TodayAtAGlance() {
         nbaLiveRes,
         mlbLiveRes,
         ufcRes,
+        ufcProjRes,
         eliteRes,
         clvRes,
       ] = await Promise.allSettled([
@@ -64,6 +69,7 @@ export function TodayAtAGlance() {
         getNbaLiveToday().catch(() => null),
         getMlbLiveToday().catch(() => null),
         getUfcScoreboard().catch(() => null),
+        getUfcSlateProjections().catch(() => null),
         getEliteLiveState().catch(() => null),
         getClvTrustScore().catch(() => null),
       ]);
@@ -74,6 +80,7 @@ export function TodayAtAGlance() {
       const nbaLive = nbaLiveRes.status === 'fulfilled' ? nbaLiveRes.value as NbaLiveTodayResponse | null : null;
       const mlbLive = mlbLiveRes.status === 'fulfilled' ? mlbLiveRes.value as MlbLiveTodayResponse | null : null;
       const ufcSb = ufcRes.status === 'fulfilled' ? ufcRes.value as { events: UfcEvent[] } | null : null;
+      const ufcProj = ufcProjRes.status === 'fulfilled' ? ufcProjRes.value as UfcSlateProjectionsResponse | null : null;
       const elite = eliteRes.status === 'fulfilled' ? eliteRes.value as EliteLiveStateResponse | null : null;
       const clv = clvRes.status === 'fulfilled' ? clvRes.value as ClvTrustScoreResponse | null : null;
 
@@ -103,9 +110,13 @@ export function TodayAtAGlance() {
 
       // Active edges across published slates. NBA reads `resolved.lines`
       // with each line's projection.edge.score; MLB combos.legs each
-      // carry edgePercent. We threshold ≥5 to count.
+      // carry edgePercent. UFC reads the moneyline-anchored projection
+      // engine output (Phase 136 / iter 64) — same ≥5 threshold so the
+      // total is honestly comparable across sports. We threshold ≥5
+      // to count.
       let nbaEdgeCount = 0;
       let mlbEdgeCount = 0;
+      let ufcEdgeCount = 0;
       let totalProps = 0;
       const nbaLines = nbaSlate?.lines ?? [];
       for (const l of nbaLines) {
@@ -126,7 +137,11 @@ export function TodayAtAGlance() {
           }
         }
       }
-      const activeEdges = nbaEdgeCount + mlbEdgeCount;
+      for (const p of ufcProj?.projections ?? []) {
+        totalProps++;
+        if (Math.abs(p.edgePercent) >= 5) ufcEdgeCount++;
+      }
+      const activeEdges = nbaEdgeCount + mlbEdgeCount + ufcEdgeCount;
 
       let eliteVerdict: Glance['eliteVerdict'] = null;
       let eliteLegRollup: Glance['eliteLegRollup'] = null;
@@ -144,7 +159,7 @@ export function TodayAtAGlance() {
         liveGames,
         liveBySport: { nba: nbaLiveCount, mlb: mlbLiveCount, ufc: ufcLiveCount },
         activeEdges,
-        edgesBySport: { nba: nbaEdgeCount, mlb: mlbEdgeCount },
+        edgesBySport: { nba: nbaEdgeCount, mlb: mlbEdgeCount, ufc: ufcEdgeCount },
         eliteVerdict,
         eliteLegRollup,
         beatRate30d,
@@ -332,10 +347,11 @@ function perSportSub(s: { nba: number; mlb: number; ufc: number }): string {
 
 // Same shape, scoped to active-edges (NBA + MLB only — UFC slate
 // doesn't expose a projection-engine edge yet).
-function edgesPerSportSub(s: { nba: number; mlb: number }): string {
+function edgesPerSportSub(s: { nba: number; mlb: number; ufc: number }): string {
   const parts: string[] = [];
   if (s.nba > 0) parts.push(`${s.nba} NBA`);
   if (s.mlb > 0) parts.push(`${s.mlb} MLB`);
+  if (s.ufc > 0) parts.push(`${s.ufc} UFC`);
   if (parts.length === 0) return 'props ≥ 5% edge';
   return `${parts.join(' · ')} ≥ 5%`;
 }
