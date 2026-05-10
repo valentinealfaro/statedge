@@ -24,7 +24,10 @@ export function Pricing() {
       setCodeError('That code didn\'t work. Check the casing and try again.');
       return;
     }
-    navigate('/slate');
+    // Land on the canonical NBA slate path. /slate is still wired
+    // as a back-compat redirect but we shouldn't depend on it for
+    // post-unlock navigation.
+    navigate('/nba/slate');
   }
 
   return (
@@ -35,7 +38,8 @@ export function Pricing() {
         <h1>Find your edge.</h1>
         <p className="tag">
           Free for player-vs-team comparisons. Upgrade to Pro to unlock the
-          full prop slate, parlay builder, and AI analysis.
+          full prop slate, parlay builder, and AI analysis — across NBA, MLB,
+          and UFC.
         </p>
       </div>
 
@@ -144,12 +148,16 @@ export function Pricing() {
           <div>
             <h3>How is hit probability calculated?</h3>
             <p className="muted">
-              A layered model: baselines per data window (season, last-10,
-              last-5, vs-opponent, home/away, usage), eight context
-              multipliers (minutes, injury, defense, pace, rest, etc),
-              distribution-based probability with per-stat std-dev floors,
-              and a conservative lean threshold that returns "No Clear
-              Edge" when the signal is weak.
+              A 10-layer projection engine: L1 robust baseline (7 windows
+              blended toward stat-specific stabilization thresholds), L2
+              opportunity (minutes / usage / batting order), L3 matchup
+              (opponent defense / pitcher hand / weight class), L4
+              environment (pace / weather / altitude), L5 variance &amp;
+              trap (failure modes), L6 distribution (probability), L7
+              expected value, L8 card construction, L9 self-correcting
+              calibration from graded outcomes, and L10 confidence
+              banding. Full layer-by-layer audit on the{' '}
+              <Link to="/methodology" style={{ color: '#7aa2ff' }}>methodology page</Link>.
             </p>
           </div>
           <div>
