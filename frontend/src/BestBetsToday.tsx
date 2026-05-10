@@ -25,6 +25,7 @@ import { ProjectionBand } from './ProjectionBand';
 import { Skeleton } from './Skeleton';
 import { LiveVerdictPill } from './slateLiveState';
 import { useStarredProps } from './starredProps';
+import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
 
 type Sport = 'nba' | 'mlb';
@@ -269,6 +270,12 @@ export function BestBetsToday() {
           any row to drill into the source slate. EV assumes a single-leg
           PrizePicks Flex payout ({SINGLE_LEG_PAYOUT}×).
         </p>
+
+        {/* Same Bloomberg ticker that leads Home + Dashboard.
+            Watchlist users want the headline numbers (live games,
+            active edges, Elite verdict, CLV beat-rate) before they
+            scan the row-level table below. */}
+        <TodayAtAGlance />
 
         <ClvTrustBanner />
 
