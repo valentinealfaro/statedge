@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MlbPlayerAvatar, PlayerAvatar, WnbaPlayerAvatar } from './Avatar';
+import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar, WnbaPlayerAvatar } from './Avatar';
 import {
   getMlbCalibration,
   getMlbDailySlate,
@@ -1481,6 +1481,12 @@ function SportAvatar({ edge }: { edge: UnifiedEdge }) {
   }
   if (edge.sport === 'nba' && typeof edge.playerId === 'number') {
     return <PlayerAvatar playerId={edge.playerId} name={edge.playerName} size="md" />;
+  }
+  if (edge.sport === 'mma') {
+    // UFC fighter ESPN id stored as string in playerId (or 0 when
+    // unresolved). UfcFighterAvatar handles the missing-id fallback
+    // to initials internally — no need to gate here.
+    return <UfcFighterAvatar athleteId={String(edge.playerId)} name={edge.playerName} size="md" />;
   }
   return <WnbaPlayerAvatar playerId={String(edge.playerId)} name={edge.playerName} size="md" />;
 }
