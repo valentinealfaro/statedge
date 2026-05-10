@@ -100,6 +100,7 @@ export function ActivityFeed() {
         if (gradable.length > 0) {
           const states = await liveGradeLegs(gradable.map((p) => ({
             playerId: p.playerId,
+            espnAthleteId: p.espnAthleteId,
             playerName: p.playerName,
             statKey: p.statKey,
             direction: p.direction,

@@ -60,6 +60,10 @@ const UFC_STAT_LABEL: Record<string, string> = {
 type UnifiedBet = {
   sport: Sport;
   playerId: number;
+  // Optional ESPN athlete id for UFC rows — playerId collapses to 0
+  // because UFC ids are alphanumeric, so we keep the canonical id here
+  // for the href + the live-grade pass-through.
+  espnAthleteId?: string;
   playerName: string;
   team: string | null;
   statKey: string;
@@ -233,6 +237,7 @@ export function BestBetsToday() {
       out.push({
         sport: 'mma',
         playerId: numericId,
+        espnAthleteId: p.espnAthleteId ?? undefined,
         playerName: p.fighterName,
         // Surface 'vs Opponent' in the team slot — UFC has no team
         // and the matchup is the most useful context to scan.
@@ -305,6 +310,7 @@ export function BestBetsToday() {
     const tick = () => {
       const payload = visible.map((b) => ({
         playerId: b.playerId,
+        espnAthleteId: b.espnAthleteId,
         playerName: b.playerName,
         statKey: b.statKey,
         direction: b.direction,
@@ -600,6 +606,7 @@ function BetRow({ bet, rank, live, expanded, onToggleExpand }: {
           onClick={() => toggle({
             sport: bet.sport,
             playerId: bet.playerId,
+            espnAthleteId: bet.espnAthleteId,
             playerName: bet.playerName,
             team: bet.team,
             statKey: bet.statKey,

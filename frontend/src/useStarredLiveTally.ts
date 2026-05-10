@@ -45,6 +45,7 @@ export function useStarredLiveTally(): StarredLiveTally {
     const tick = () => {
       const payload = gradable.map((p) => ({
         playerId: p.playerId,
+        espnAthleteId: p.espnAthleteId,
         playerName: p.playerName,
         statKey: p.statKey,
         direction: p.direction,

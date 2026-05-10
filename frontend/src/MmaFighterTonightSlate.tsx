@@ -99,7 +99,11 @@ export function MmaFighterTonightSlate({
         }
       }
       liveGradeLegs(payload.map(({ playerId, playerName, statKey, direction, line }) => ({
-        playerId, playerName, statKey, direction, line,
+        playerId,
+        // fighterId IS the ESPN athlete id on this page (route param);
+        // pass it so the grader uses id-match instead of name fallback.
+        espnAthleteId: fighterId || undefined,
+        playerName, statKey, direction, line,
       })))
         .then((states) => {
           if (cancelled) return;
@@ -206,6 +210,7 @@ export function MmaFighterTonightSlate({
                 onClick={() => toggle({
                   sport: 'mma',
                   playerId: numericId,
+                  espnAthleteId: fighterId || undefined,
                   playerName: fighterName,
                   team: null,
                   statKey: l.statKey,

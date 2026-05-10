@@ -2161,6 +2161,10 @@ export async function getEliteLiveState(): Promise<EliteLiveStateResponse> {
 // FLIGHT state for a pick. Capped at 50 legs server-side per request.
 export async function liveGradeLegs(legs: Array<{
   playerId: number;
+  // Optional ESPN athlete id for UFC legs (alphanumeric ids that
+  // don't fit playerId's number type). Backend live grader prefers
+  // it over playerId for fighter matching when present.
+  espnAthleteId?: string;
   playerName: string;
   statKey: string;
   direction: 'OVER' | 'UNDER';

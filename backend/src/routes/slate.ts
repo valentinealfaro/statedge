@@ -465,6 +465,12 @@ slateRouter.post('/live-grade', async (req, res) => {
     const body = req.body as {
       legs?: Array<{
         playerId: number | string;
+        // Optional alphanumeric ESPN athlete id for UFC legs whose
+        // playerId field collapses to 0 (fighter ids include letters
+        // and don't survive Number() coerce). When present the live
+        // grader prefers id-match over display-name match — closes
+        // the verdict-collision risk for common fighter names.
+        espnAthleteId?: string;
         playerName: string;
         statKey: string;
         direction: 'OVER' | 'UNDER';
@@ -481,6 +487,7 @@ slateRouter.post('/live-grade', async (req, res) => {
     const capped = rawLegs.slice(0, 50);
     const inputs = capped.map((l) => ({
       playerId: typeof l.playerId === 'number' ? l.playerId : Number(l.playerId) || 0,
+      espnAthleteId: typeof l.espnAthleteId === 'string' ? l.espnAthleteId : undefined,
       playerName: String(l.playerName ?? ''),
       statKey: String(l.statKey ?? ''),
       direction: (l.direction === 'UNDER' ? 'UNDER' : 'OVER') as 'OVER' | 'UNDER',

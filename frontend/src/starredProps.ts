@@ -20,6 +20,12 @@ export type StarredProp = {
   id: string;
   sport: Sport;
   playerId: number;
+  // Optional alphanumeric ESPN athlete id for UFC fighters (whose ids
+  // include letters and don't survive Number() coerce — playerId
+  // collapses to 0). Live-grading code prefers this for the
+  // scoreboard fighter match path. NBA + MLB starred props don't
+  // carry it.
+  espnAthleteId?: string;
   playerName: string;
   team: string | null;
   statKey: string;
