@@ -41,7 +41,11 @@ const STATIC_PATHS: Array<{ path: string; changefreq: string; priority: number }
   { path: '/mlb/slate',           changefreq: 'hourly', priority: 0.8 },
   { path: '/mlb/standings',       changefreq: 'daily',  priority: 0.6 },
   { path: '/mma/scoreboard',      changefreq: 'daily',  priority: 0.7 },
-  { path: '/mma/slate',           changefreq: 'daily',  priority: 0.7 },
+  // UFC slate is now a full institutional surface (edge badges +
+  // matchup chips + live verdicts via fightcenter) — priority parity
+  // with NBA + MLB slate. Hourly changefreq because the per-line
+  // verdicts tick every minute during live cards.
+  { path: '/mma/slate',           changefreq: 'hourly', priority: 0.8 },
 ];
 
 seoRouter.get('/sitemap.xml', async (_req, res) => {
