@@ -1577,12 +1577,21 @@ export async function projectMlbStat(
   // works without this layer.
   try {
     const report = await getCalibrationFeedbackCached();
-    const adj = applyCalibrationAdjustment(projection.probability, report);
+    // Pass statKey so the feedback layer can prefer the per-stat
+    // bucket when available — per-stat overclaim is the bigger
+    // signal in MLB (singles -68pp, doubles -95pp, strikeouts -55pp
+    // all dwarf the global -23.5% gap).
+    const adj = applyCalibrationAdjustment(projection.probability, report, args.statKey);
     if (adj.shift !== 0) {
       const clampedProb = clamp(adj.adjustedProbability, 5, 95);
       // Re-derive dependent fields from the adjusted probability so
-      // the rest of the result stays self-consistent.
-      const newEdgePercent = round1(clampedProb - 50);
+      // the rest of the result stays self-consistent. Edge math
+      // uses the same impliedBreakEven the engine used initially —
+      // either the caller's marketImpliedProb or the 50% fallback —
+      // not a re-hardcoded 50%, which would silently undo the
+      // marketImpliedProb wiring in iter 1.
+      const impliedBreakEven = args.marketImpliedProb ?? 50;
+      const newEdgePercent = round1(clampedProb - impliedBreakEven);
       const newEdgeScore = clamp(Math.round((newEdgePercent + 25) * 2), 0, 100);
       // EV uses the same 6-component spec weights as the engine.
       const newEvScore = round1(

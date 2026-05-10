@@ -45,7 +45,9 @@ export function _resetCalibrationCache(): void {
 // For a predicted probability P, find the matching bucket (by
 // `[lo, hi)` ranges that mirror what the calibration aggregator
 // uses) and apply a Bayesian-weighted shift toward the observed
-// hit rate.
+// hit rate. When the leg's statKey is known, we ALSO check the
+// per-stat-type bucket and prefer its shift — per-stat is more
+// surgical than per-probability when both have data.
 //
 // Guards:
 //   - Only adjust when the bucket has ≥ MIN_BUCKET_SAMPLES graded
@@ -57,7 +59,17 @@ export function _resetCalibrationCache(): void {
 //     same prior the aggregator uses for its bucket display.
 
 const MIN_BUCKET_SAMPLES = 30;
-const MAX_SHIFT = 7;     // pts; spec discipline: tweak, don't replace
+// Raised from 7 → 15 after an audit caught a -23.5% global
+// calibration gap (predicted 89.6% / observed 66.1% across 2135
+// graded rows, May 2026 window). Per-stat gaps were even worse:
+// singles -68pp, doubles -95pp, strikeouts -55pp, hits -34pp.
+// At MAX_SHIFT = 7 the adjustment couldn't possibly correct the
+// overclaim — an "85%+" bucket landing at 67% observed needed a
+// -24pt shift but got capped to -7pt, leaving 17pt of bias. 15pt
+// is still a cap (won't blow up on freaky thin-bucket noise — the
+// 30-sample floor and Bayesian smoothing already guard that), but
+// it actually lets the loop close large structural gaps.
+const MAX_SHIFT = 15;
 
 function findBucket(
   buckets: MlbCalibrationBucket[],
@@ -91,23 +103,50 @@ export type CalibrationAdjustment = {
 
 // Apply per-bucket adjustment. Returns the adjusted probability + a
 // reason string for the projection's reasonCodes.
+//
+// When `statKey` is provided, we prefer the per-stat-type bucket
+// over the probability-range bucket — stats with structural model
+// errors (the May 2026 audit found doubles 95→0%, singles 88→20%,
+// strikeouts 95→39% gaps) are best corrected with per-stat shifts
+// rather than diluted into the global probability buckets.
 export function applyCalibrationAdjustment(
   predictedProbability: number,
   report: MlbCalibrationReport,
+  statKey?: string,
 ): CalibrationAdjustment {
-  const bucket = findBucket(report.byProbability, predictedProbability);
-  if (!bucket || bucket.graded < MIN_BUCKET_SAMPLES) {
+  // Per-stat-type bucket — only when statKey is provided and the
+  // bucket has enough sample. The aggregator labels stat buckets by
+  // their statKey verbatim, so a direct find() is enough.
+  const statBucket = statKey
+    ? report.byStatType.find((b) => b.label === statKey) ?? null
+    : null;
+  const useStatBucket = statBucket !== null && statBucket.graded >= MIN_BUCKET_SAMPLES;
+
+  // Probability-range bucket (existing path).
+  const probBucket = findBucket(report.byProbability, predictedProbability);
+  const useProbBucket = probBucket !== null && probBucket.graded >= MIN_BUCKET_SAMPLES;
+
+  // Choose the more specific signal. Per-stat wins when available;
+  // probability bucket is the fallback. Falling through both yields
+  // no-op — same as before this layer existed.
+  const chosen = useStatBucket ? statBucket! : useProbBucket ? probBucket! : null;
+  const source: 'stat' | 'prob' | null = useStatBucket ? 'stat' : useProbBucket ? 'prob' : null;
+  if (!chosen || !source) {
+    // Prefer reporting the per-stat bucket sample when present (so
+    // the caller sees how close we are to the 30-sample floor),
+    // else the probability bucket. Mirrors the original contract.
+    const reportedSample = (statBucket?.graded ?? probBucket?.graded ?? 0);
     return {
       adjustedProbability: predictedProbability,
       shift: 0,
       reason: null,
-      bucketSample: bucket?.graded ?? 0,
+      bucketSample: reportedSample,
     };
   }
 
   // Bayesian-smoothed hit rate already pulls thin buckets toward the
   // ~55% prior. Use it as the target.
-  const target = bucket.smoothedHitRate;
+  const target = chosen.smoothedHitRate;
   const rawShift = target - predictedProbability;
   const cappedShift = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, rawShift));
   // Don't bother adjusting tiny gaps — calibration is fine there.
@@ -116,19 +155,20 @@ export function applyCalibrationAdjustment(
       adjustedProbability: predictedProbability,
       shift: 0,
       reason: null,
-      bucketSample: bucket.graded,
+      bucketSample: chosen.graded,
     };
   }
   const adjusted = predictedProbability + cappedShift;
   const direction = cappedShift > 0 ? 'lifted' : 'tempered';
+  const sourceLabel = source === 'stat' ? `stat-type ${chosen.label}` : `bucket ${chosen.label}`;
   return {
     adjustedProbability: adjusted,
     shift: Math.round(cappedShift * 10) / 10,
     reason:
       `Calibration ${direction} ${cappedShift.toFixed(1)}pt: ` +
-      `bucket ${bucket.label} historically hits ${bucket.smoothedHitRate.toFixed(0)}% ` +
-      `(${bucket.graded} graded).`,
-    bucketSample: bucket.graded,
+      `${sourceLabel} historically hits ${chosen.smoothedHitRate.toFixed(0)}% ` +
+      `(${chosen.graded} graded).`,
+    bucketSample: chosen.graded,
   };
 }
 

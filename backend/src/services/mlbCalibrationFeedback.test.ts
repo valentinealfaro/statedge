@@ -90,15 +90,63 @@ describe('applyCalibrationAdjustment — sample guards', () => {
     expect(adj.shift).toBe(0);
   });
 
-  test('Cap at ±7pts even when gap is huge', () => {
+  test('Cap at ±15pts even when gap is huge (raised from 7pp after May 2026 audit)', () => {
     const r = report({
       byProbability: [
         bucket({ label: '70-75%', smoothedHitRate: 30, graded: 100 }),
       ],
     });
     const adj = applyCalibrationAdjustment(72, r);
-    expect(adj.shift).toBe(-7);
-    expect(adj.adjustedProbability).toBe(65);
+    // Raw shift = 30 - 72 = -42, cap at -15.
+    expect(adj.shift).toBe(-15);
+    expect(adj.adjustedProbability).toBe(57);
+  });
+});
+
+describe('applyCalibrationAdjustment — per-stat bucket preferred', () => {
+  // Per the May 2026 audit, per-stat gaps were the dominant signal:
+  // singles -68pp, doubles -95pp, strikeouts -55pp. The feedback layer
+  // now prefers stat-type buckets over probability-range buckets when
+  // both have ≥30 samples.
+  test('Stat-type bucket overrides probability bucket when statKey matches', () => {
+    const r = report({
+      byProbability: [
+        bucket({ label: '85%+', smoothedHitRate: 84, graded: 100 }),  // tight
+      ],
+      byStatType: [
+        bucket({ label: 'singles', smoothedHitRate: 25, graded: 158 }), // huge gap
+      ],
+    });
+    const adj = applyCalibrationAdjustment(88, r, 'singles');
+    // Per-stat shift dominates: target = 25, predicted = 88 → cap -15.
+    expect(adj.shift).toBe(-15);
+    expect(adj.reason).toMatch(/stat-type singles/);
+  });
+
+  test('Falls back to probability bucket when stat-type lacks sample', () => {
+    const r = report({
+      byProbability: [
+        bucket({ label: '85%+', smoothedHitRate: 70, graded: 200 }),
+      ],
+      byStatType: [
+        bucket({ label: 'home_runs', smoothedHitRate: 50, graded: 12 }), // thin
+      ],
+    });
+    const adj = applyCalibrationAdjustment(88, r, 'home_runs');
+    // Stat bucket below 30-sample floor → falls through to prob bucket.
+    expect(adj.shift).toBe(-15);   // prob bucket: target 70, predicted 88, cap -15
+    expect(adj.reason).toMatch(/bucket 85%\+/);
+  });
+
+  test('No statKey → existing per-probability path unchanged', () => {
+    const r = report({
+      byProbability: [
+        bucket({ label: '70-75%', smoothedHitRate: 65, graded: 80 }),
+      ],
+    });
+    const adj = applyCalibrationAdjustment(72, r);
+    expect(adj.shift).toBeLessThan(0);
+    expect(adj.reason).toMatch(/bucket 70-75%/);
   });
 });
 
