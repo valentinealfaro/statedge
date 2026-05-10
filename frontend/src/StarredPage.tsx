@@ -156,8 +156,10 @@ export function StarredPage() {
             <strong>No starred props yet.</strong> Tap the ☆ on any prop card or
             row in <Link to="/best-bets" style={{ color: '#7aa2ff' }}>Best Bets</Link>,
             on the <Link to="/nba/slate" style={{ color: '#7aa2ff' }}>NBA slate</Link>,
-            or on a <Link to="/mlb/slate" style={{ color: '#7aa2ff' }}>MLB combo card</Link> to
-            track it here.
+            an <Link to="/mlb/slate" style={{ color: '#7aa2ff' }}>MLB combo card</Link>,
+            or a <Link to="/mma/slate" style={{ color: '#ef5350' }}>UFC fighter card</Link> to
+            track it here. Live verdicts tick once a minute when a starred prop's game
+            (or fight) is in progress.
           </div>
         ) : (
           <>
