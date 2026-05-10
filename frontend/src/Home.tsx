@@ -8,6 +8,7 @@ import { LiveDeck } from './LiveDeck';
 import { RecentGames } from './RecentGames';
 import { RecentsRail } from './RecentsRail';
 import { SlateTeaser } from './SlateTeaser';
+import { TodayAtAGlance } from './TodayAtAGlance';
 import { TodayGames } from './TodayGames';
 import { TopPerformers } from './TopPerformers';
 import { TrendingPlayers } from './TrendingPlayers';
@@ -17,6 +18,12 @@ export function Home() {
   return (
     <div className="home">
       <HomeHero />
+
+      {/* Today at a glance — Bloomberg ticker pinned high so the
+          institutional user sees today's market state in 4 numbers
+          before scrolling. Live games + active edges + Elite verdict
+          + 30d CLV beat-rate. Self-hides on quiet days. */}
+      <TodayAtAGlance />
 
       {/* Compact engine pulse — Bloomberg-feel ticker showing
           live activity. Self-hides until at least one engine
