@@ -1,3 +1,14 @@
+// NBA advanced stats — derived metrics computed from PlayerGame[]
+// arrays. Powers the AdvancedCards component on /nba/compare:
+// double/triple-double rates, PRA / PR / PA / RA combos, STOCKS
+// (steals + blocks), trend lines, performance-vs-team splits,
+// home/away splits.
+//
+// Pure functions — no DB / no network. Inputs come from
+// player_game_logs at the route layer; this file runs the math.
+// NBA-specific stat keys (PRA / STOCKS aren't MLB / WNBA / UFC
+// concepts). MLB has its own derived-stat helpers in mlbBaselineEngine.
+
 import type { PlayerGame } from '../nba/client.js';
 
 export type SelectedStat =
