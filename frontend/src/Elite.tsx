@@ -436,6 +436,11 @@ function TicketCard({
         })}
       </div>
 
+      {/* Live ticket EV — only renders when at least one leg has
+          resolved. Shows pre-game vs. conditional EV so users see how
+          the ticket's expected return is shifting in real time. */}
+      <LiveTicketEv ticket={ticket} liveByLegKey={liveByLegKey} />
+
       {/* Why this ticket */}
       <div style={{ marginTop: 16, padding: 12, background: 'rgba(0,0,0,0.25)', borderRadius: 6 }}>
         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 6 }}>
@@ -446,6 +451,136 @@ function TicketCard({
         </ul>
       </div>
     </section>
+  );
+}
+
+// Live ticket EV panel — sits between the legs and the rationale.
+// Shows pre-game payout vs the conditional remaining EV given which
+// legs have already resolved.
+//
+// Math: pre-game combined hit % is on the ticket. As legs hit, the
+// conditional expected payout moves — locked-in legs are no longer a
+// drag on probability. Once any leg misses, ticket is dead and the
+// realized return is 0.
+//
+// We use the per-leg pre-game probability as the in-flight estimate
+// (we don't have a live re-projection model). This is honest: it's
+// the same probability we published at slate-publish time, surfaced
+// against settled outcomes as they come in.
+function LiveTicketEv({
+  ticket,
+  liveByLegKey,
+}: {
+  ticket: EliteTicket | CrossSportEliteTicket;
+  liveByLegKey: Map<string, EliteLegLiveState> | null;
+}) {
+  if (!liveByLegKey || liveByLegKey.size === 0) return null;
+  const payout = ticket.combinedFairPayout;
+  const preGameProb = ticket.combinedProbability / 100;   // 0..1
+  const preGameEv = preGameProb * payout - 1;
+
+  // Per-leg state classification. Lock-in = HIT or ON_PACE_HIT (counters
+  // only grow). Lock-out = MISS / ON_PACE_MISS / PUSH. Otherwise still
+  // contributes its pre-game probability to the conditional combined.
+  let dead = false;
+  let lockedHits = 0;
+  let conditional = 1;
+  let stillLive = 0;
+  for (const leg of ticket.legs) {
+    const live = liveByLegKey.get(`${leg.playerId}-${leg.statKey}-${leg.direction}`);
+    if (!live) {
+      conditional *= leg.probability / 100;
+      continue;
+    }
+    const v = live.verdict;
+    if (v === 'HIT' || v === 'ON_PACE_HIT') {
+      lockedHits++;
+      // Locked in — no longer a drag
+      continue;
+    }
+    if (v === 'MISS' || v === 'ON_PACE_MISS' || v === 'PUSH') {
+      dead = true;
+      conditional = 0;
+      continue;
+    }
+    if (v === 'IN_FLIGHT' || v === 'PENDING' || v === 'UNGRADED') {
+      conditional *= leg.probability / 100;
+      stillLive++;
+    }
+  }
+
+  // Bail when nothing has moved off pre-game state — the rollup chip
+  // upstream already conveys the static picture in that case.
+  if (lockedHits === 0 && !dead && stillLive === ticket.legs.length) return null;
+
+  const conditionalEv = dead ? -1 : (conditional * payout - 1);
+  const evDelta = conditionalEv - preGameEv;
+  const evColor = dead ? '#ef5350'
+    : conditionalEv >= 0.05 ? '#66bb6a'
+    : conditionalEv <= -0.05 ? '#ef5350'
+    : '#ffd54f';
+
+  return (
+    <div style={{
+      marginTop: 14, padding: 12,
+      background: 'rgba(0,0,0,0.22)',
+      border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: 6,
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10,
+    }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>
+          Pre-game EV
+        </div>
+        <div style={{
+          fontSize: 22, fontWeight: 800, lineHeight: 1.1, marginTop: 4,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: preGameEv >= 0 ? '#66bb6a' : '#ef5350',
+        }}>
+          {preGameEv >= 0 ? '+' : ''}{(preGameEv * 100).toFixed(1)}%
+        </div>
+        <div className="muted small" style={{ fontSize: 10, marginTop: 2, color: 'rgba(255,255,255,0.55)' }}>
+          {(preGameProb * 100).toFixed(1)}% × {payout.toFixed(1)}× − 1
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>
+          Live EV
+        </div>
+        <div style={{
+          fontSize: 22, fontWeight: 800, lineHeight: 1.1, marginTop: 4,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: evColor,
+        }}>
+          {dead ? '−100.0%' : `${conditionalEv >= 0 ? '+' : ''}${(conditionalEv * 100).toFixed(1)}%`}
+        </div>
+        <div className="muted small" style={{ fontSize: 10, marginTop: 2, color: 'rgba(255,255,255,0.55)' }}>
+          {dead
+            ? 'ticket killed — leg missed'
+            : `${(conditional * 100).toFixed(1)}% × ${payout.toFixed(1)}× − 1`}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>
+          Δ vs pre-game
+        </div>
+        <div style={{
+          fontSize: 22, fontWeight: 800, lineHeight: 1.1, marginTop: 4,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: evDelta >= 0 ? '#66bb6a' : '#ef5350',
+        }}>
+          {evDelta >= 0 ? '+' : ''}{(evDelta * 100).toFixed(1)} pts
+        </div>
+        <div className="muted small" style={{ fontSize: 10, marginTop: 2, color: 'rgba(255,255,255,0.55)' }}>
+          {lockedHits > 0 && `${lockedHits} leg${lockedHits === 1 ? '' : 's'} locked`}
+          {lockedHits > 0 && stillLive > 0 && ' · '}
+          {stillLive > 0 && `${stillLive} live`}
+        </div>
+      </div>
+    </div>
   );
 }
 
