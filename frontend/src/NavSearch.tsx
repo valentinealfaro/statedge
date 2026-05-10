@@ -18,6 +18,7 @@ import {
   getMlbDailySlate,
   getTodaySlate,
   getUfcScoreboard,
+  getUfcSlateProjections,
   getWnbaSlate,
   searchMlbPlayers,
   searchPlayers,
@@ -139,9 +140,10 @@ export function NavSearch() {
   async function ensureTrendingLoaded() {
     if (trendingFetchedRef.current) return;
     trendingFetchedRef.current = true;
-    const [nbaR, mlbR, wnbaR] = await Promise.allSettled([
+    const [nbaR, mlbR, ufcR, wnbaR] = await Promise.allSettled([
       getTodaySlate('balanced'),
       getMlbDailySlate(),
+      getUfcSlateProjections(),
       getWnbaSlate(),
     ]);
     const out: TrendingEdge[] = [];
@@ -184,6 +186,33 @@ export function NavSearch() {
             href: '/mlb/slate',
           });
         }
+      }
+    }
+    if (ufcR.status === 'fulfilled') {
+      // UFC stat-key labels — same map BestBets uses. Mirrors
+      // MmaSlate / MmaFighterTonightSlate. Internal because the
+      // trending row carries `statLabel` as a free-text string.
+      const ufcStatLabel: Record<string, string> = {
+        sig_strikes: 'Sig Strikes', rd1_sig_strikes: 'R1 Sig Strikes',
+        takedowns: 'Takedowns', rd1_takedowns: 'R1 Takedowns',
+        knockdowns: 'Knockdowns', rounds: 'Rounds',
+        fight_time: 'Fight Time', fantasy_score: 'Fantasy',
+        control_time: 'Control Time',
+      };
+      for (const p of ufcR.value.projections) {
+        out.push({
+          sport: 'mma',
+          playerName: p.fighterName,
+          team: p.opponentName ? `vs ${p.opponentName}` : null,
+          statLabel: ufcStatLabel[p.statKey] ?? p.statKey,
+          line: p.line,
+          direction: p.modelDirection,
+          edgePercent: p.edgePercent,
+          // Deep-link straight to the fighter profile when we have
+          // an ESPN id (almost always); fall back to the slate page
+          // otherwise so users always have a landing surface.
+          href: p.espnAthleteId ? `/mma/fighter/${p.espnAthleteId}` : '/mma/slate',
+        });
       }
     }
     if (wnbaR.status === 'fulfilled' && wnbaR.value.resolved) {
