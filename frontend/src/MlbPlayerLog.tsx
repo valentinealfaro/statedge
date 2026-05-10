@@ -27,6 +27,7 @@ import {
   type MlbStatMeta,
 } from './api';
 import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
+import { mlbTeamAbbr, mlbTeamFullName } from './mlbTeams';
 import { MlbPlayerTonightSlate } from './MlbPlayerTonightSlate';
 import { NavBar } from './NavBar';
 import { PlayerNewsSection } from './PlayerNewsSection';
@@ -365,6 +366,7 @@ function GameLogTable({
                 <th>H/A</th>
                 <th>Opp</th>
                 <th className="num">Value</th>
+                <th>Stat line</th>
                 {includeLine && <th>Vs line</th>}
               </tr>
             </thead>
@@ -372,13 +374,34 @@ function GameLogTable({
               {games.map((g, i) => {
                 const cleared = includeLine && g.value > line!;
                 const tied = includeLine && g.value === line!;
+                const oppAbbr = mlbTeamAbbr(g.opponentTeamId);
+                const oppFull = mlbTeamFullName(g.opponentTeamId);
                 return (
                   <tr key={g.gameId}>
                     <td>{games.length - i}</td>
                     <td>{g.gameDate}</td>
                     <td>{g.isHome === true ? 'Home' : g.isHome === false ? 'Away' : '—'}</td>
-                    <td>{g.opponentTeamId ?? '—'}</td>
+                    <td title={oppFull ?? undefined}>
+                      {oppAbbr ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <MlbTeamLogo abbr={oppAbbr} name={oppFull ?? oppAbbr} size="md" />
+                          <span style={{ fontWeight: 700 }}>{oppAbbr}</span>
+                        </span>
+                      ) : g.opponentTeamId !== null ? (
+                        <span className="muted small">team #{g.opponentTeamId}</span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="num"><strong>{g.value}</strong></td>
+                    <td style={{
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                      fontSize: 12,
+                      color: 'rgba(255,255,255,0.75)',
+                    }}>
+                      {formatStatLine(g)}
+                    </td>
                     {includeLine && (
                       <td style={{ color: cleared ? 'var(--hot, #66bb6a)' : tied ? 'var(--text-3)' : '#ef5350' }}>
                         {cleared ? '✓ Hit' : tied ? '— Push' : '✗ Miss'}
@@ -393,4 +416,36 @@ function GameLogTable({
       </div>
     </>
   );
+}
+
+// Compact box-score style stat line for one game. Hitter:
+// "1-4, R, 2RBI, HR, BB, K". Pitcher: "5⅓ IP · 4H · 2ER · 8K · 2BB".
+// Drops zero-valued items so the line stays scannable.
+function formatStatLine(g: { hitterStats?: { hits: number | null; doubles: number | null; triples: number | null; homeRuns: number | null; runs: number | null; rbis: number | null; walks: number | null; strikeouts: number | null; stolenBases: number | null } | null; pitcherStats?: { inningsPitched: string | null; outsRecorded: number | null; hitsAllowed: number | null; earnedRunsAllowed: number | null; walksAllowed: number | null; strikeouts: number | null; homeRunsAllowed: number | null } | null }): string {
+  const h = g.hitterStats;
+  if (h) {
+    const parts: string[] = [];
+    if (h.hits !== null) parts.push(`${h.hits}H`);
+    if (h.runs && h.runs > 0) parts.push(`${h.runs}R`);
+    if (h.rbis && h.rbis > 0) parts.push(`${h.rbis}RBI`);
+    if (h.homeRuns && h.homeRuns > 0) parts.push(`${h.homeRuns}HR`);
+    if (h.doubles && h.doubles > 0) parts.push(`${h.doubles}2B`);
+    if (h.triples && h.triples > 0) parts.push(`${h.triples}3B`);
+    if (h.walks && h.walks > 0) parts.push(`${h.walks}BB`);
+    if (h.strikeouts && h.strikeouts > 0) parts.push(`${h.strikeouts}K`);
+    if (h.stolenBases && h.stolenBases > 0) parts.push(`${h.stolenBases}SB`);
+    return parts.length > 0 ? parts.join(' · ') : '—';
+  }
+  const p = g.pitcherStats;
+  if (p) {
+    const parts: string[] = [];
+    if (p.inningsPitched) parts.push(`${p.inningsPitched} IP`);
+    if (p.hitsAllowed !== null) parts.push(`${p.hitsAllowed}H`);
+    if (p.earnedRunsAllowed !== null) parts.push(`${p.earnedRunsAllowed}ER`);
+    if (p.strikeouts !== null) parts.push(`${p.strikeouts}K`);
+    if (p.walksAllowed !== null) parts.push(`${p.walksAllowed}BB`);
+    if (p.homeRunsAllowed && p.homeRunsAllowed > 0) parts.push(`${p.homeRunsAllowed}HR`);
+    return parts.length > 0 ? parts.join(' · ') : '—';
+  }
+  return '—';
 }

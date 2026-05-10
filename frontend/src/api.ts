@@ -1318,12 +1318,39 @@ export async function searchMlbPlayers(query: string): Promise<MlbSearchPlayer[]
   return data.players;
 }
 
+export type MlbLast10HitterStats = {
+  hits: number | null;
+  singles: number | null;
+  doubles: number | null;
+  triples: number | null;
+  homeRuns: number | null;
+  totalBases: number | null;
+  runs: number | null;
+  rbis: number | null;
+  walks: number | null;
+  strikeouts: number | null;
+  stolenBases: number | null;
+};
+export type MlbLast10PitcherStats = {
+  outsRecorded: number | null;
+  inningsPitched: string | null;
+  pitchesThrown: number | null;
+  hitsAllowed: number | null;
+  earnedRunsAllowed: number | null;
+  walksAllowed: number | null;
+  strikeouts: number | null;
+  homeRunsAllowed: number | null;
+};
 export type MlbLast10Game = {
   gameId: number;
   gameDate: string;
   opponentTeamId: number | null;
   isHome: boolean | null;
   value: number;
+  // Phase 148f — full per-game stat line. Exactly one of
+  // hitterStats / pitcherStats populated, matching the player.
+  hitterStats?: MlbLast10HitterStats | null;
+  pitcherStats?: MlbLast10PitcherStats | null;
 };
 
 export type MlbLast10Response = {

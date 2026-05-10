@@ -24,12 +24,45 @@ import {
   valueFromPitchingRow,
 } from '../mlb/stats.js';
 
+// Full per-game stat line — included on every game-by-game row so the
+// player log table can render meaningful columns (1H · 2RBI · 1HR
+// for hitters; 5⅓ IP · 4H · 2ER · 8K for pitchers) instead of just
+// the selected-stat value in isolation.
+export type MlbLast10HitterStats = {
+  hits: number | null;
+  singles: number | null;
+  doubles: number | null;
+  triples: number | null;
+  homeRuns: number | null;
+  totalBases: number | null;
+  runs: number | null;
+  rbis: number | null;
+  walks: number | null;
+  strikeouts: number | null;
+  stolenBases: number | null;
+};
+export type MlbLast10PitcherStats = {
+  outsRecorded: number | null;
+  inningsPitched: string | null;
+  pitchesThrown: number | null;
+  hitsAllowed: number | null;
+  earnedRunsAllowed: number | null;
+  walksAllowed: number | null;
+  strikeouts: number | null;
+  homeRunsAllowed: number | null;
+};
+
 export type MlbLast10GameEntry = {
   gameId: number;
   gameDate: string;       // YYYY-MM-DD
   opponentTeamId: number | null;
   isHome: boolean | null;
   value: number;
+  // Full stat line for the game. Exactly one of hitterStats /
+  // pitcherStats is populated, matching the player's type. Both
+  // become null on shape mismatch.
+  hitterStats: MlbLast10HitterStats | null;
+  pitcherStats: MlbLast10PitcherStats | null;
 };
 
 export type MlbLast10Result = {
@@ -255,6 +288,20 @@ async function readHittingGames(
       opponentTeamId: r.opponent_team_id,
       isHome: r.is_home,
       value,
+      hitterStats: {
+        hits: r.hits,
+        singles: r.singles,
+        doubles: r.doubles,
+        triples: r.triples,
+        homeRuns: r.home_runs,
+        totalBases: r.total_bases,
+        runs: r.runs,
+        rbis: r.rbis,
+        walks: r.walks,
+        strikeouts: r.strikeouts,
+        stolenBases: r.stolen_bases,
+      },
+      pitcherStats: null,
     });
   }
   return entries;
@@ -302,6 +349,17 @@ async function readPitchingGames(
       opponentTeamId: r.opponent_team_id,
       isHome: r.is_home,
       value,
+      hitterStats: null,
+      pitcherStats: {
+        outsRecorded: r.outs_recorded,
+        inningsPitched: r.innings_pitched,
+        pitchesThrown: r.pitches_thrown,
+        hitsAllowed: r.hits_allowed,
+        earnedRunsAllowed: r.earned_runs_allowed,
+        walksAllowed: r.walks_allowed,
+        strikeouts: r.strikeouts,
+        homeRunsAllowed: r.home_runs_allowed,
+      },
     });
   }
   return entries;

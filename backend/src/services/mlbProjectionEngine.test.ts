@@ -39,6 +39,8 @@ function makeLast10(over: Partial<MlbLast10Result> = {}): MlbLast10Result {
       opponentTeamId: 99,
       isHome: i % 2 === 0,
       value: v,
+      hitterStats: null,
+      pitcherStats: null,
     })),
     sampleSize: sample,
     average: avg,
