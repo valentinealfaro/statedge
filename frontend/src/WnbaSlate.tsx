@@ -60,8 +60,10 @@ const FILTER_TOOLTIPS: Record<FilterTag, string> = {
 
 const EDGE_TOOLTIP =
   'Edge % = our model\'s projected probability − sportsbook implied probability. ' +
-  'Phase 77 v1 assumes a 50% implied baseline since WNBA market data isn\'t yet integrated. ' +
-  '+15% means we have meaningful conviction the line is mispriced.';
+  'WNBA still computes edge against a 50% baseline (the projection engine doesn\'t ' +
+  'pull from market_snapshots yet for live implied-prob); the truth-metric pipeline ' +
+  'does use real market data for CLV. +15% means we have meaningful conviction the ' +
+  'line is mispriced.';
 
 function passesFilter(line: WnbaProjectedLine, tag: FilterTag): boolean {
   if (tag === 'all') return true;
