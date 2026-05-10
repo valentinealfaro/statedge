@@ -332,10 +332,10 @@ export function BestBetsToday() {
                   <th style={th}>Player</th>
                   <th style={{ ...th, textAlign: 'left' }}>Stat / Line</th>
                   <th style={{ ...th, textAlign: 'left' }}>Projection</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Prob</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Edge</th>
-                  <th style={{ ...th, textAlign: 'right' }}>EV</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Live</th>
+                  <SortHeader label="Prob" align="right" thisKey="probability" sortKey={sortKey} setSortKey={setSortKey} />
+                  <SortHeader label="Edge" align="right" thisKey="edge" sortKey={sortKey} setSortKey={setSortKey} />
+                  <SortHeader label="EV" align="right" thisKey="ev" sortKey={sortKey} setSortKey={setSortKey} />
+                  <SortHeader label="Live" align="right" thisKey="live" sortKey={sortKey} setSortKey={setSortKey} />
                 </tr>
               </thead>
               <tbody>
@@ -486,6 +486,43 @@ function SegmentedTab({
         );
       })}
     </div>
+  );
+}
+
+// Clickable column header that switches the sort key. Bloomberg
+// watchlist-style: arrow rendered next to the label when the key
+// matches, click anywhere on the cell to switch.
+function SortHeader({
+  label, align, thisKey, sortKey, setSortKey,
+}: {
+  label: string;
+  align: 'left' | 'right';
+  thisKey: SortKey;
+  sortKey: SortKey;
+  setSortKey: (k: SortKey) => void;
+}) {
+  const active = sortKey === thisKey;
+  return (
+    <th
+      style={{ ...th, textAlign: align, cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => setSortKey(thisKey)}
+      title={`Sort by ${label}`}
+    >
+      <span style={{
+        color: active ? 'var(--text-1)' : undefined,
+        textShadow: active ? '0 0 8px rgba(91,141,239,0.30)' : undefined,
+      }}>
+        {label}
+        <span style={{
+          marginLeft: 4,
+          fontSize: 9,
+          opacity: active ? 1 : 0.25,
+          color: active ? '#5b8def' : undefined,
+        }}>
+          ▼
+        </span>
+      </span>
+    </th>
   );
 }
 
