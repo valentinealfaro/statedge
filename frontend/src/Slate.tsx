@@ -16,6 +16,7 @@ import {
   type NbaLiveTodayPlayer,
   type NbaLiveTodayResponse,
   type SlateCombo,
+  type SlateComboLeg,
   type SlateMode,
   type SlateProjection,
   type SlateResolvedLine,
@@ -1348,6 +1349,7 @@ function BestPicksRail({
                       <span className={`best-pick-leg-conf conf-${l.confidenceLabel.toLowerCase()}`}>
                         {l.confidenceLabel}
                       </span>
+                      <NbaComboLegStar leg={l} />
                     </div>
                     {/* EV-engine per-leg metadata: edge%, category,
                         trap badge (when flagged). Edge% tells the user
@@ -2071,6 +2073,53 @@ function PropRow({
         </button>
       )}
     </div>
+  );
+}
+
+// Star button for an NBA combo card leg in the BestPicksRail. Same
+// /starred watchlist as the LineCard star and the Best Bets row star.
+function NbaComboLegStar({ leg }: { leg: SlateComboLeg }) {
+  const { isStarred, toggle } = useStarredProps();
+  const id = `nba-${leg.playerId}-${leg.statKey}-${leg.line}-${leg.direction}`;
+  const starred = isStarred(id);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggle({
+          sport: 'nba',
+          playerId: leg.playerId,
+          playerName: leg.playerName,
+          team: leg.team,
+          statKey: leg.statKey,
+          statLabel: leg.statLabel,
+          line: leg.line,
+          direction: leg.direction,
+          snapshot: {
+            probability: leg.probability,
+            edgePercent: leg.edgePercent ?? 0,
+            projection: leg.projection ?? null,
+          },
+        });
+      }}
+      title={starred ? 'Unstar — removes from /starred' : 'Star — track on /starred'}
+      aria-label={starred ? 'Unstar' : 'Star'}
+      style={{
+        marginLeft: 'auto',
+        background: 'transparent',
+        border: 'none',
+        color: starred ? '#ffd54f' : 'rgba(255,255,255,0.30)',
+        fontSize: 14, fontWeight: 800,
+        cursor: 'pointer',
+        padding: '0 4px',
+        lineHeight: 1,
+        transition: 'color var(--motion-fast)',
+      }}
+    >
+      {starred ? '★' : '☆'}
+    </button>
   );
 }
 
