@@ -1,8 +1,10 @@
-// /mma/fighter/:id — UFC fighter profile, Phase 107c.
-//
-// Bio + record + recent fight history + StatEdge articles +
-// Google News headlines + social search links. Mirrors the NBA /
-// MLB player log structure so muscle memory carries across sports.
+// /mma/fighter/:id — UFC fighter profile, Phase 107c (tonight's-
+// slate panel added iter 49). Bio + record + recent fight history +
+// tonight's UFC slate filtered to this fighter (with live verdict
+// pills via fightcenter when supported stat keys are gradable) +
+// StatEdge articles + Google News headlines + social search links.
+// Mirrors the NBA / MLB player log structure so muscle memory
+// carries across sports.
 //
 // Recent fight history is derived from the same UFC scoreboard the
 // /mma index uses — we filter for fights this fighter participated
