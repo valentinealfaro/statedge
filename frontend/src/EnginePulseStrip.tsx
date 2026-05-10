@@ -1,11 +1,14 @@
-// EnginePulseStrip — Phase 125.
+// EnginePulseStrip — Phase 125, extended through iter 69.
 //
 // Bloomberg-Terminal pattern: every visitor should see the engine
 // pulse, not just users who navigate to the Methodology page. This
-// is a compact horizontal strip that drops under the hero on Home.
-// Three live chips: latest article, articles published today,
-// snapshots captured today. Each chip is click-through to the
-// relevant page.
+// is a compact horizontal strip that drops under the hero on Home
+// (and Dashboard). Live chips, each click-through to the relevant
+// page:
+//   - NBA / MLB / UFC slate freshness (publishedAt → "2h ago")
+//   - Latest auto-generated article (kind + sport + title)
+//   - Articles published in the last 24h
+//   - Market snapshots captured in the last 24h
 //
 // Self-hides when no data lands — better than a row of "—" for the
 // few seconds before fetches resolve.
