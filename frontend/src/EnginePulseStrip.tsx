@@ -16,6 +16,7 @@ import {
   getEngineStatus,
   getMlbDailySlate,
   getTodaySlate,
+  getUfcSlateToday,
   listArticles,
   type Article,
   type EngineStatusResponse,
@@ -46,6 +47,7 @@ export function EnginePulseStrip() {
   const [latest, setLatest] = useState<Article | null>(null);
   const [nbaSlateAt, setNbaSlateAt] = useState<string | null>(null);
   const [mlbSlateAt, setMlbSlateAt] = useState<string | null>(null);
+  const [ufcSlateAt, setUfcSlateAt] = useState<string | null>(null);
 
   useEffect(() => {
     getEngineStatus().then(setStatus).catch(() => setStatus(null));
@@ -58,6 +60,12 @@ export function EnginePulseStrip() {
     getMlbDailySlate()
       .then((r) => setMlbSlateAt(r.slate?.updatedAt ?? null))
       .catch(() => setMlbSlateAt(null));
+    // UFC slate freshness — Phase 110a stores publishedAt on the
+    // pasted slate. Falls back to the most-recent slate when today
+    // hasn't been published, matching what /mma/slate displays.
+    getUfcSlateToday()
+      .then((r) => setUfcSlateAt(r.slate?.publishedAt ?? null))
+      .catch(() => setUfcSlateAt(null));
   }, []);
 
   // Don't render until at least one data source resolves and has
@@ -65,7 +73,7 @@ export function EnginePulseStrip() {
   // empty state is worse than no state.
   const hasArticles = status && status.articles.allTime > 0;
   const hasSnapshots = status && status.marketSnapshots.allTime > 0;
-  const hasSlates = nbaSlateAt !== null || mlbSlateAt !== null;
+  const hasSlates = nbaSlateAt !== null || mlbSlateAt !== null || ufcSlateAt !== null;
   if (!hasArticles && !hasSnapshots && !latest && !hasSlates) return null;
 
   return (
@@ -131,6 +139,20 @@ export function EnginePulseStrip() {
         >
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#66bb6a', textTransform: 'uppercase' }}>MLB</span>
           <span className="muted small" style={{ fontSize: 10 }}>{timeAgo(mlbSlateAt)}</span>
+        </Link>
+      )}
+
+      {ufcSlateAt && (
+        <Link
+          to="/mma/slate"
+          style={{
+            color: 'inherit', textDecoration: 'none',
+            fontSize: 11, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4,
+          }}
+          title={`UFC slate last updated ${new Date(ufcSlateAt).toLocaleString()}`}
+        >
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#ef5350', textTransform: 'uppercase' }}>UFC</span>
+          <span className="muted small" style={{ fontSize: 10 }}>{timeAgo(ufcSlateAt)}</span>
         </Link>
       )}
 
