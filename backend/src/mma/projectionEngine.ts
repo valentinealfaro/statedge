@@ -6,9 +6,21 @@
 // ingestion pipeline (UFCStats / ESPN MMA athlete endpoint), which
 // is a substantial multi-phase build.
 //
-// The output shape mirrors what the Elite cross-sport builder
-// expects so UFC legs can join the cross-sport ticket via the same
-// EliteCandidate normalization path.
+// Consumers (all wired through the loop):
+//   - services/crossSportEliteBuilder — UFC legs join the cross-sport
+//     Elite ticket via the same EliteCandidate normalization path.
+//   - routes/mma.ts /slate/projections — HTTP endpoint exposing the
+//     same engine output for HTTP-side consumers (iter 64).
+//   - frontend /mma/slate — per-prop edge / probability badges on
+//     PropChip via the projections endpoint (iter 65).
+//   - frontend /best-bets — UFC rows ranked alongside NBA + MLB on
+//     the same EV scale (iter 66).
+//   - frontend NavSearch — UFC trending edges in the focus tray
+//     (iter 68).
+//   - frontend Dashboard — UFC dislocation / disagreement / trap
+//     cards (iter 70).
+//   - frontend TodayAtAGlance — UFC contribution to active edges
+//     count (iter 67).
 //
 // Strategy
 // --------
@@ -22,7 +34,8 @@
 // This is honest about its limits: the projections are conservative
 // market-anchored estimates, not deep-water fundamental projections.
 // When a fighter-stat database lands, projectUfcProp gets replaced
-// from the inside without changing its public contract.
+// from the inside without changing its public contract — every
+// consumer above keeps working unchanged.
 
 export type UfcProjectionInput = {
   fighterName: string;
