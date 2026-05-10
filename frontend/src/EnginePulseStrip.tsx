@@ -12,7 +12,14 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getEngineStatus, listArticles, type Article, type EngineStatusResponse } from './api';
+import {
+  getEngineStatus,
+  getMlbDailySlate,
+  getTodaySlate,
+  listArticles,
+  type Article,
+  type EngineStatusResponse,
+} from './api';
 
 const SPORT_COLOR: Record<string, string> = {
   cross: '#ffd54f',
@@ -37,12 +44,20 @@ const KIND_LABEL: Record<string, string> = {
 export function EnginePulseStrip() {
   const [status, setStatus] = useState<EngineStatusResponse | null>(null);
   const [latest, setLatest] = useState<Article | null>(null);
+  const [nbaSlateAt, setNbaSlateAt] = useState<string | null>(null);
+  const [mlbSlateAt, setMlbSlateAt] = useState<string | null>(null);
 
   useEffect(() => {
     getEngineStatus().then(setStatus).catch(() => setStatus(null));
     listArticles({ limit: 1 })
       .then((r) => setLatest(r.articles[0] ?? null))
       .catch(() => setLatest(null));
+    getTodaySlate('balanced')
+      .then((r) => setNbaSlateAt(r.slate?.updatedAt ?? null))
+      .catch(() => setNbaSlateAt(null));
+    getMlbDailySlate()
+      .then((r) => setMlbSlateAt(r.slate?.updatedAt ?? null))
+      .catch(() => setMlbSlateAt(null));
   }, []);
 
   // Don't render until at least one data source resolves and has
@@ -50,35 +65,74 @@ export function EnginePulseStrip() {
   // empty state is worse than no state.
   const hasArticles = status && status.articles.allTime > 0;
   const hasSnapshots = status && status.marketSnapshots.allTime > 0;
-  if (!hasArticles && !hasSnapshots && !latest) return null;
+  const hasSlates = nbaSlateAt !== null || mlbSlateAt !== null;
+  if (!hasArticles && !hasSnapshots && !latest && !hasSlates) return null;
 
   return (
     <section
       style={{
+        position: 'relative',
         margin: '12px auto 0',
         maxWidth: 1100,
-        padding: '10px 14px',
-        background: 'rgba(122,162,255,0.04)',
-        border: '1px solid rgba(122,162,255,0.18)',
-        borderRadius: 8,
+        padding: '12px 16px',
+        background: `
+          linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+          var(--surface-1)
+        `,
+        border: '1px solid rgba(122,162,255,0.20)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-card)',
         display: 'flex',
         gap: 16,
         alignItems: 'center',
         flexWrap: 'wrap',
         fontSize: 12,
+        overflow: 'hidden',
       }}
     >
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(102,187,106,0.55), transparent)',
+      }} />
       <span style={{
-        fontSize: 9, fontWeight: 800, letterSpacing: '0.1em',
-        textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
+        fontSize: 9, fontWeight: 800, letterSpacing: '0.10em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.60)',
         whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
       }}>
-        <span style={{
+        <span className="live-pulse" style={{
           display: 'inline-block', width: 7, height: 7, borderRadius: 3.5,
           background: '#66bb6a',
         }} title="Engine running" />
         Engine pulse
       </span>
+
+      {nbaSlateAt && (
+        <Link
+          to="/nba/slate"
+          style={{
+            color: 'inherit', textDecoration: 'none',
+            fontSize: 11, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4,
+          }}
+          title={`NBA slate last updated ${new Date(nbaSlateAt).toLocaleString()}`}
+        >
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#7aa2ff', textTransform: 'uppercase' }}>NBA</span>
+          <span className="muted small" style={{ fontSize: 10 }}>{timeAgo(nbaSlateAt)}</span>
+        </Link>
+      )}
+
+      {mlbSlateAt && (
+        <Link
+          to="/mlb/slate"
+          style={{
+            color: 'inherit', textDecoration: 'none',
+            fontSize: 11, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4,
+          }}
+          title={`MLB slate last updated ${new Date(mlbSlateAt).toLocaleString()}`}
+        >
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', color: '#66bb6a', textTransform: 'uppercase' }}>MLB</span>
+          <span className="muted small" style={{ fontSize: 10 }}>{timeAgo(mlbSlateAt)}</span>
+        </Link>
+      )}
 
       {latest && (
         <Link
