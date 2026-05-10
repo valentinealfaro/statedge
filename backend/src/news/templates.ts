@@ -598,7 +598,7 @@ export function generateElitePlay(opts: {
   opts.legs.forEach((l, i) => {
     const arrow = l.direction === 'OVER' ? '↑ Over' : '↓ Under';
     lines.push(
-      `| ${i + 1} | ${l.sport.toUpperCase()} | ${l.playerName}${l.team ? ` (${l.team})` : ''} ` +
+      `| ${i + 1} | ${sportLabel(l.sport)} | ${l.playerName}${l.team ? ` (${l.team})` : ''} ` +
       `| ${l.statLabel} | ${l.line} | ${arrow} | ${l.probability.toFixed(1)}% | +${l.edgePercent.toFixed(1)}pp |`,
     );
   });
