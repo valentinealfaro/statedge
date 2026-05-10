@@ -1,9 +1,28 @@
-// /elite — StatEdge Elite institutional 3-leg service. Phase 131.
+// /elite — StatEdge Elite institutional 3-leg service. Phase 131,
+// extended through Phase 148+ across many loop iterations.
 //
 // Per the Elite product spec: low-volume, high-conviction. The page
 // shows ONE ticket OR an honest "no qualifying edge today" message.
 // We never force a ticket — that's a feature, not a bug. Discipline
 // builds trust.
+//
+// Page surface today:
+//   - View selector: Cross-sport (default) / NBA-only / MLB-only.
+//     Cross-sport combines NBA + MLB + UFC legs into one ticket via
+//     the Phase 142 builder; UFC contribution rides on the Phase 136
+//     moneyline-anchored heuristic engine.
+//   - TodayAtAGlance ticker pinned high — same headline numbers as
+//     Home / Dashboard / Best Bets / Starred.
+//   - ActivityFeed — 'what just happened to my picks' rail.
+//   - TicketCard with per-leg live verdict pills (60s polling), live
+//     EV panel showing pre-game vs conditional EV deltas, and a
+//     CROSS-SPORT chip listing the sports the ticket covers.
+//   - EliteHeatmap (90-day track-record grid) below the ticket.
+//   - Desktop notification opt-in button (notifications themselves
+//     mount at the App level via GlobalNotifications).
+//   - NoTicketCard with 'Browse individual edges →' CTA pointing at
+//     /best-bets so users get an actionable surface even on no-edge
+//     days.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
