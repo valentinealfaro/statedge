@@ -276,7 +276,7 @@ export function Elite() {
             </div>
             <p className="muted small" style={{ marginTop: 10, marginBottom: 0, fontSize: 12, lineHeight: 1.5, maxWidth: 480, marginLeft: 'auto', marginRight: 'auto' }}>
               {view === 'cross'
-                ? 'Resolving NBA + MLB slates, projecting every leg, scoring every cross-sport combination through the tier ladder. Cross-sport pulls both slates in parallel — first load can take 15–25s on a cold backend.'
+                ? 'Resolving NBA + MLB + UFC slates, projecting every leg, scoring every cross-sport combination through the tier ladder. Cross-sport pulls all three slates in parallel — first load can take 15–25s on a cold backend.'
                 : 'Resolving today\'s slate, projecting every leg, scoring combinations against the institutional filter. First load can take 10–20s on a cold backend.'}
             </p>
             <Skeleton width="100%" height={140} style={{ marginTop: 16 }} />

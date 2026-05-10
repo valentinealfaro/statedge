@@ -128,9 +128,9 @@ export function BestBetsToday() {
     return () => { cancelled = true; };
   }, []);
 
-  // Build the unified bet list once both slates land. Recomputed on
-  // every render — it's bounded by slate size (< 200 props per sport)
-  // and the work is cheap.
+  // Build the unified bet list once any of the three slates land.
+  // Recomputed on every render — it's bounded by slate size (< 200
+  // props per sport) and the work is cheap.
   const allBets = useMemo<UnifiedBet[]>(() => {
     const out: UnifiedBet[] = [];
 
@@ -449,7 +449,7 @@ export function BestBetsToday() {
             <strong>No props match these filters.</strong>
             {' '}
             Lower the min-edge threshold or change the sport filter.
-            If both slates haven't published yet today, check back closer to game time.
+            If the slates haven't published yet today, check back closer to game time.
           </div>
         )}
 

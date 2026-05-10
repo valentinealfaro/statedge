@@ -183,8 +183,10 @@ export function Dashboard() {
     }
     let cancelled = false;
     const tick = () => {
-      // WNBA isn't supported by the live grader (NBA + MLB only) —
-      // skip those legs honestly rather than fabricating verdicts.
+      // The live grader supports NBA + MLB + UFC (iter 44 wired UFC
+      // via fightcenter for sig_strikes / takedowns / knockdowns /
+      // control_time). WNBA is still deferred — skip those legs
+      // honestly rather than fabricating verdicts.
       const payload = uniqueVisible
         .filter((e) => e.sport !== 'wnba')
         .map((e) => ({
