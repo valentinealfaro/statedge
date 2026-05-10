@@ -181,6 +181,12 @@ export type ProjectionResult = {
   // available signals. The "expected value" of the stat for the
   // upcoming game.
   projection: number;
+  // ±1σ projection band (matches NBA's rangeLow/rangeHigh convention)
+  // so the cross-sport ProjectionBand visualization can render. σ is
+  // the L10 stddev (with the variance floor used elsewhere in the
+  // engine). Floor low at 0 — counting stats can't be negative.
+  rangeLow: number;
+  rangeHigh: number;
   // The line the projection is being evaluated against. Echoes the
   // input line UNLESS line raising fired — then this is the raised
   // line and originalLine holds the input. probability + edgePercent +
@@ -371,6 +377,8 @@ function emptyResult(
 ): ProjectionResult {
   return {
     projection: 0,
+    rangeLow: 0,
+    rangeHigh: 0,
     line,
     probability: 50,
     confidence: 0,
@@ -1181,6 +1189,11 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
 
   return {
     projection: round2(projection),
+    // Projection band — same ±1σ convention NBA uses, computed from
+    // the variance proxy already in scope. Floors low at 0 since
+    // counting stats can't be negative.
+    rangeLow: round2(Math.max(0, projection - stddev)),
+    rangeHigh: round2(projection + stddev),
     line: raise.lineRaised ? raise.line : inputs.line,
     probability: round1(finalProbability),
     confidence,

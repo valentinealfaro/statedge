@@ -120,6 +120,11 @@ export type MlbComboLeg = {
   direction: 'OVER' | 'UNDER';
   probability: number;
   projection: number;
+  // ±1σ projection band (NBA convention). Lets the cross-sport
+  // ProjectionBand visualization render the confidence interval next
+  // to the line on /best-bets and slate cards.
+  rangeLow: number;
+  rangeHigh: number;
   edgePercent: number;
   riskScore: number;
   trapScore: number;
@@ -783,6 +788,8 @@ function toComboLeg(l: ResolvedMlbLine): MlbComboLeg {
     direction: l.modelDirection,
     probability: l.projection.probability,
     projection: l.projection.projection,
+    rangeLow: l.projection.rangeLow,
+    rangeHigh: l.projection.rangeHigh,
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,

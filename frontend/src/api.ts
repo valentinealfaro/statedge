@@ -1585,6 +1585,10 @@ export type MlbSlateLeg = {
   direction: 'OVER' | 'UNDER';
   probability: number;
   projection: number;
+  // ±1σ projection band (Phase 147c — exposed by backend so the
+  // ProjectionBand visualization works for MLB props on /best-bets).
+  rangeLow?: number;
+  rangeHigh?: number;
   edgePercent: number;
   riskScore: number;
   trapScore: number;

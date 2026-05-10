@@ -155,8 +155,8 @@ export function BestBetsToday() {
             href: `/mlb/slate`,
             ev,
             projection: l.projection ?? null,
-            rangeLow: null,
-            rangeHigh: null,
+            rangeLow: l.rangeLow ?? null,
+            rangeHigh: l.rangeHigh ?? null,
           });
         }
       }

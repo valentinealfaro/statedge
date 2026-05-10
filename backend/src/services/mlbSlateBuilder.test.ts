@@ -10,6 +10,8 @@ import type { ProjectionResult } from './mlbProjectionEngine.js';
 function projection(over: Partial<ProjectionResult> = {}): ProjectionResult {
   return {
     projection: 1.5,
+    rangeLow: 1.0,
+    rangeHigh: 2.0,
     line: 1.5,
     baselineProjection: 1.5,
     probability: 65,

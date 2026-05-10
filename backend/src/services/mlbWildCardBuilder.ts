@@ -343,6 +343,8 @@ function toComboLegWithReason(
     direction: l.modelDirection,
     probability: l.projection.probability,
     projection: l.projection.projection,
+    rangeLow: l.projection.rangeLow,
+    rangeHigh: l.projection.rangeHigh,
     edgePercent: l.projection.edgePercent,
     riskScore: l.projection.riskScore,
     trapScore: l.projection.trapScore,
