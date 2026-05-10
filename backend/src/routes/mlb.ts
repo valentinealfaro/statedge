@@ -1,7 +1,22 @@
-// MLB routes mounted at /api/mlb. Phase 0/1 surface area: enough to
-// verify the data pipeline (teams + counts + disclaimer) without
-// shipping any user-facing pages yet. Projection / slate / compare
-// endpoints land in Phase 2+ once the engines exist.
+// MLB routes mounted at /api/mlb. Originally Phase 0/1 (teams +
+// counts + disclaimer) but now covers the full MLB surface — the
+// platform's most-built sport. Endpoint families:
+//
+//   Reference      teams · stats · disclaimer · health
+//   Search         search/players · player/:id · standings · today
+//   Player history player/:id/last-10 · player/:id/projection-history
+//   Projection     projection (10-layer engine) · slate/players
+//   Slate          slate/today (GET + POST publish) · slate/today/rebuild
+//                  slate/history · slate (legacy POST) · elite/today
+//   Game           game/:pk/sgp · game/:pk/preview · game/:pk/live
+//                  team/:id/last-5 · live/today
+//   Truth          calibration
+//
+// MLB is the deepest sport — projection_history with hit_or_miss /
+// closing_line / market_snapshots all populated, full 10-layer
+// engine, calibration buckets ticking, CLV computed against real
+// market closes. Every other sport's surface mirrors this shape
+// (with sport-specific data sources + projection engines).
 
 import { Router } from 'express';
 import {
