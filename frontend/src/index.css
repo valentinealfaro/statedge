@@ -6444,7 +6444,8 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 .navlink.has-live {
   position: relative;
 }
-.navlink.has-live::after {
+.navlink.has-live::after,
+.mbn-link.has-live::after {
   content: '';
   position: absolute;
   top: 4px;
