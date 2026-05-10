@@ -255,17 +255,37 @@ export function Methodology() {
           <li>ML feedback loop — calibration gap currently informs hand-tuned reweighting; automated gradient-based recalibration is queued.</li>
         </ul>
 
-        <p style={{
-          marginTop: 32, padding: 16,
-          background: 'rgba(102,187,106,0.06)',
-          border: '1px solid rgba(102,187,106,0.25)',
-          borderRadius: 8,
-          fontSize: 13, lineHeight: 1.6,
+        <div style={{
+          position: 'relative',
+          marginTop: 32, padding: 18,
+          background: `
+            radial-gradient(ellipse 50% 80% at 0% 0%, rgba(102,187,106,0.10) 0%, transparent 60%),
+            linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+            var(--surface-1)
+          `,
+          border: '1px solid rgba(102,187,106,0.30)',
+          borderLeft: '3px solid #66bb6a',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-card)',
+          fontSize: 13, lineHeight: 1.65,
+          overflow: 'hidden',
         }}>
-          <strong>The mission line:</strong> Data over hype. EV over hit rate. Smaller cards
-          over forced volume. We're not the loudest sports site; we're the most honest one.
-          That's the promise, and the truth-metric pages are where we hold ourselves to it.
-        </p>
+          <span aria-hidden style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+            background: 'linear-gradient(90deg, transparent, rgba(102,187,106,0.55), transparent)',
+          }} />
+          <div style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: '0.12em',
+            textTransform: 'uppercase', color: '#66bb6a', marginBottom: 8,
+          }}>
+            The mission line
+          </div>
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.85)' }}>
+            Data over hype. EV over hit rate. Smaller cards over forced volume.
+            We're not the loudest sports site; we're the most honest one. That's
+            the promise, and the truth-metric pages are where we hold ourselves to it.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -302,25 +322,38 @@ function TruthCard({ title, sub, href, blurb }: { title: string; sub: string; hr
   return (
     <Link
       to={href}
+      className="truth-card"
       style={{
+        position: 'relative',
         display: 'block',
-        padding: 14,
-        background: 'rgba(0,0,0,0.2)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        padding: 16,
+        background: `
+          radial-gradient(ellipse 50% 80% at 0% 0%, rgba(122,162,255,0.06) 0%, transparent 60%),
+          linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+          var(--surface-1)
+        `,
+        border: '1px solid rgba(122,162,255,0.20)',
         borderLeft: '3px solid #7aa2ff',
-        borderRadius: 6,
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-card)',
         textDecoration: 'none',
         color: 'inherit',
+        overflow: 'hidden',
+        transition: 'transform 200ms cubic-bezier(0.4,0,0.2,1), box-shadow 200ms, border-color 200ms',
       }}
     >
-      <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
-      <div className="muted small" style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: 2 }}>
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(122,162,255,0.55), transparent)',
+      }} />
+      <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: '-0.2px' }}>{title}</div>
+      <div className="muted small" style={{ fontSize: 11, fontWeight: 800, color: '#7aa2ff', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 4 }}>
         {sub}
       </div>
-      <div className="muted small" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 8 }}>
+      <div className="muted small" style={{ fontSize: 12, lineHeight: 1.55, marginTop: 10, color: 'rgba(255,255,255,0.75)' }}>
         {blurb}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#7aa2ff', marginTop: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: '#7aa2ff', marginTop: 10, letterSpacing: '0.04em' }}>
         See the math →
       </div>
     </Link>

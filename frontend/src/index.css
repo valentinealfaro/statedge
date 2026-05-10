@@ -6410,6 +6410,13 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   transform: translateY(-1px);
 }
 
+/* ─── Methodology truth cards ─── */
+.truth-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(122,162,255,0.45) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 8px 22px rgba(122,162,255,0.18), 0 2px 6px rgba(0,0,0,0.30) !important;
+}
+
 /* ─── Clickable lineup rows + team-leader rows ─── */
 .mlb-clickable-row { transition: background-color var(--motion-fast); }
 .mlb-clickable-row:hover { background-color: rgba(91,141,239,0.05); }
