@@ -198,8 +198,8 @@ export function MmaFighterTonightSlate({
                 </div>
                 <div className="muted small" style={{ fontSize: 11, marginTop: 4, color: 'rgba(255,255,255,0.55)' }}>
                   {isGradable
-                    ? 'Line shown as published — UFC projection engine ships in a later phase. Live verdict on the right ticks every 60s from fightcenter.'
-                    : 'Line shown as published. No live grading for this stat key yet — needs round-by-round or fight-clock data.'}
+                    ? 'Live verdict on the right ticks every 60s from fightcenter. Per-prop edge / probability badges live on /mma/slate.'
+                    : 'No live grading for this stat key yet — needs round-by-round or fight-clock data.'}
                 </div>
               </div>
               {live && live.verdict !== 'UNGRADED' && (

@@ -115,7 +115,9 @@ export function MmaScoreboard() {
         <p className="muted small" style={{ marginTop: 6, marginBottom: 16 }}>
           Upcoming and recent UFC cards with consensus moneylines and one-click
           drill-in to fight detail (bio · tale-of-the-tape · live fightcenter stats).
-          Method-of-victory edge analysis lands when the UFC projection engine ships.
+          Method-of-victory edge analysis lands when the deeper fighter-stat
+          fundamental engine ships — the moneyline-anchored heuristic engine on
+          /mma/slate covers prop-line edges today.
         </p>
 
         {/* Truth metric — UFC-scoped. Self-hides until UFC projection
