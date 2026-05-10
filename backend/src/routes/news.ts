@@ -1,9 +1,20 @@
-// News API routes — Phase 104.
+// News API routes — Phase 104, extended through Phase 104i (cron
+// handlers) + 107e (UFC fight-night) + iter 78 (UFC headshot CDN
+// in templates).
 //
-// Public read surface for the article system. Frontend hits these
-// to render /news index + /news/:slug pages. Plus admin-gated
-// endpoints to manually trigger generation (useful for testing
-// templates without waiting for the slate publish).
+// Public read surface for the article system. Frontend hits:
+//   GET /api/news/articles — paginated list, optional sport filter
+//   GET /api/news/articles/:slug — single article fetch
+// Plus admin-gated endpoints to manually trigger generation (useful
+// for testing templates without waiting for the slate publish).
+//
+// Vercel cron handlers (Phase 104i, mounted under /cron/*):
+//   /cron/big-game — end-of-night across MLB + NBA + UFC (UFC via
+//                    fetchUfcFightNightInputs / generateFightNightArticles)
+//   /cron/clv-recap — daily morning ET, persists per-sport articles
+//   /cron/power-rankings — weekly NBA + MLB; WNBA + UFC deferred
+//   /cron/edge-preview — pre-game preview articles per sport
+//   ...and others. All gated by requireCronAuth.
 
 import { Router } from 'express';
 import { listRecentSnapshots, type RawSnapshotRow } from '../market/snapshots.js';
