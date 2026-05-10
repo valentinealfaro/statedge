@@ -167,6 +167,13 @@ export function EliteHeatmap() {
   );
 }
 
+function todayEtIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
 function Cell({ cell }: { cell: DayCell | null }) {
   if (!cell) {
     return <div style={{ width: 14, height: 14 }} />;
@@ -188,6 +195,10 @@ function Cell({ cell }: { cell: DayCell | null }) {
       label = `${cell.date} · pending grade · ${t.grade} · ${t.combinedFairPayout.toFixed(1)}× · ${t.tierName}`;
     }
   }
+  // Today's cell gets a gold ring + 'Today: ' prefix in the tooltip
+  // so users can find current state at a glance among 90 days.
+  const isToday = cell.date === todayEtIso();
+  if (isToday) label = `Today · ${label}`;
   return (
     <div
       title={label}
@@ -197,6 +208,7 @@ function Cell({ cell }: { cell: DayCell | null }) {
         borderRadius: 2,
         cursor: 'help',
         transition: 'transform var(--motion-fast)',
+        boxShadow: isToday ? '0 0 0 2px #ffd54f' : undefined,
       }}
       onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.4)'; }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
