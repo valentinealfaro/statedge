@@ -1,7 +1,13 @@
-// Global cross-sport intelligence search — Phase 83 + Phase 91.
-// Searches NBA + MLB + WNBA in parallel for player matches, AND on
+// Global cross-sport intelligence search — Phase 83 + Phase 91 + Phase 148p.
+// Searches NBA + MLB + UFC + WNBA in parallel for player matches, AND on
 // focus (empty input) surfaces "trending edges across tonight's
 // slates" — search is now a discovery surface, not just lookup.
+//
+// UFC fighters are sourced from the ESPN scoreboard (same data the
+// /mma/scoreboard page uses) — no dedicated fighter-search API exists,
+// so we pull the recent + upcoming card once per session and filter
+// client-side by display name. Covers tonight + the next event, which
+// is the entire prime use case for an in-session terminal search.
 //
 // Mission: one search box, every player. Plus institutional terminal
 // behavior — when nothing typed, show what's hot tonight.
@@ -11,27 +17,38 @@ import { useNavigate } from 'react-router-dom';
 import {
   getMlbDailySlate,
   getTodaySlate,
+  getUfcScoreboard,
   getWnbaSlate,
   searchMlbPlayers,
   searchPlayers,
   searchWnbaPlayers,
   type MlbSearchPlayer,
   type Player,
+  type UfcFighter,
   type WnbaSearchPlayer,
 } from './api';
-import { MlbPlayerAvatar, PlayerAvatar, WnbaPlayerAvatar } from './Avatar';
+import { MlbPlayerAvatar, PlayerAvatar, UfcFighterAvatar, WnbaPlayerAvatar } from './Avatar';
 
-type Sport = 'nba' | 'mlb' | 'wnba';
+type Sport = 'nba' | 'mlb' | 'mma' | 'wnba';
 
 const SPORT_COLOR: Record<Sport, string> = {
   nba:  '#7aa2ff',
   mlb:  '#66bb6a',
+  mma:  '#ef5350',
   wnba: '#b388ff',
+};
+
+const SPORT_LABEL: Record<Sport, string> = {
+  nba:  'NBA',
+  mlb:  'MLB',
+  mma:  'UFC',
+  wnba: 'WNBA',
 };
 
 type SearchState = {
   nba: Player[];
   mlb: MlbSearchPlayer[];
+  mma: UfcFighter[];
   wnba: WnbaSearchPlayer[];
 };
 
@@ -48,7 +65,7 @@ type TrendingEdge = {
 
 export function NavSearch() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchState>({ nba: [], mlb: [], wnba: [] });
+  const [results, setResults] = useState<SearchState>({ nba: [], mlb: [], mma: [], wnba: [] });
   const [trending, setTrending] = useState<TrendingEdge[] | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,6 +73,12 @@ export function NavSearch() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const trendingFetchedRef = useRef(false);
+  // Session-scoped UFC fighter index built from the ESPN scoreboard.
+  // Loaded once on first focus; reused for every keystroke. Each fight
+  // returns red + blue fighters, so flattening + de-duping by id gives
+  // us the searchable corpus for tonight + recent events.
+  const ufcFightersRef = useRef<UfcFighter[]>([]);
+  const ufcFightersFetchedRef = useRef(false);
 
   // Global keyboard shortcut — `/` or Cmd/Ctrl+K focuses the search
   // (Bloomberg / VSCode / GitHub convention). Don't hijack when the
@@ -87,6 +110,29 @@ export function NavSearch() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Lazy-load the UFC fighter index from the scoreboard once per
+  // session. Cheap: same endpoint /mma/scoreboard already powers,
+  // server-side cached upstream.
+  async function ensureUfcFightersLoaded() {
+    if (ufcFightersFetchedRef.current) return;
+    ufcFightersFetchedRef.current = true;
+    try {
+      const r = await getUfcScoreboard();
+      const seen = new Set<string>();
+      const fighters: UfcFighter[] = [];
+      for (const ev of r.events) {
+        for (const f of ev.fights) {
+          for (const corner of [f.fighters.red, f.fighters.blue]) {
+            if (!corner || !corner.id || seen.has(corner.id)) continue;
+            seen.add(corner.id);
+            fighters.push(corner);
+          }
+        }
+      }
+      ufcFightersRef.current = fighters;
+    } catch { /* silent — UFC search just stays empty */ }
+  }
 
   // Lazy-load trending edges on first focus. Cached for the session
   // — server-side caches absorb cost across users.
@@ -160,19 +206,30 @@ export function NavSearch() {
 
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) { setResults({ nba: [], mlb: [], wnba: [] }); return; }
+    if (q.length < 2) { setResults({ nba: [], mlb: [], mma: [], wnba: [] }); return; }
     const ctrl = new AbortController();
     setLoading(true);
     const t = setTimeout(async () => {
+      // Make sure the UFC corpus is loaded before we filter against it.
+      // Idempotent — does nothing after the first run.
+      await ensureUfcFightersLoaded();
       const [nbaR, mlbR, wnbaR] = await Promise.allSettled([
         searchPlayers(q, ctrl.signal).catch(() => []),
         searchMlbPlayers(q).catch(() => []),
         searchWnbaPlayers(q, ctrl.signal).catch(() => []),
       ]);
       if (ctrl.signal.aborted) return;
+      // Client-side UFC filter: case-insensitive substring on display
+      // name or short name. Cheap because the corpus is bounded (a
+      // handful of UFC events × 8–14 fights each = ~50–150 fighters).
+      const qLower = q.toLowerCase();
+      const ufcMatches = ufcFightersRef.current
+        .filter((f) => f.displayName.toLowerCase().includes(qLower) || f.shortName.toLowerCase().includes(qLower))
+        .slice(0, 5);
       setResults({
         nba:  nbaR.status === 'fulfilled' ? nbaR.value.slice(0, 5) : [],
         mlb:  mlbR.status === 'fulfilled' ? mlbR.value.slice(0, 5) : [],
+        mma:  ufcMatches,
         wnba: wnbaR.status === 'fulfilled' ? wnbaR.value.slice(0, 5) : [],
       });
       setLoading(false);
@@ -189,19 +246,23 @@ export function NavSearch() {
   }, []);
 
   function pickNba(p: Player) {
-    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], mma: [], wnba: [] });
     navigate(`/nba/compare?m=last10&pid=${p.id}`);
   }
   function pickMlb(p: MlbSearchPlayer) {
-    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], mma: [], wnba: [] });
     navigate(`/mlb/player/${p.id}`);
   }
   function pickWnba(p: WnbaSearchPlayer) {
-    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], wnba: [] });
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], mma: [], wnba: [] });
     navigate(`/wnba/compare?aid=${encodeURIComponent(p.id)}`);
   }
+  function pickUfc(f: UfcFighter) {
+    setOpen(false); setQuery(''); setResults({ nba: [], mlb: [], mma: [], wnba: [] });
+    navigate(`/mma/fighter/${encodeURIComponent(f.id)}`);
+  }
 
-  const totalResults = results.nba.length + results.mlb.length + results.wnba.length;
+  const totalResults = results.nba.length + results.mlb.length + results.mma.length + results.wnba.length;
   const showTray = open && query.trim().length >= 2;
 
   return (
@@ -211,9 +272,13 @@ export function NavSearch() {
         type="search"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => { setOpen(true); void ensureTrendingLoaded(); }}
+        onFocus={() => {
+          setOpen(true);
+          void ensureTrendingLoaded();
+          void ensureUfcFightersLoaded();
+        }}
         placeholder="Search any player or browse trending…"
-        aria-label="Search any player across NBA, MLB, WNBA"
+        aria-label="Search any player or fighter across NBA, MLB, UFC, WNBA"
       />
       {/* Power-user kbd hint — only shown when the input is empty + not
           focused, so it doesn't crowd the placeholder while typing. */}
@@ -311,7 +376,7 @@ export function NavSearch() {
             <div className="nav-search-empty">Searching all sports…</div>
           )}
           {!loading && totalResults === 0 && (
-            <div className="nav-search-empty">No matches across NBA, MLB, or WNBA</div>
+            <div className="nav-search-empty">No matches across NBA, MLB, UFC, or WNBA</div>
           )}
 
           {results.nba.length > 0 && (
@@ -333,6 +398,18 @@ export function NavSearch() {
                   <MlbPlayerAvatar playerId={p.id} name={p.fullName} size="md" />
                   <span className="nav-search-name">{p.fullName}</span>
                   <span className="nav-search-team">{p.team?.abbreviation ?? '—'}</span>
+                </button>
+              ))}
+            </SportSection>
+          )}
+
+          {results.mma.length > 0 && (
+            <SportSection sport="mma" count={results.mma.length}>
+              {results.mma.map((f) => (
+                <button key={`mma:${f.id}`} className="nav-search-row" onClick={() => pickUfc(f)}>
+                  <UfcFighterAvatar athleteId={f.id} name={f.displayName} size="md" />
+                  <span className="nav-search-name">{f.displayName}</span>
+                  <span className="nav-search-team">{f.record ?? '—'}</span>
                 </button>
               ))}
             </SportSection>
@@ -373,7 +450,7 @@ function SportSection({ sport, count, children }: { sport: Sport; count: number;
           justifyContent: 'space-between',
         }}
       >
-        <span>{sport.toUpperCase()}</span>
+        <span>{SPORT_LABEL[sport]}</span>
         <span style={{ color: 'rgba(255,255,255,0.4)' }}>{count}</span>
       </div>
       {children}
