@@ -470,38 +470,30 @@ function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
     );
   }
   if (mode === 'insane') {
-    // Insane: lottery-ticket mode. Hunts Demon (over-only, payout-
-    // boosted) lines aggressively because every Demon stacked on the
-    // card multiplies the final payout (1.05× per Demon per the PP
-    // FAQ). Realistic 6-leg ceiling on Power Play with 6 Demons:
-    // 14 × 1.05^6 ≈ 18.7× — NOT 50× (pre-iter-10 used the contest
-    // 1st-place 37.5× number which is not the standard payout).
-    // Risk penalty stays low — Insane users explicitly accept losing.
+    // Insane: real-lottery mode. Iter 11 reshape (user 2026-05-10):
+    // "We need to make this like a real lottery pick — crazy wild
+    // picks not the same ones from the balance tabs." So Insane:
     //
-    // Iter 10 directive (no-obvious picks rule): we no longer reward a
-    // Demon just for being a Demon. We boost when the model says the
-    // over actually clears the demon line (real edge), and we PUNISH
-    // the trivial cases where we'd just be re-telling the user what
-    // PrizePicks already told them via the goblin/demon emoji:
+    //  1. is demon-only at the eligibility filter (see pickModeAware),
+    //  2. ranks DIFFERENTLY than Balanced — favors LARGE projection
+    //     separation on the OVER side (the model thinks PP pumped
+    //     the line but the player still clears it big), instead of
+    //     "high probability + small edge" which is what Balanced
+    //     rewards and what produced the 77/74/71/69/68/62 lineup
+    //     the user complained about.
     //
-    //   Goblin-over  : PP shaved the line down so the over is "easy" →
-    //                  rubber-stamping that has no value to the user.
-    //   Demon-under  : PP pumped the line so the over is "hard" → so
-    //                  the under is "easy" by symmetry; same problem.
-    //
-    // Real edge looks like: Demon-over the model still clears (PP
-    // pumped it but our projection clears anyway), Goblin-under that
-    // looks like a trap (PP shaved it because they expect a public
-    // over, but our model says under).
-    const demonBoost = (c.isDemon && c.direction === 'OVER') ? 25
-      : (c.isGoblin && c.direction === 'UNDER') ? 10
+    // Demon-under and Goblin-over still get the obviousness penalty
+    // (applied uniformly via `penalty`) — Insane respects the same
+    // rule, it just leans into the upside dimension harder.
+    const demonOverEdge = (c.isDemon && c.direction === 'OVER')
+      ? c.projectionDistanceScore * 0.30   // bigger projection gap = bigger upside
       : 0;
     return (
-      c.projectionDistanceScore * 0.40
-      + c.edgePercent * 0.30
+      c.projectionDistanceScore * 0.50    // separation dominates over probability
+      + c.edgePercent * 0.20
       + c.edgeScore * 0.10
       - c.risk * 0.05
-      + demonBoost
+      + demonOverEdge
       + penalty
     );
   }
@@ -1489,6 +1481,16 @@ function pickModeAware<T extends ComboCandidate>(
       const atVolume = dist < ctx.seasonAvg * 0.10;
       return !atVolume;
     });
+    // Iter 11 (user 2026-05-10): "We need to make this like a real
+    // lottery pick. This needs to be really all demons." Pre-iter-11
+    // Insane recycled the same legs Balanced surfaced — high-prob
+    // standard props that just happen to clear the eligibility floor.
+    // A real lottery card uses Demon-restricted props (over-only,
+    // pumped lines that PrizePicks tagged as harder-to-clear), not
+    // standard or Goblin lines that already have favorite-friendly
+    // pricing. Hard demon-only filter; relax fallback below catches
+    // the case where the slate has fewer than `target` demons.
+    filtered = filtered.filter((c) => c.isDemon);
   } else if (eff === 'aggressive') {
     filtered = filtered.filter((c) => {
       const ctx = (c as { context?: { seasonAvg: number } }).context;
@@ -1502,7 +1504,16 @@ function pickModeAware<T extends ComboCandidate>(
   }
   // Fallback: if filters wipe the pool below viable, relax to the
   // un-filtered pool. Better to ship a softer card than nothing.
-  if (filtered.length < target) filtered = pool;
+  //
+  // Iter 11 exception: Insane is demon-only by design. If the slate
+  // has fewer than `target` Demon-restricted props, we return an
+  // empty pool so the UI honestly says "not enough Demon props in
+  // tonight's slate" rather than recycling Balanced legs and lying
+  // about a Demon stack.
+  if (filtered.length < target) {
+    if (eff === 'insane') return [];
+    filtered = pool;
+  }
   return pickWithDiversity(filtered, target, caps, usage, eff);
 }
 
@@ -2005,7 +2016,15 @@ export function buildCombos(
   // First tier with ≥3 qualifying picks wins. If none qualifies, fall
   // through to the "no edge" view with closest candidates.
   // -----------------------------------------------------------------
-  const unusedPool = allCandidates.filter((c) => !usedKeys.has(comboKey(c)));
+  // Iter 11: Insane mode's Wild Card MUST be all demons. Filter the
+  // pool here so every tier in the priority chain (Standard / Near
+  // Miss / Momentum / etc.) only sees demon-restricted candidates.
+  // When the slate doesn't have enough demons, the chain naturally
+  // falls through to the no-edge view rather than fabricating a
+  // "6 Demons stacked" badge on standard props.
+  const unusedPool = allCandidates
+    .filter((c) => !usedKeys.has(comboKey(c)))
+    .filter((c) => resolvedMode !== 'insane' || c.isDemon);
   const MIN_LEGS = 3;        // emit any tier that produces this many legs
   const TARGET_LEGS = 6;     // ideal Wild Card size
 

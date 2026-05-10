@@ -582,12 +582,29 @@ describe('buildCombos slate modes', () => {
     // claim was "~38× and ~143×" — those numbers came from the
     // wrong (contest 1st-place) base values. Smaller card sizes
     // don't pay enough to be "insane" so they're suppressed.
-    const { combos } = buildCombos(strongSlate(20, 80), 'insane');
+    //
+    // Iter 11: Insane is now demon-only. We force demons on the
+    // fixture so the size assertion still passes; without demons in
+    // the slate, Insane returns no cards (verified separately below).
+    const slate = strongSlate(20, 80).map((l) => ({ ...l, direction: 'over' as const }));
+    const { combos } = buildCombos(slate, 'insane');
     expect(combos.find((c) => c.label === 'Best 2')).toBeUndefined();
     expect(combos.find((c) => c.label === 'Best 3')).toBeUndefined();
     expect(combos.find((c) => c.label === 'Best 4')).toBeUndefined();
     expect(combos.find((c) => c.label === 'Best 5')).toBeDefined();
     expect(combos.find((c) => c.label === 'Best 6')).toBeDefined();
+  });
+
+  test('Insane mode returns no Best 5/6 when the slate has no Demons (iter 11)', () => {
+    // Iter 11: real lottery picks need real Demon-restricted props.
+    // A slate of standard 'both' props can't fake a Demon stack — we
+    // honestly return no Insane cards rather than recycle Balanced
+    // legs and lie about a Demon count. User directive 2026-05-10:
+    // "this needs to be really all demons".
+    const slate = strongSlate(20, 80);    // direction defaults to 'both'
+    const { combos } = buildCombos(slate, 'insane');
+    expect(combos.find((c) => c.label === 'Best 5')).toBeUndefined();
+    expect(combos.find((c) => c.label === 'Best 6')).toBeUndefined();
   });
 
   test('Insane mode tags cards with playType=power and reports a payout estimate', () => {

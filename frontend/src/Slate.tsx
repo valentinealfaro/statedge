@@ -1289,13 +1289,22 @@ function BestPicksRail({
               {c.playType === 'power' && c.payoutMultiplier !== undefined && (
                 <div
                   className="best-pick-lottery"
-                  title={`Power Play (all-or-nothing) target payout. ${c.demonCount ? `${c.demonCount} Demon leg${c.demonCount === 1 ? '' : 's'} stacked at 1.05× each. ` : ''}$1 stake → $${Math.round(c.payoutMultiplier)} if every leg hits. Hit rate is intentionally low — this is a lottery ticket.`}
+                  title={`Power Play (all-or-nothing) target payout. ${c.demonCount ? `${c.demonCount} of ${c.legs.length} legs are PrizePicks Demons (1.05× each). ` : ''}$1 stake → $${Math.round(c.payoutMultiplier)} if every leg hits. Hit rate is intentionally low — this is a lottery ticket.`}
                 >
                   <span className="lottery-payout">~{Math.round(c.payoutMultiplier)}×</span>
                   <span className="lottery-target"> target · $1 → ${Math.round(c.payoutMultiplier)}</span>
+                  {/* Iter 11: be HONEST about the demon makeup. The
+                      pre-iter-11 copy said "6 Demons stacked" whenever
+                      the badge rendered — even when only some legs
+                      were demons. Now we say "all 6 Demons" only when
+                      it's actually all-demon, otherwise "N of M Demons"
+                      so the user can see at a glance whether this is
+                      a true lottery card or a mixed bag. */}
                   {c.demonCount && c.demonCount > 0 ? (
                     <span className="lottery-demons">
-                      {' '}· {c.demonCount} Demon{c.demonCount === 1 ? '' : 's'} stacked
+                      {' '}· {c.demonCount === c.legs.length
+                        ? `all ${c.demonCount} Demon${c.demonCount === 1 ? '' : 's'} stacked`
+                        : `${c.demonCount} of ${c.legs.length} Demon${c.demonCount === 1 ? '' : 's'}`}
                     </span>
                   ) : null}
                 </div>
