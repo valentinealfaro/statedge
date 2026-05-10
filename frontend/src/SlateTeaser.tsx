@@ -11,11 +11,13 @@ import { edgeScore } from './edgeScore';
 import { LiveVerdictPill } from './slateLiveState';
 import { Skeleton } from './Skeleton';
 
-// Top 6 best-edge picks from tonight's PrizePicks slate, surfaced on
-// Home so first-time visitors can find the killer feature without
-// hunting for it. Hidden when auto-pull fails so we don't show a
-// dead section on Cloudflare-blocked days — /slate itself has the
-// upload fallback.
+// Top 6 best-edge picks from tonight's NBA slate, surfaced on Home
+// so first-time visitors can find the killer feature without hunting
+// for it. NBA-scoped because getSlateAuto() pulls the NBA auto-slate
+// only; the cross-sport unified watchlist lives on /best-bets and is
+// reachable via NavBar + the cross-link CTA below the teaser. Hidden
+// when auto-pull fails so we don't show a dead section on Cloudflare-
+// blocked days — /nba/slate itself has the upload fallback.
 export function SlateTeaser() {
   const [lines, setLines] = useState<SlateResolvedLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,9 +79,12 @@ export function SlateTeaser() {
   return (
     <section className="trending">
       <h2>
-        Tonight's best edges
+        Tonight's NBA edges
         <Link to="/nba/slate" className="footer-link" style={{ marginLeft: 12, fontSize: 14 }}>
           Full slate →
+        </Link>
+        <Link to="/best-bets" className="footer-link" style={{ marginLeft: 8, fontSize: 14, color: '#ffd54f' }} title="Cross-sport unified watchlist — NBA + MLB + UFC ranked by EV">
+          Cross-sport →
         </Link>
       </h2>
       <div className="trending-grid">
