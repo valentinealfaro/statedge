@@ -1050,7 +1050,15 @@ function pickPlayerImage(p: { id: number | string; sport: 'mlb' | 'nba' | 'wnba'
   if (p.sport === 'wnba') {
     return `https://a.espncdn.com/i/headshots/wnba/players/full/${p.id}.png`;
   }
-  // MMA — no canonical headshot CDN; leave null. Phase 105 fix.
+  // MMA — ESPN headshots-CDN (same pattern as WNBA, just under
+  // /mma/players/). Frontend's UfcFighterAvatar uses this URL too;
+  // mirroring it here lets news article cards show real fighter
+  // headshots instead of blank tiles. Requires the ESPN athlete id
+  // (numeric string), which the fight-night fetcher carries through
+  // from the scoreboard.
+  if (p.sport === 'mma' && p.id) {
+    return `https://a.espncdn.com/i/headshots/mma/players/full/${p.id}.png`;
+  }
   return null;
 }
 
