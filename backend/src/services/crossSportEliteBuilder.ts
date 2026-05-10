@@ -529,7 +529,10 @@ function buildRationale(rawLegs: EliteCandidate[], legs: EliteLeg[], s: { combin
   const out: string[] = [];
   out.push(`Combined fair payout ${s.combinedFairPayout.toFixed(1)}× · combined hit ${(legs.map((l) => l.probability / 100).reduce((p, q) => p * q, 1) * 100).toFixed(1)}%.`);
   const sports = collectSports({ legs, tier: s.tier } as unknown as CrossSportTicket);
-  out.push(`Cross-sport coverage: ${sports.length === 1 ? sports[0]?.toUpperCase() : sports.map((sp) => sp.toUpperCase()).join(' + ')}.`);
+  // 'mma' → 'UFC' for user-facing rationale text (matches the rest
+  // of the platform's sport label vocabulary).
+  const sportLabel = (sp: Sport): string => sp === 'mma' ? 'UFC' : sp.toUpperCase();
+  out.push(`Cross-sport coverage: ${sports.length === 1 ? sportLabel(sports[0]!) : sports.map(sportLabel).join(' + ')}.`);
   const edgeKinds = legs.map((l) => l.qualifyingEdge);
   out.push(`Qualifying edges: ${[...new Set(edgeKinds)].join(' + ')}.`);
   out.push(`Mean leg edge ${s.combinedEdgePercent.toFixed(1)}; dislocation ${s.dislocationScore.toFixed(1)}.`);

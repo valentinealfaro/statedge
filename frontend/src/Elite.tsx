@@ -423,7 +423,7 @@ function TicketCard({
                 border: '1px solid rgba(102,187,106,0.4)',
                 borderRadius: 3,
               }}>
-                CROSS-SPORT · {ticket.sportsCovered.map((s) => s.toUpperCase()).join(' + ')}
+                CROSS-SPORT · {ticket.sportsCovered.map((s) => s === 'mma' ? 'UFC' : s.toUpperCase()).join(' + ')}
               </span>
             )}
             {'tierName' in ticket && ticket.tierName && (

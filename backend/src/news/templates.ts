@@ -570,9 +570,13 @@ export function generateElitePlay(opts: {
 }): ArticleDraft | null {
   if (opts.legs.length < 2) return null;
   const slug = articleSlug({ kind: 'elite_play', date: opts.date });
+  // 'mma' is the internal sport code; user-facing label is 'UFC' to
+  // match the rest of the platform (StarredPage / News / Dashboard /
+  // Elite header chip).
+  const sportLabel = (s: 'mlb' | 'nba' | 'mma'): string => s === 'mma' ? 'UFC' : s.toUpperCase();
   const sportsLabel = opts.sportsCovered.length === 1
-    ? opts.sportsCovered[0]!.toUpperCase()
-    : opts.sportsCovered.map((s) => s.toUpperCase()).join(' + ');
+    ? sportLabel(opts.sportsCovered[0]!)
+    : opts.sportsCovered.map(sportLabel).join(' + ');
   const summary =
     `${opts.grade} grade ${opts.tier} — ${opts.combinedFairPayout.toFixed(1)}× fair payout · ` +
     `${opts.combinedProbability.toFixed(1)}% combined hit · ${sportsLabel}.`;
