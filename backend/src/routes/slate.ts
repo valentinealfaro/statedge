@@ -559,8 +559,10 @@ slateRouter.get('/elite/live-state', async (_req, res) => {
 
     // Auto-writeback to the elite_tickets ledger when the ticket has
     // FULLY resolved off live state. We require every gradeable leg
-    // (i.e. not UNGRADED — MMA legs stay ungraded by design) to be
-    // either HIT/MISS/PUSH (gameStatus === 'final') or ON_PACE_HIT/
+    // (i.e. not UNGRADED — supported UFC stat keys grade via fightcenter
+    // since iter 44; unsupported UFC keys like rd1_* / rounds /
+    // fight_time / fantasy_score honestly stay UNGRADED) to be either
+    // HIT/MISS/PUSH (gameStatus === 'final') or ON_PACE_HIT /
     // ON_PACE_MISS (locked-in mid-game outcomes). Once that bar is
     // met, persist hitOrMiss + legsHit to the ledger so PastElitePlays
     // shows tonight's verdict without waiting for the daily cron.
