@@ -170,3 +170,108 @@ function projectFighter(c: Record<string, unknown>): UfcFighter {
     flag: typeof flag?.['href'] === 'string' ? (flag['href'] as string) : null,
   };
 }
+
+// ─── Fighter biometrics + career stats ───────────────────────────
+//
+// ESPN exposes career averages on the athletes endpoint at
+// /sports/mma/ufc/athletes/:id . The shape varies but we project the
+// common fields: height, weight, age, reach, stance + the five UFC
+// "tale of the tape" striking/grappling averages (sig-strikes-landed-
+// per-minute, accuracy, takedown avg, accuracy, submission avg).
+// All fields are optional — UFC bio data isn't always populated for
+// debutants.
+
+export type UfcFighterBio = {
+  id: string;
+  displayName: string;
+  height: string | null;        // formatted, e.g. "6' 2""
+  weight: string | null;        // formatted, e.g. "185 lbs"
+  age: number | null;
+  reach: string | null;         // e.g. "75""
+  stance: string | null;        // "Orthodox" | "Southpaw" | "Switch"
+  sigStrLpm: number | null;     // significant strikes landed per minute
+  sigStrAcc: number | null;     // 0..1
+  tdAvg: number | null;         // takedowns per 15 min
+  tdAcc: number | null;         // 0..1
+  subAvg: number | null;        // submission attempts per 15 min
+  flag: string | null;          // country flag URL
+  flagAlt: string | null;       // country full name
+  headshot: string | null;
+  record: string | null;
+};
+
+export async function fetchUfcFighterBio(athleteId: string): Promise<UfcFighterBio | null> {
+  if (!athleteId) return null;
+  const url = `${ESPN}/athletes/${encodeURIComponent(athleteId)}`;
+  let json: Record<string, unknown>;
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'StatEdgeBot/1.0' } });
+    if (!res.ok) return null;
+    json = await res.json() as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const athlete = json['athlete'] as Record<string, unknown> | undefined;
+  if (!athlete) return null;
+
+  const flag = athlete['flag'] as Record<string, unknown> | undefined;
+  const headshot = athlete['headshot'] as Record<string, unknown> | undefined;
+
+  // Height ("displayHeight"), weight ("displayWeight"), reach
+  // ("displayReach") are pre-formatted strings on ESPN. age + stance
+  // come back as primitives.
+  const height = stringOrNull(athlete['displayHeight']);
+  const weight = stringOrNull(athlete['displayWeight']);
+  const reach = stringOrNull(athlete['displayReach']);
+  const stance = stringOrNull(athlete['stance']);
+  const ageNum = typeof athlete['age'] === 'number' ? athlete['age'] : null;
+
+  // Career striking/grappling averages live under athlete.statistics
+  // (newer ESPN payloads) or athlete.statisticsLog (older). We probe
+  // both. The five fields we care about live under these category keys.
+  const stats = (athlete['statistics'] as Record<string, unknown> | undefined) ?? null;
+  const cat = stats ? (stats['categories'] as Array<Record<string, unknown>> | undefined) : undefined;
+  const flat = new Map<string, number>();
+  if (Array.isArray(cat)) {
+    for (const c of cat) {
+      const arr = (c['stats'] ?? []) as Array<Record<string, unknown>>;
+      for (const s of arr) {
+        const k = String(s['name'] ?? '').toLowerCase();
+        const v = typeof s['value'] === 'number' ? s['value'] : Number(s['value']);
+        if (k && Number.isFinite(v)) flat.set(k, v);
+      }
+    }
+  }
+
+  return {
+    id: athleteId,
+    displayName: String(athlete['displayName'] ?? ''),
+    height,
+    weight,
+    age: ageNum,
+    reach,
+    stance,
+    sigStrLpm: pickStat(flat, ['sigstrlandedperminute', 'siglandedperminute', 'striking_sigstrlpm']),
+    sigStrAcc: pickStat(flat, ['sigstrikeaccuracy', 'striking_sigaccuracy']),
+    tdAvg: pickStat(flat, ['takedownaverage', 'grappling_tdavg', 'tdavg']),
+    tdAcc: pickStat(flat, ['takedownaccuracy', 'grappling_tdaccuracy']),
+    subAvg: pickStat(flat, ['submissionaverage', 'grappling_subavg', 'subavg']),
+    flag: typeof flag?.['href'] === 'string' ? (flag['href'] as string) : null,
+    flagAlt: typeof flag?.['alt'] === 'string' ? (flag['alt'] as string) : null,
+    headshot: typeof headshot?.['href'] === 'string' ? (headshot['href'] as string) : null,
+    record: stringOrNull(athlete['record']),
+  };
+}
+
+function stringOrNull(v: unknown): string | null {
+  if (typeof v === 'string' && v.trim().length > 0) return v;
+  return null;
+}
+
+function pickStat(flat: Map<string, number>, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = flat.get(k);
+    if (v !== undefined) return v;
+  }
+  return null;
+}

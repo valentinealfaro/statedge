@@ -16,6 +16,7 @@ import {
   type UfcScoreboardResponse,
 } from './api';
 import { UfcFighterAvatar } from './Avatar';
+import { mmaFightDetailPath } from './MmaFightDetail';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { LatestNewsRail } from './LatestNewsRail';
 import { NavBar } from './NavBar';
@@ -184,7 +185,7 @@ function EventCard({ event, moneylineByFighter }: { event: UfcEvent; moneylineBy
         </div>
       )}
 
-      {main && <FightRow fight={main} primary moneylineByFighter={moneylineByFighter} />}
+      {main && <FightRow fight={main} eventId={event.id} primary moneylineByFighter={moneylineByFighter} />}
 
       {event.fights.length > 1 && (
         <details style={{ marginTop: 10 }}>
@@ -192,7 +193,7 @@ function EventCard({ event, moneylineByFighter }: { event: UfcEvent; moneylineBy
             Full card · {event.fights.length} fights
           </summary>
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {event.fights.filter((f) => f !== main).map((f) => <FightRow key={f.id} fight={f} primary={false} moneylineByFighter={moneylineByFighter} />)}
+            {event.fights.filter((f) => f !== main).map((f) => <FightRow key={f.id} fight={f} eventId={event.id} primary={false} moneylineByFighter={moneylineByFighter} />)}
           </div>
         </details>
       )}
@@ -200,14 +201,27 @@ function EventCard({ event, moneylineByFighter }: { event: UfcEvent; moneylineBy
   );
 }
 
-function FightRow({ fight, primary, moneylineByFighter }: { fight: UfcFight; primary: boolean; moneylineByFighter: MoneylineLookup }) {
+function FightRow({ fight, eventId, primary, moneylineByFighter }: { fight: UfcFight; eventId: string; primary: boolean; moneylineByFighter: MoneylineLookup }) {
   const red = fight.fighters.red;
   const blue = fight.fighters.blue;
   const redMl = red ? moneylineByFighter.get(normalizeName(red.displayName)) : undefined;
   const blueMl = blue ? moneylineByFighter.get(normalizeName(blue.displayName)) : undefined;
   const fontSize = primary ? 14 : 12;
   return (
-    <div style={{ marginTop: primary ? 10 : 0, padding: primary ? '10px 12px' : '6px 8px', background: primary ? 'rgba(239,83,80,0.05)' : 'transparent', borderRadius: 4 }}>
+    <Link
+      to={mmaFightDetailPath(eventId, fight.id)}
+      className="mma-fight-row"
+      style={{
+        display: 'block',
+        textDecoration: 'none',
+        color: 'inherit',
+        marginTop: primary ? 10 : 0,
+        padding: primary ? '10px 12px' : '6px 8px',
+        background: primary ? 'rgba(239,83,80,0.05)' : 'transparent',
+        borderRadius: 4,
+        transition: 'background 200ms cubic-bezier(0.4,0,0.2,1), transform 200ms',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize }}>
         <FighterCell f={red} winner={fight.result?.winnerId === red?.id} primary={primary} moneyline={redMl} />
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.45)' }}>VS</span>
@@ -226,7 +240,7 @@ function FightRow({ fight, primary, moneylineByFighter }: { fight: UfcFight; pri
           </span>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -243,17 +257,16 @@ function FighterCell({ f, winner, primary, alignRight, moneyline }: { f: { id: s
       textAlign: alignRight ? 'right' : 'left',
     }}>
       {primary && (
-        <Link to={`/mma/fighter/${f.id}`} style={{ flexShrink: 0 }}>
+        <span style={{ flexShrink: 0 }}>
           <UfcFighterAvatar athleteId={f.id} name={f.displayName} size="sm" />
-        </Link>
+        </span>
       )}
       <div style={{ minWidth: 0, overflow: 'hidden' }}>
-        <Link
-          to={`/mma/fighter/${f.id}`}
-          style={{ fontWeight: winner ? 800 : 600, color: nameColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: 'none', display: 'block' }}
+        <span
+          style={{ fontWeight: winner ? 800 : 600, color: nameColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
         >
           {f.displayName}
-        </Link>
+        </span>
         <div className="muted small" style={{ fontSize: 10, display: 'flex', gap: 6, justifyContent: alignRight ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
           {f.record && <span>{f.record}</span>}
           {moneyline && (

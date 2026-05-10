@@ -16,6 +16,7 @@ import { MlbPlayerLog } from './MlbPlayerLog';
 import { MlbSlate } from './MlbSlate';
 import { MlbSlateHistory } from './MlbSlateHistory';
 import { MlbStandings } from './MlbStandings';
+import { MmaFightDetail } from './MmaFightDetail';
 import { MmaFighter } from './MmaFighter';
 import { MmaScoreboard } from './MmaScoreboard';
 import { MmaSlate } from './MmaSlate';
@@ -89,6 +90,7 @@ export function App() {
           <Route path="/mma/scoreboard" element={<MmaScoreboard />} />
           <Route path="/mma/slate" element={<MmaSlate />} />
           <Route path="/mma/fighter/:fighterId" element={<MmaFighter />} />
+          <Route path="/mma/event/:eventId/fight/:fightId" element={<MmaFightDetail />} />
 
           {/* News — Phase 104. Auto-generated articles, public SEO. */}
           <Route path="/news" element={<News />} />

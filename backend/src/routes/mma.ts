@@ -6,7 +6,7 @@
 // big-game cron, add fighter profile pages mirroring NBA/MLB.
 
 import { Router } from 'express';
-import { fetchUfcScoreboard } from '../mma/espn.js';
+import { fetchUfcScoreboard, fetchUfcFighterBio, type UfcEvent, type UfcFight } from '../mma/espn.js';
 import { getUfcMoneylines } from '../mma/odds.js';
 import {
   getLatestMmaDailySlate,
@@ -27,6 +27,59 @@ function todayEt(): string {
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
 }
+
+// GET /api/mma/fight/:eventId/:fightId
+//
+// Fight detail page data — pulls the matching event+fight out of
+// the scoreboard listing and parallel-fetches each fighter's career
+// bio + averages from ESPN's athletes endpoint. Returns all in one
+// payload so the frontend renders the ESPN-style fight card without
+// chained client-side fetches.
+//
+// Edge cache 30s — short enough that mid-fight state (round/result)
+// updates land quickly while live fights are running, but long
+// enough to dampen polling traffic for the bios (which don't move).
+mmaRouter.get('/fight/:eventId/:fightId', async (req, res) => {
+  try {
+    const eventId = String(req.params.eventId ?? '');
+    const fightId = String(req.params.fightId ?? '');
+    if (!eventId || !fightId) {
+      res.status(400).json({ error: 'eventId and fightId required' });
+      return;
+    }
+    const events = await fetchUfcScoreboard();
+    const event = events.find((e: UfcEvent) => e.id === eventId);
+    if (!event) {
+      res.status(404).json({ error: 'event not found' });
+      return;
+    }
+    const fight = event.fights.find((f: UfcFight) => f.id === fightId);
+    if (!fight) {
+      res.status(404).json({ error: 'fight not found' });
+      return;
+    }
+    const [redBio, blueBio] = await Promise.all([
+      fight.fighters.red ? fetchUfcFighterBio(fight.fighters.red.id) : Promise.resolve(null),
+      fight.fighters.blue ? fetchUfcFighterBio(fight.fighters.blue.id) : Promise.resolve(null),
+    ]);
+    res.setHeader('Cache-Control', 'public, max-age=30');
+    res.json({
+      event: {
+        id: event.id,
+        name: event.name,
+        shortName: event.shortName,
+        date: event.date,
+        state: event.state,
+        venue: event.venue,
+      },
+      fight,
+      bios: { red: redBio, blue: blueBio },
+    });
+  } catch (err) {
+    console.error('mma/fight detail failed', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
 
 mmaRouter.get('/scoreboard', async (req, res) => {
   try {

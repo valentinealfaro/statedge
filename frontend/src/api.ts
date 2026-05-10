@@ -1918,6 +1918,37 @@ export async function getUfcScoreboard(): Promise<UfcScoreboardResponse> {
   return (await res.json()) as UfcScoreboardResponse;
 }
 
+// Phase 146 — UFC fight detail (ESPN-style fight card with career
+// stats comparison + live status).
+export type UfcFighterBio = {
+  id: string;
+  displayName: string;
+  height: string | null;
+  weight: string | null;
+  age: number | null;
+  reach: string | null;
+  stance: string | null;
+  sigStrLpm: number | null;
+  sigStrAcc: number | null;
+  tdAvg: number | null;
+  tdAcc: number | null;
+  subAvg: number | null;
+  flag: string | null;
+  flagAlt: string | null;
+  headshot: string | null;
+  record: string | null;
+};
+export type UfcFightDetailResponse = {
+  event: Pick<UfcEvent, 'id' | 'name' | 'shortName' | 'date' | 'state' | 'venue'>;
+  fight: UfcFight;
+  bios: { red: UfcFighterBio | null; blue: UfcFighterBio | null };
+};
+export async function getUfcFightDetail(eventId: string, fightId: string): Promise<UfcFightDetailResponse> {
+  const res = await fetch(`${API_BASE}/api/mma/fight/${encodeURIComponent(eventId)}/${encodeURIComponent(fightId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as UfcFightDetailResponse;
+}
+
 export type UfcMoneylineFighter = {
   fighterName: string;
   americanOdds: number;

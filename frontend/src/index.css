@@ -6397,6 +6397,12 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   filter: brightness(1.04);
 }
 
+/* ─── MMA fight row hover ─── */
+.mma-fight-row:hover {
+  background: rgba(239,83,80,0.08) !important;
+  transform: translateX(2px);
+}
+
 /* ─── Clickable lineup rows + team-leader rows ─── */
 .mlb-clickable-row { transition: background-color var(--motion-fast); }
 .mlb-clickable-row:hover { background-color: rgba(91,141,239,0.05); }
