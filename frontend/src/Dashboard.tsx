@@ -16,6 +16,7 @@ import {
   getMlbCalibration,
   getMlbDailySlate,
   getTodaySlate,
+  getUfcSlateProjections,
   getWnbaCalibration,
   getWnbaSlate,
   liveGradeLegs,
@@ -23,6 +24,7 @@ import {
   type MlbCalibrationReport,
   type MlbDailySlateResponse,
   type SlateResponse,
+  type UfcSlateProjectionsResponse,
   type WnbaCalibrationReport,
   type WnbaSlateResponse,
 } from './api';
@@ -37,18 +39,34 @@ import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
 import { useTitle } from './useTitle';
 
-type Sport = 'nba' | 'mlb' | 'wnba';
+type Sport = 'nba' | 'mlb' | 'wnba' | 'mma';
 
 const SPORT_COLOR: Record<Sport, string> = {
   nba:  '#7aa2ff',
   mlb:  '#66bb6a',
   wnba: '#b388ff',
+  mma:  '#ef5350',
 };
 
 const SPORT_LABEL: Record<Sport, string> = {
   nba: 'NBA',
   mlb: 'MLB',
   wnba: 'WNBA',
+  mma: 'UFC',
+};
+
+// UFC stat labels — same map BestBets / NavSearch trending use.
+// Mirrors STAT_LABEL in MmaSlate / MmaFighterTonightSlate.
+const UFC_STAT_LABEL: Record<string, string> = {
+  sig_strikes:     'Sig Strikes',
+  rd1_sig_strikes: 'R1 Sig Strikes',
+  takedowns:       'Takedowns',
+  rd1_takedowns:   'R1 Takedowns',
+  knockdowns:      'Knockdowns',
+  rounds:          'Rounds',
+  fight_time:      'Fight Time',
+  fantasy_score:   'Fantasy',
+  control_time:    'Control Time',
 };
 
 // Unified leg shape across all 3 sports. Phase 100 expanded with the
@@ -90,6 +108,7 @@ export function Dashboard() {
   const [nba, setNba]   = useState<SlateResponse | null>(null);
   const [mlb, setMlb]   = useState<MlbDailySlateResponse | null>(null);
   const [wnba, setWnba] = useState<WnbaSlateResponse | null>(null);
+  const [ufc, setUfc]   = useState<UfcSlateProjectionsResponse | null>(null);
   const [mlbCal, setMlbCal] = useState<MlbCalibrationReport | null>(null);
   const [wnbaCal, setWnbaCal] = useState<WnbaCalibrationReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,14 +123,18 @@ export function Dashboard() {
         getTodaySlate('balanced'),
         getMlbDailySlate(),
         getWnbaSlate(),
+        getUfcSlateProjections(),
         getMlbCalibration(7),
         getWnbaCalibration(30),
       ]);
       if (cancelled) return;
-      const [nbaR, mlbR, wnbaR, mlbCalR, wnbaCalR] = results;
+      const [nbaR, mlbR, wnbaR, ufcR, mlbCalR, wnbaCalR] = results;
       if (nbaR.status === 'fulfilled')   setNba(nbaR.value.resolved);
       if (mlbR.status === 'fulfilled')   setMlb(mlbR.value);
       if (wnbaR.status === 'fulfilled')  setWnba(wnbaR.value);
+      // UFC failure is silent — don't let an Odds API blip blank the
+      // dashboard when NBA + MLB still have data.
+      if (ufcR.status === 'fulfilled')   setUfc(ufcR.value);
       if (mlbCalR.status === 'fulfilled') setMlbCal(mlbCalR.value);
       if (wnbaCalR.status === 'fulfilled') setWnbaCal(wnbaCalR.value);
       setLoading(false);
@@ -129,7 +152,7 @@ export function Dashboard() {
     };
   }, []);
 
-  const allEdges = collectEdges(nba, mlb, wnba);
+  const allEdges = collectEdges(nba, mlb, wnba, ufc);
   const edges = sportFilter === 'all' ? allEdges : allEdges.filter((e) => e.sport === sportFilter);
 
   // Phase 145 — live verdict polling for the dashboard's visible edges.
@@ -211,7 +234,7 @@ export function Dashboard() {
     .slice(0, 8)
     .map((d) => d.edge);
 
-  const slateStrength = computeSlateStrength(nba, mlb, wnba);
+  const slateStrength = computeSlateStrength(nba, mlb, wnba, ufc);
   const pressureSignals = computeMarketPressure(allEdges);
   const analystSummary = buildAnalystSummary(dislocations, traps, disagreements);
 
@@ -278,6 +301,7 @@ export function Dashboard() {
               nba:  allEdges.filter((e) => e.sport === 'nba').length,
               mlb:  allEdges.filter((e) => e.sport === 'mlb').length,
               wnba: allEdges.filter((e) => e.sport === 'wnba').length,
+              mma:  allEdges.filter((e) => e.sport === 'mma').length,
             }} />
 
             {/* SECTION 1 — Market Dislocations (was: Tonight's
@@ -387,6 +411,7 @@ export function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 32 }}>
               <StrengthCard sport="nba"  data={slateStrength.nba} />
               <StrengthCard sport="mlb"  data={slateStrength.mlb} />
+              <StrengthCard sport="mma"  data={slateStrength.mma} />
               <StrengthCard sport="wnba" data={slateStrength.wnba} />
             </div>
 
@@ -421,6 +446,7 @@ function collectEdges(
   nba: SlateResponse | null,
   mlb: MlbDailySlateResponse | null,
   wnba: WnbaSlateResponse | null,
+  ufc: UfcSlateProjectionsResponse | null,
 ): UnifiedEdge[] {
   const out: UnifiedEdge[] = [];
 
@@ -536,6 +562,51 @@ function collectEdges(
         edgeDurability: l.edgeDurability ?? null,
         whyMarketWrong: l.whyMarketWrong ?? null,
         href: `/wnba/compare?aid=${encodeURIComponent(l.athleteId)}`,
+      });
+    }
+  }
+
+  // UFC — moneyline-anchored heuristic engine output (Phase 136 /
+  // iter 64). The dislocation engine ranks across all sports on the
+  // same edgePercent + probability scale, so UFC rows are eligible
+  // for the dislocation / disagreement / trap surfaces just like
+  // NBA + MLB. Honest about its limits: many Phase-101 fields stay
+  // null because the heuristic engine doesn't produce them yet
+  // (lineInflationScore, sharpnessScore, edgeDurability, etc.).
+  if (ufc?.projections) {
+    const seen = new Set<string>();
+    for (const p of ufc.projections) {
+      const key = `${p.fighterName}::${p.statKey}::${p.line}::${p.modelDirection}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        sport: 'mma',
+        playerId: p.espnAthleteId ?? 0,
+        playerName: p.fighterName,
+        team: p.opponentName ? `vs ${p.opponentName}` : null,
+        statKey: p.statKey,
+        statLabel: UFC_STAT_LABEL[p.statKey] ?? p.statKey,
+        line: p.line,
+        direction: p.modelDirection,
+        probability: p.probability,
+        edgePercent: p.edgePercent,
+        trapScore: p.trapScore,
+        projection: p.projectionValue,
+        reasonCodes: p.rationale ?? [],
+        fragilityScore: p.fragilityScore,
+        fragilityTier: null,
+        momentumScore: null,
+        riskScore: null,
+        // Heuristic engine derives implied prob from the de-vigged
+        // moneyline; surface it so the dislocation math compares
+        // honestly against NBA + MLB rows.
+        marketImpliedProb: p.fairProbability !== null ? p.fairProbability * 100 : null,
+        lineInflationScore: null,
+        publicBiasTags: [],
+        sharpnessScore: null,
+        edgeDurability: null,
+        whyMarketWrong: null,
+        href: p.espnAthleteId ? `/mma/fighter/${p.espnAthleteId}` : '/mma/slate',
       });
     }
   }
@@ -772,7 +843,8 @@ function computeSlateStrength(
   nba: SlateResponse | null,
   mlb: MlbDailySlateResponse | null,
   wnba: WnbaSlateResponse | null,
-): { nba: StrengthData; mlb: StrengthData; wnba: StrengthData } {
+  ufc: UfcSlateProjectionsResponse | null,
+): { nba: StrengthData; mlb: StrengthData; wnba: StrengthData; mma: StrengthData } {
   function rollup(edges: UnifiedEdge[]): StrengthData {
     if (edges.length === 0) return { legs: 0, avgEdge: 0, highEdgeCount: 0 };
     const sumEdge = edges.reduce((s, e) => s + e.edgePercent, 0);
@@ -782,11 +854,12 @@ function computeSlateStrength(
       highEdgeCount: edges.filter((e) => e.edgePercent >= 10).length,
     };
   }
-  const all = collectEdges(nba, mlb, wnba);
+  const all = collectEdges(nba, mlb, wnba, ufc);
   return {
     nba:  rollup(all.filter((e) => e.sport === 'nba')),
     mlb:  rollup(all.filter((e) => e.sport === 'mlb')),
     wnba: rollup(all.filter((e) => e.sport === 'wnba')),
+    mma:  rollup(all.filter((e) => e.sport === 'mma')),
   };
 }
 
@@ -833,12 +906,16 @@ function SportFilterTabs({
 }: {
   value: Sport | 'all';
   onChange: (v: Sport | 'all') => void;
-  counts: { all: number; nba: number; mlb: number; wnba: number };
+  counts: { all: number; nba: number; mlb: number; wnba: number; mma: number };
 }) {
+  // Tab order matches the 2026-05-09 sport-priorities decision —
+  // focus sports (NBA, MLB, UFC) lead and WNBA sits last on
+  // maintenance.
   const TABS: Array<{ key: Sport | 'all'; label: string; color: string }> = [
     { key: 'all',  label: 'All',  color: '#cccccc' },
     { key: 'nba',  label: 'NBA',  color: SPORT_COLOR.nba },
     { key: 'mlb',  label: 'MLB',  color: SPORT_COLOR.mlb },
+    { key: 'mma',  label: 'UFC',  color: SPORT_COLOR.mma },
     { key: 'wnba', label: 'WNBA', color: SPORT_COLOR.wnba },
   ];
   return (
