@@ -35,6 +35,9 @@ type Glance = {
   // Per-sport split for the tooltip / sub-line.
   liveBySport: { nba: number; mlb: number; ufc: number };
   activeEdges: number;
+  // Per-sport split of active edges (≥5%) by sport, for the
+  // Active-edges cell sub-line.
+  edgesBySport: { nba: number; mlb: number };
   eliteVerdict: 'HIT' | 'MISS' | 'IN_FLIGHT' | null;
   eliteLegRollup: { hit: number; miss: number; inFlight: number } | null;
   beatRate30d: number | null;
@@ -101,13 +104,14 @@ export function TodayAtAGlance() {
       // Active edges across published slates. NBA reads `resolved.lines`
       // with each line's projection.edge.score; MLB combos.legs each
       // carry edgePercent. We threshold ≥5 to count.
-      let activeEdges = 0;
+      let nbaEdgeCount = 0;
+      let mlbEdgeCount = 0;
       let totalProps = 0;
       const nbaLines = nbaSlate?.lines ?? [];
       for (const l of nbaLines) {
         totalProps++;
         const edge = l.projection?.edge.score ?? 0;
-        if (Math.abs(edge) >= 5) activeEdges++;
+        if (Math.abs(edge) >= 5) nbaEdgeCount++;
       }
       if (mlbSlate?.resolved) {
         const mlbLegs = new Set<string>();
@@ -118,10 +122,11 @@ export function TodayAtAGlance() {
             if (mlbLegs.has(k)) continue;
             mlbLegs.add(k);
             totalProps++;
-            if (Math.abs(leg.edgePercent) >= 5) activeEdges++;
+            if (Math.abs(leg.edgePercent) >= 5) mlbEdgeCount++;
           }
         }
       }
+      const activeEdges = nbaEdgeCount + mlbEdgeCount;
 
       let eliteVerdict: Glance['eliteVerdict'] = null;
       let eliteLegRollup: Glance['eliteLegRollup'] = null;
@@ -139,6 +144,7 @@ export function TodayAtAGlance() {
         liveGames,
         liveBySport: { nba: nbaLiveCount, mlb: mlbLiveCount, ufc: ufcLiveCount },
         activeEdges,
+        edgesBySport: { nba: nbaEdgeCount, mlb: mlbEdgeCount },
         eliteVerdict,
         eliteLegRollup,
         beatRate30d,
@@ -203,7 +209,11 @@ export function TodayAtAGlance() {
       <Cell
         label="Active edges"
         value={String(glance.activeEdges)}
-        sub={glance.totalProps > 0 ? `of ${glance.totalProps} props ≥ 5%` : 'no slate published'}
+        sub={
+          glance.activeEdges > 0
+            ? edgesPerSportSub(glance.edgesBySport)
+            : glance.totalProps > 0 ? `of ${glance.totalProps} props ≥ 5%` : 'no slate published'
+        }
         accent={glance.activeEdges >= 10 ? '#66bb6a' : glance.activeEdges >= 3 ? '#7aa2ff' : 'rgba(255,255,255,0.45)'}
         href="/best-bets"
       />
@@ -318,4 +328,14 @@ function perSportSub(s: { nba: number; mlb: number; ufc: number }): string {
   if (s.ufc > 0) parts.push(`${s.ufc} UFC`);
   if (parts.length === 0) return 'games in progress';
   return parts.join(' · ');
+}
+
+// Same shape, scoped to active-edges (NBA + MLB only — UFC slate
+// doesn't expose a projection-engine edge yet).
+function edgesPerSportSub(s: { nba: number; mlb: number }): string {
+  const parts: string[] = [];
+  if (s.nba > 0) parts.push(`${s.nba} NBA`);
+  if (s.mlb > 0) parts.push(`${s.mlb} MLB`);
+  if (parts.length === 0) return 'props ≥ 5% edge';
+  return `${parts.join(' · ')} ≥ 5%`;
 }
