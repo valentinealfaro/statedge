@@ -34,6 +34,19 @@ import { useTitle } from './useTitle';
 const ADMIN_KEY = 'statedge:mmaSlate:adminSecret';
 const MMA_ACCENT = '#ef5350';
 
+// Per-fighter scoreboard pairing — opponent + fight metadata. Used to
+// surface the matchup chip ("vs Imavov · main event") on each
+// FighterCard plus a deep link into /mma/event/:event/fight/:fight.
+type FighterMatchup = {
+  opponentName: string;
+  opponentId: string | null;
+  eventId: string;
+  fightId: string;
+  fightState: 'pre' | 'in' | 'post';
+  isMain: boolean;
+  isTitle: boolean;
+};
+
 export function MmaSlate() {
   useTitle(['UFC Slate']);
 
@@ -46,6 +59,11 @@ export function MmaSlate() {
   // can render UFC headshots on the slate where lines store names but
   // not ids. Misses fall through to initials via the avatar's onError.
   const [fighterIdByName, setFighterIdByName] = useState<Map<string, string>>(new Map());
+  // Fighter-name → tonight's matchup. Sourced from the same scoreboard
+  // pull so that each FighterCard can show "vs Opponent" with a deep
+  // link to the fight detail page. Carries fightState so live fights
+  // get a red dot and finished fights are dimmed.
+  const [matchupByFighter, setMatchupByFighter] = useState<Map<string, FighterMatchup>>(new Map());
 
   useEffect(() => {
     setTodayError(null);
@@ -59,23 +77,51 @@ export function MmaSlate() {
       .then((r) => setMoneylines(r.events))
       .catch(() => setMoneylines([]));
     // Pull the scoreboard so we can resolve slate fighter names to
-    // ESPN athlete ids for avatar rendering. Best-effort: if it fails,
-    // FighterCard falls through to the initials avatar.
+    // ESPN athlete ids for avatar rendering AND pair each fighter with
+    // tonight's opponent. Best-effort: if it fails, FighterCard falls
+    // through to the initials avatar with no matchup chip.
     getUfcScoreboard()
       .then((r) => {
-        const map = new Map<string, string>();
+        const idMap = new Map<string, string>();
+        const matchups = new Map<string, FighterMatchup>();
         for (const ev of r.events) {
           for (const f of ev.fights) {
-            for (const corner of [f.fighters.red, f.fighters.blue]) {
-              if (corner?.id && corner?.displayName) {
-                map.set(normalizeName(corner.displayName), corner.id);
-              }
+            const red = f.fighters.red;
+            const blue = f.fighters.blue;
+            if (red?.id && red?.displayName) idMap.set(normalizeName(red.displayName), red.id);
+            if (blue?.id && blue?.displayName) idMap.set(normalizeName(blue.displayName), blue.id);
+            // Pair each corner with the opposite corner. Skip fights
+            // where one side is missing (rare but happens for late
+            // replacements that haven't propagated to the scoreboard).
+            if (red?.displayName && blue?.displayName) {
+              matchups.set(normalizeName(red.displayName), {
+                opponentName: blue.displayName,
+                opponentId: blue.id ?? null,
+                eventId: ev.id,
+                fightId: f.id,
+                fightState: f.state,
+                isMain: f.isMain,
+                isTitle: f.isTitle,
+              });
+              matchups.set(normalizeName(blue.displayName), {
+                opponentName: red.displayName,
+                opponentId: red.id ?? null,
+                eventId: ev.id,
+                fightId: f.id,
+                fightState: f.state,
+                isMain: f.isMain,
+                isTitle: f.isTitle,
+              });
             }
           }
         }
-        setFighterIdByName(map);
+        setFighterIdByName(idMap);
+        setMatchupByFighter(matchups);
       })
-      .catch(() => setFighterIdByName(new Map()));
+      .catch(() => {
+        setFighterIdByName(new Map());
+        setMatchupByFighter(new Map());
+      });
   }, []);
 
   // Map fighter name → moneyline. Carries both raw and fair (de-vigged)
@@ -130,6 +176,7 @@ export function MmaSlate() {
             error={todayError}
             moneylineByFighter={moneylineByFighter}
             fighterIdByName={fighterIdByName}
+            matchupByFighter={matchupByFighter}
             loading={today === undefined}
           />
         )}
@@ -152,6 +199,7 @@ function PublicTodaySlate({
   error,
   moneylineByFighter,
   fighterIdByName,
+  matchupByFighter,
   loading,
 }: {
   slate: UfcDailySlate | null;
@@ -159,6 +207,7 @@ function PublicTodaySlate({
   error: string | null;
   moneylineByFighter: Map<string, { american: number; implied: number; fair: number }>;
   fighterIdByName: Map<string, string>;
+  matchupByFighter: Map<string, FighterMatchup>;
   loading: boolean;
 }) {
   if (error) {
@@ -195,21 +244,24 @@ function PublicTodaySlate({
           const lines = byFighter.get(name)!;
           const ml = moneylineByFighter.get(normalizeName(name));
           const athleteId = fighterIdByName.get(normalizeName(name)) ?? '';
-          return <FighterCard key={name} name={name} athleteId={athleteId} lines={lines} moneyline={ml} />;
+          const matchup = matchupByFighter.get(normalizeName(name));
+          return <FighterCard key={name} name={name} athleteId={athleteId} lines={lines} moneyline={ml} matchup={matchup} />;
         })}
       </div>
     </div>
   );
 }
 
-function FighterCard({ name, athleteId, lines, moneyline }: {
+function FighterCard({ name, athleteId, lines, moneyline, matchup }: {
   name: string;
   athleteId: string;
   lines: UfcStoredLine[];
   moneyline?: { american: number; implied: number; fair: number };
+  matchup?: FighterMatchup;
 }) {
   const grouped = groupLinesByCategory(lines);
   const profileLink = athleteId ? `/mma/fighter/${athleteId}` : null;
+  const fightLink = matchup ? `/mma/event/${encodeURIComponent(matchup.eventId)}/fight/${encodeURIComponent(matchup.fightId)}` : null;
 
   return (
     <div style={{
@@ -239,13 +291,18 @@ function FighterCard({ name, athleteId, lines, moneyline }: {
           ) : (
             <UfcFighterAvatar athleteId={athleteId} name={name} size="sm" />
           )}
-          {profileLink ? (
-            <Link to={profileLink} style={{ color: 'inherit', textDecoration: 'none' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            {profileLink ? (
+              <Link to={profileLink} style={{ color: 'inherit', textDecoration: 'none' }}>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
+              </Link>
+            ) : (
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
-            </Link>
-          ) : (
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{name}</h3>
-          )}
+            )}
+            {matchup && (
+              <MatchupChip matchup={matchup} fightLink={fightLink} />
+            )}
+          </div>
         </div>
         {moneyline && (
           <span
@@ -279,6 +336,56 @@ function FighterCard({ name, athleteId, lines, moneyline }: {
       })}
     </div>
   );
+}
+
+// Matchup chip — "vs Imavov · main event" with a deep link to the
+// fight detail page. Live fights get a pulsing red dot; finished
+// fights are dimmed and labeled "final"; pre-fight is the default.
+// Mission: never let the user look at a UFC prop without knowing who
+// the fighter is fighting tonight, since the opponent dominates
+// every prop's true probability.
+function MatchupChip({ matchup, fightLink }: { matchup: FighterMatchup; fightLink: string | null }) {
+  const isLive = matchup.fightState === 'in';
+  const isFinal = matchup.fightState === 'post';
+  const dotColor = isLive ? '#ef5350' : isFinal ? 'rgba(255,255,255,0.30)' : 'rgba(255,213,79,0.85)';
+  const stateLabel = isLive ? 'live' : isFinal ? 'final' : null;
+  const cardLabel = matchup.isTitle ? 'title' : matchup.isMain ? 'main' : null;
+  const inner = (
+    <>
+      <span
+        style={{
+          width: 6, height: 6, borderRadius: '50%',
+          background: dotColor,
+          boxShadow: isLive ? '0 0 6px rgba(239,83,80,0.85)' : 'none',
+          flexShrink: 0,
+        }}
+      />
+      <span style={{ color: 'rgba(255,255,255,0.45)' }}>vs</span>
+      <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>{matchup.opponentName}</span>
+      {(cardLabel || stateLabel) && (
+        <span style={{ color: 'rgba(255,255,255,0.40)', marginLeft: 4 }}>
+          ·{' '}
+          {cardLabel && <span style={{ color: '#ffd54f', fontWeight: 700 }}>{cardLabel}</span>}
+          {cardLabel && stateLabel && ' · '}
+          {stateLabel && <span style={{ color: isLive ? '#ef5350' : 'rgba(255,255,255,0.50)', fontWeight: 700 }}>{stateLabel}</span>}
+        </span>
+      )}
+    </>
+  );
+  const baseStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 11,
+    color: 'inherit',
+    textDecoration: 'none',
+    padding: '2px 0 0',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  };
+  if (fightLink) {
+    return <Link to={fightLink} style={baseStyle} title="Open fight detail">{inner}</Link>;
+  }
+  return <span style={baseStyle}>{inner}</span>;
 }
 
 function PropChip({ line }: { line: UfcStoredLine }) {
