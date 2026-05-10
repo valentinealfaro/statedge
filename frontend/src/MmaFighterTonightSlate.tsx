@@ -1,18 +1,26 @@
-// MmaFighterTonightSlate — Phase 148d.
+// MmaFighterTonightSlate — Phase 148d (live verdicts wired in 148p).
 //
 // Symmetric to NbaPlayerTonightSlate / MlbPlayerTonightSlate, scoped
 // to /mma/fighter/:fighterId. Filters today's UFC slate by fighter
 // display name (the slate stores fighter NAME — no fighter id — since
 // admin pastes pipe-format text).
 //
-// MMA legs stay UNGRADED in our live grader by design (no per-fight
-// live stat ingestion yet), so this panel doesn't try to live-poll
-// verdicts — but star toggle + the prop chip rendering work the same.
+// Iter 44 wired UFC live grading via fightcenter for sig_strikes,
+// takedowns, knockdowns, and control_time. This panel now polls
+// /api/slate/live-grade once a minute and shows a verdict pill on
+// every line. Unsupported stat keys (rd1_*, rounds, fight_time,
+// fantasy_score) come back UNGRADED honestly — those rows just hide
+// the pill rather than showing a fake verdict.
 
 import { Link } from 'react-router-dom';
-import { getUfcSlateToday, type UfcStoredLine } from './api';
+import { getUfcSlateToday, liveGradeLegs, type EliteLegLiveState, type UfcStoredLine } from './api';
 import { useEffect, useState } from 'react';
+import { LiveVerdictPill } from './slateLiveState';
 import { useStarredProps } from './starredProps';
+
+// Keep in sync with backend liveEliteGrader.gradeMmaLegLive — anything
+// outside this set comes back UNGRADED, so we shouldn't render a pill.
+const MMA_GRADABLE = new Set(['sig_strikes', 'takedowns', 'knockdowns', 'control_time']);
 
 const STAT_LABEL: Record<string, string> = {
   sig_strikes:     'Sig Strikes',
@@ -38,7 +46,9 @@ export function MmaFighterTonightSlate({
   fighterName: string;
 }) {
   const [lines, setLines] = useState<UfcStoredLine[] | null>(null);
+  const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
   const { isStarred, toggle } = useStarredProps();
+  const numericId = Number(fighterId) || 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +67,54 @@ export function MmaFighterTonightSlate({
       });
     return () => { cancelled = true; };
   }, [fighterName]);
+
+  // Poll live verdicts for the fighter's gradable lines once we know
+  // them. We send only the supported stat keys to keep payload tight;
+  // each line gets its own OVER + UNDER variant when published as
+  // 'both' (PrizePicks "either side" flex), so the user sees the
+  // pill for whichever direction they care about.
+  const gradableSig = (lines ?? [])
+    .filter((l) => MMA_GRADABLE.has(l.statKey))
+    .map((l) => `${l.statKey}|${l.line}|${l.direction}`)
+    .join('::');
+  useEffect(() => {
+    if (!lines) return;
+    const gradable = lines.filter((l) => MMA_GRADABLE.has(l.statKey));
+    if (gradable.length === 0) { setLiveByKey(new Map()); return; }
+    let cancelled = false;
+    const tick = () => {
+      // Expand 'both' into OVER + UNDER so each side's pill ticks.
+      const payload: Array<{ playerId: number; playerName: string; statKey: string; direction: 'OVER' | 'UNDER'; line: number; key: string }> = [];
+      for (const l of gradable) {
+        const dirs: Array<'OVER' | 'UNDER'> = l.direction === 'both' ? ['OVER', 'UNDER'] : [l.direction === 'under' ? 'UNDER' : 'OVER'];
+        for (const dir of dirs) {
+          payload.push({
+            playerId: numericId,
+            playerName: fighterName,
+            statKey: l.statKey,
+            direction: dir,
+            line: l.line,
+            key: `${l.statKey}|${l.line}|${dir}`,
+          });
+        }
+      }
+      liveGradeLegs(payload.map(({ playerId, playerName, statKey, direction, line }) => ({
+        playerId, playerName, statKey, direction, line,
+      })))
+        .then((states) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < states.length; i++) {
+            m.set(payload[i]!.key, states[i]!);
+          }
+          setLiveByKey(m);
+        })
+        .catch(() => { /* silent — pill self-hides on null */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [gradableSig, fighterName, numericId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!lines || lines.length === 0) return null;
 
@@ -104,9 +162,14 @@ export function MmaFighterTonightSlate({
           // at a time so 'both' goes through the toggle as OVER (the
           // primary line). User can re-toggle / choose later.
           const dir: 'OVER' | 'UNDER' = l.direction === 'under' ? 'UNDER' : 'OVER';
-          const numericId = Number(fighterId) || 0;
           const id = `mma-${numericId}-${l.statKey}-${l.line}-${dir}`;
           const starred = isStarred(id);
+          const isGradable = MMA_GRADABLE.has(l.statKey);
+          // For 'both' lines the user-facing pill defaults to OVER —
+          // matching the star toggle's primary side. Avoids two pills
+          // competing for the same row's attention.
+          const liveKey = `${l.statKey}|${l.line}|${dir}`;
+          const live = liveByKey.get(liveKey) ?? null;
           return (
             <li
               key={`${l.statKey}-${l.line}-${l.direction}`}
@@ -130,9 +193,14 @@ export function MmaFighterTonightSlate({
                   </span>
                 </div>
                 <div className="muted small" style={{ fontSize: 11, marginTop: 4, color: 'rgba(255,255,255,0.55)' }}>
-                  UFC projection engine ships in a future phase — line shown as published; no live grading yet.
+                  {isGradable
+                    ? 'Line shown as published — UFC projection engine ships in a later phase. Live verdict on the right ticks every 60s from fightcenter.'
+                    : 'Line shown as published. No live grading for this stat key yet — needs round-by-round or fight-clock data.'}
                 </div>
               </div>
+              {live && live.verdict !== 'UNGRADED' && (
+                <LiveVerdictPill state={live} compact />
+              )}
               <button
                 type="button"
                 onClick={() => toggle({
