@@ -1,9 +1,23 @@
-// MMA routes — Phase 107a foundation.
+// MMA routes — Phase 107a foundation, extended through Phase 107b
+// (moneyline odds), Phase 110a (slate paste/publish + parser), Phase
+// 146 (fight detail with bio + tale-of-tape + live fightcenter
+// stats), and Phase 148q (slate projections endpoint).
 //
-// Just upcoming events for now. Future slices: pull moneyline + method-
-// of-victory odds from The Odds API (already supports
-// 'mma_mixed_martial_arts'), wire fight-night recap articles into the
-// big-game cron, add fighter profile pages mirroring NBA/MLB.
+// Endpoints today:
+//   GET  /api/mma/scoreboard           — upcoming + recent UFC events
+//   GET  /api/mma/fight/:event/:fight  — fight-detail card data
+//   GET  /api/mma/odds                 — moneyline odds via The Odds API
+//   GET  /api/mma/stats                — UFC stat-key registry
+//   GET  /api/mma/slate/today          — today's published UFC slate
+//   GET  /api/mma/slate/projections    — today's slate enriched with
+//                                        Phase 136 heuristic engine output
+//   POST /api/mma/slate/parse          — admin paste preview
+//   POST /api/mma/slate/publish        — admin publish (header secret)
+//   GET  /api/mma/health               — health check
+//
+// Fight-night recap articles are wired into the big-game cron via
+// fetchUfcFightNightInputs (in routes/news.ts). UFC live grading
+// runs through services/liveEliteGrader (Phase 148o).
 
 import { Router } from 'express';
 import { fetchUfcScoreboard, fetchUfcFightCenter, type UfcEvent, type UfcFight } from '../mma/espn.js';
