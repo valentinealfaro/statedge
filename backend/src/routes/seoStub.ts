@@ -118,7 +118,11 @@ function articleStubHtml(article: {
     `<meta property="og:url" content="${escapeAttr(url)}" />`,
     `<meta property="og:site_name" content="StatEdge" />`,
     `<meta property="article:published_time" content="${escapeAttr(article.publishedAt)}" />`,
-    `<meta property="article:section" content="${escapeAttr(article.sport === 'cross' ? 'Sports' : article.sport.toUpperCase())}" />`,
+    `<meta property="article:section" content="${escapeAttr(
+      article.sport === 'cross' ? 'Sports'
+      : article.sport === 'mma' ? 'UFC'
+      : article.sport.toUpperCase()
+    )}" />`,
     // Twitter / X
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${escapeAttr(article.title)}" />`,

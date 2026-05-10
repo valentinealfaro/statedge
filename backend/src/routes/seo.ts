@@ -101,7 +101,7 @@ seoRouter.get('/rss.xml', async (_req, res) => {
           `<guid isPermaLink="true">${escapeXml(link)}</guid>` +
           `<pubDate>${new Date(a.publishedAt).toUTCString()}</pubDate>` +
           `<description>${escapeXml(a.summary)}</description>` +
-          `<category>${escapeXml(a.sport.toUpperCase())}</category>` +
+          `<category>${escapeXml(a.sport === 'mma' ? 'UFC' : a.sport.toUpperCase())}</category>` +
           (a.heroImageUrl
             ? `<enclosure url="${escapeXml(a.heroImageUrl)}" type="image/jpeg"/>`
             : '') +
