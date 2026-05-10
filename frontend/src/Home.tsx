@@ -1,3 +1,26 @@
+// Home page — the cold-start landing surface. Bloomberg-Terminal
+// framing: data first, headline numbers above the fold, marketing
+// copy below. Mounted at "/", redirected from "/index" by the router.
+//
+// Vertical scroll order is intentional and load-priority-ordered:
+//   1. HomeHero — CLV beat-rate as the lead signal
+//   2. TodayAtAGlance — 4-cell ticker (Live / Edges / Elite / CLV 30d)
+//   3. EnginePulseStrip — slate freshness + engine 24h activity
+//   4. HomeEliteTeaser — today's institutional play
+//   5. ClvTrustBanner — truth-metric receipt
+//   6. LiveDeck — in-progress games (NBA / MLB / UFC / WNBA tiles)
+//   7. ActivityFeed — what just happened to my picks today
+//   8. RecentsRail — pick up where you left off
+//   9. LatestNewsRail — engine-generated articles
+//  10. TodayGames + SlateTeaser + RecentGames + TopPerformers +
+//      TrendingPlayers + TrendingTeams — discovery rails
+//  11. Features grid — institutional-engine value prop
+//  12. Pricing tiles — Free / Pro
+//  13. Footer with sport-grouped links
+//
+// Components self-hide on quiet days so the page stays clean rather
+// than showing a row of zeros / empty rails.
+
 import { Link } from 'react-router-dom';
 import { ActivityFeed } from './ActivityFeed';
 import { ClvTrustBanner } from './ClvTrustBanner';
