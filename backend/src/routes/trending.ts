@@ -1,3 +1,12 @@
+// Trending players + teams — NBA-only, season-leaderboard-shaped.
+// Backs the Home page's TrendingPlayers / TrendingTeams rails so
+// fresh visitors have something to click without typing a search.
+//
+// "Trending" here = top season scorers (active, min-games gated),
+// NOT per-user popularity. We don't track user-level engagement;
+// the leaderboard is anchored to whoever's putting up the biggest
+// numbers in the synced cache.
+
 import { Router } from 'express';
 import { currentSeason } from '../nba/client.js';
 import {
