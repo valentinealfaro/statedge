@@ -2467,6 +2467,9 @@ export async function getUfcSlateToday(): Promise<UfcSlateTodayResponse> {
 export type UfcSlateProjection = {
   fighterName: string;
   opponentName: string;
+  // ESPN athlete id when available, used to deep-link to /mma/fighter/:id.
+  // Null when the scoreboard didn't carry an id for this fighter.
+  espnAthleteId: string | null;
   statKey: string;
   line: number;
   direction: 'over' | 'under' | 'both';

@@ -248,6 +248,10 @@ mmaRouter.get('/slate/projections', async (_req, res) => {
     }
 
     const opponentByFighter = new Map<string, string>();
+    // Own ESPN athlete id keyed by normalized fighter name. Used by
+    // /best-bets to deep-link to /mma/fighter/:id; stays null when
+    // the scoreboard didn't carry the id (rare).
+    const athleteIdByFighter = new Map<string, string>();
     for (const ev of scoreboard) {
       for (const f of ev.fights) {
         const red = f.fighters.red;
@@ -255,6 +259,8 @@ mmaRouter.get('/slate/projections', async (_req, res) => {
         if (red?.displayName && blue?.displayName) {
           opponentByFighter.set(fighterNorm(red.displayName), blue.displayName);
           opponentByFighter.set(fighterNorm(blue.displayName), red.displayName);
+          if (red.id) athleteIdByFighter.set(fighterNorm(red.displayName), red.id);
+          if (blue.id) athleteIdByFighter.set(fighterNorm(blue.displayName), blue.id);
         }
       }
     }
@@ -276,6 +282,7 @@ mmaRouter.get('/slate/projections', async (_req, res) => {
         return [{
           fighterName: line.fighterName,
           opponentName: opponent,
+          espnAthleteId: athleteIdByFighter.get(norm) ?? null,
           statKey: line.statKey,
           line: line.line,
           direction: line.direction,

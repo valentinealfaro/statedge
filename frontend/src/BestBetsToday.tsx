@@ -1,18 +1,18 @@
-// /best-bets — cross-sport unified edge watchlist. Phase 147b.
+// /best-bets — cross-sport unified edge watchlist. Phase 147b + 148r.
 //
 // One page that pulls every projection-engine-scored prop across the
-// NBA + MLB slates, ranks them by EV (or edge / probability / live
-// status — user picks), and shows live verdicts inline. Bloomberg-
-// watchlist-shaped: dense, numeric, sortable, scannable.
+// NBA + MLB + UFC slates, ranks them by EV (or edge / probability /
+// live status — user picks), and shows live verdicts inline.
+// Bloomberg-watchlist-shaped: dense, numeric, sortable, scannable.
 //
-// UFC is intentionally NOT here yet: its projection engine isn't built,
-// so /mma/slate lists raw PrizePicks lines without edge / probability /
-// EV. Adding UFC rows here would be fake completeness — the watchlist's
-// promise is "every row is EV-ranked", which UFC can't satisfy until
-// the fighter-stat database + projection layer ship. Live grading for
-// UFC props is wired (sig_strikes / takedowns / knockdowns / control_time
-// resolve via fightcenter) — what's missing is the model that decides
-// which UFC props are bets in the first place.
+// UFC inclusion (Phase 148r): projections come from the moneyline-
+// anchored Phase 136 engine (mma/projectionEngine.projectUfcProp),
+// exposed via /api/mma/slate/projections. These are conservative
+// market-anchored estimates, not the deeper fighter-stat fundamental
+// engine that's still on the roadmap — but they're real enough to
+// rank against NBA + MLB rows on the same EV scale. Live verdicts
+// for the four supported UFC stat keys (sig_strikes / takedowns /
+// knockdowns / control_time) tick from fightcenter (iter 44).
 //
 // Each row links to its source page (player profile with tonight's
 // slate panel) so the watchlist is a discovery tool — you find what's
@@ -23,10 +23,12 @@ import { Link } from 'react-router-dom';
 import {
   getMlbDailySlate,
   getTodaySlate,
+  getUfcSlateProjections,
   liveGradeLegs,
   type EliteLegLiveState,
   type MlbDailySlateResponse,
   type SlateResponse,
+  type UfcSlateProjectionsResponse,
 } from './api';
 import { ActivityFeed } from './ActivityFeed';
 import { ClvTrustBanner } from './ClvTrustBanner';
@@ -38,7 +40,22 @@ import { useStarredProps } from './starredProps';
 import { TodayAtAGlance } from './TodayAtAGlance';
 import { useTitle } from './useTitle';
 
-type Sport = 'nba' | 'mlb';
+type Sport = 'nba' | 'mlb' | 'mma';
+
+// User-facing stat labels for UFC. Mirrors STAT_LABEL in MmaSlate /
+// MmaFighterTonightSlate; kept local because the BestBets shape uses
+// statLabel as a free-text field shared across sports.
+const UFC_STAT_LABEL: Record<string, string> = {
+  sig_strikes:     'Sig Strikes',
+  rd1_sig_strikes: 'R1 Sig Strikes',
+  takedowns:       'Takedowns',
+  rd1_takedowns:   'R1 Takedowns',
+  knockdowns:      'Knockdowns',
+  rounds:          'Rounds',
+  fight_time:      'Fight Time',
+  fantasy_score:   'Fantasy',
+  control_time:    'Control Time',
+};
 
 type UnifiedBet = {
   sport: Sport;
@@ -70,8 +87,8 @@ type UnifiedBet = {
 type SortKey = 'ev' | 'edge' | 'probability' | 'live';
 type SortDir = 'desc' | 'asc';
 
-const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB' };
-const SPORT_COLOR: Record<Sport, string> = { nba: '#7aa2ff', mlb: '#66bb6a' };
+const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB', mma: 'UFC' };
+const SPORT_COLOR: Record<Sport, string> = { nba: '#7aa2ff', mlb: '#66bb6a', mma: '#ef5350' };
 
 // Single-leg payout assumption for EV computation. PrizePicks Flex
 // pays roughly 2x on a 1-leg pick; this is the same constant the rest
@@ -82,6 +99,7 @@ export function BestBetsToday() {
   useTitle(['Best Bets Today']);
   const [nba, setNba] = useState<SlateResponse | null>(null);
   const [mlb, setMlb] = useState<MlbDailySlateResponse | null>(null);
+  const [ufc, setUfc] = useState<UfcSlateProjectionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('ev');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -95,11 +113,17 @@ export function BestBetsToday() {
     Promise.allSettled([
       getTodaySlate('balanced'),
       getMlbDailySlate(),
-    ]).then(([n, m]) => {
+      getUfcSlateProjections(),
+    ]).then(([n, m, u]) => {
       if (cancelled) return;
       if (n.status === 'fulfilled') setNba(n.value.resolved);
       else setError((n.reason as Error)?.message ?? 'NBA slate failed');
       if (m.status === 'fulfilled') setMlb(m.value);
+      // UFC failure is silent — we don't want a UFC outage to mask
+      // NBA + MLB content. The watchlist still shows the two sports
+      // that did load. setUfc stays null and the UFC branch in
+      // allBets contributes nothing.
+      if (u.status === 'fulfilled') setUfc(u.value);
     });
     return () => { cancelled = true; };
   }, []);
@@ -193,8 +217,53 @@ export function BestBetsToday() {
       }
     }
 
+    // UFC — projections come from the moneyline-anchored Phase 136
+    // engine. Each row uses the model's projected direction (modelDirection)
+    // since UFC slate lines are often 'both' (book line, either side
+    // bookable on PrizePicks Flex). EV + probability + edge math is
+    // identical to NBA + MLB so cross-sort works without weighting.
+    for (const p of ufc?.projections ?? []) {
+      const ev = (p.probability / 100) * SINGLE_LEG_PAYOUT - 1;
+      const implied = p.fairProbability !== null ? p.fairProbability * 100 : null;
+      // playerId field is `number` for back-compat with the rest of
+      // the watchlist shape; UFC ESPN ids are alphanumeric strings, so
+      // we use a Number() coerce that falls back to 0 (matches the
+      // EliteCandidate path) and rely on espnAthleteId for the href.
+      const numericId = Number(p.espnAthleteId) || 0;
+      out.push({
+        sport: 'mma',
+        playerId: numericId,
+        playerName: p.fighterName,
+        // Surface 'vs Opponent' in the team slot — UFC has no team
+        // and the matchup is the most useful context to scan.
+        team: p.opponentName ? `vs ${p.opponentName}` : null,
+        statKey: p.statKey,
+        statLabel: UFC_STAT_LABEL[p.statKey] ?? p.statKey,
+        line: p.line,
+        direction: p.modelDirection,
+        probability: p.probability,
+        edgePercent: p.edgePercent,
+        marketImpliedProb: implied,
+        trapScore: p.trapScore,
+        fragilityScore: p.fragilityScore,
+        // Deep-link to the fighter profile when we have an ESPN id;
+        // fall back to the slate page so users always have *some*
+        // landing surface.
+        href: p.espnAthleteId ? `/mma/fighter/${p.espnAthleteId}` : '/mma/slate',
+        ev,
+        // Projection band: the heuristic engine returns a central
+        // projectionValue but doesn't compute a confidence interval
+        // yet, so rangeLow / rangeHigh stay null and the row falls
+        // through to the μ-only display in ProjectionBand.
+        projection: p.projectionValue,
+        rangeLow: null,
+        rangeHigh: null,
+        reasonCodes: p.rationale ?? [],
+      });
+    }
+
     return out;
-  }, [nba, mlb]);
+  }, [nba, mlb, ufc]);
 
   const filtered = useMemo(() => {
     return allBets
@@ -258,7 +327,7 @@ export function BestBetsToday() {
     return () => { cancelled = true; window.clearInterval(id); };
   }, [visibleSig]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isLoading = nba === null && mlb === null;
+  const isLoading = nba === null && mlb === null && ufc === null;
 
   return (
     <div className="app">
@@ -276,18 +345,15 @@ export function BestBetsToday() {
         </div>
         <h1 style={{ margin: '4px 0 8px' }}>Best Bets Today</h1>
         <p className="muted small" style={{ marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
-          Every prop the model has flagged across tonight's NBA + MLB slates,
+          Every prop the model has flagged across tonight's NBA + MLB + UFC slates,
           ranked by expected value. Sortable, filterable, live-tracked. Click
           any row to drill into the player profile. EV assumes a single-leg
           PrizePicks Flex payout ({SINGLE_LEG_PAYOUT}×).
           {' '}
           <span style={{ color: 'rgba(255,255,255,0.40)' }}>
-            UFC props ship here once the fighter-stat projection engine lands —
-            until then they live on{' '}
-            <Link to="/mma/slate" style={{ color: '#ef5350', textDecoration: 'none', fontWeight: 700 }}>
-              /mma/slate
-            </Link>
-            .
+            UFC rows use the moneyline-anchored projection engine — conservative
+            market-anchored estimates, not deep fundamentals. Deeper fighter-stat
+            engine is on the roadmap.
           </span>
         </p>
 
@@ -318,6 +384,7 @@ export function BestBetsToday() {
             { value: 'all', label: 'All' },
             { value: 'nba', label: 'NBA' },
             { value: 'mlb', label: 'MLB' },
+            { value: 'mma', label: 'UFC' },
           ]} value={sportFilter} onChange={(v) => setSportFilter(v as Sport | 'all')} />
           <span style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
           <SegmentedTab options={[
@@ -460,7 +527,9 @@ function downloadCsv(bets: UnifiedBet[]): void {
   bets.forEach((b, i) => {
     rows.push([
       i + 1,
-      b.sport.toUpperCase(),
+      // Use the user-facing label (UFC, not MMA) so the CSV matches
+      // the in-app pill — same fix as iter 50 / 60 / 61.
+      SPORT_LABEL[b.sport],
       esc(b.playerName),
       esc(b.team ?? ''),
       esc(b.statLabel),
