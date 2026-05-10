@@ -1,7 +1,10 @@
 // WNBA Compare page — Phase 76. Lighter than NBA Compare's full
-// PvT/PvP/TvT/Last-10 multi-mode UX since WNBA doesn't yet have a
-// projection engine + comparison infrastructure (those land in
-// Phases 77-78). What ships now is the highest-leverage subset:
+// PvT/PvP/TvT/Last-10 multi-mode UX. The WNBA projection engine
+// shipped in Phase 77 (powering /wnba/slate) and calibration in
+// Phase 78, but the comparison infrastructure (PvT / PvP / TvT)
+// was never extended to WNBA before the 2026-05-09 sport-priorities
+// decision moved WNBA to maintenance — and those views aren't being
+// scoped now. What ships here:
 //   - Player search (live ESPN typeahead)
 //   - Last-10 games view with per-stat distribution (avg, range,
 //     hit-rate-against-line input)
