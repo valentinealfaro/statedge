@@ -27,6 +27,7 @@ import {
   type WnbaSlateResponse,
 } from './api';
 import { LiveVerdictPill } from './slateLiveState';
+import { ActivityFeed } from './ActivityFeed';
 import { ClvTrustBanner } from './ClvTrustBanner';
 import { TodayAtAGlance } from './TodayAtAGlance';
 import { EnginePulseStrip } from './EnginePulseStrip';
@@ -251,6 +252,12 @@ export function Dashboard() {
         {/* Truth metric pinned above the war room — institutional users
             check the scoreboard before they trust the war plan. */}
         <ClvTrustBanner />
+
+        {/* Activity feed — Elite legs + starred props that have
+            settled or locked today. Same chronological 'what just
+            happened to my picks' rail Home shows. Self-hides until
+            something has resolved. */}
+        <ActivityFeed />
 
         {/* AI Analyst Summary — 1-2 sentence narrative across the
             entire slate. Phase 100 spec directive #1. */}
