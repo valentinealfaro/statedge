@@ -159,9 +159,28 @@ describe('projectionEngine.project', () => {
     ];
     const r = project({ selectedStat: 'points', lineValue: 25, seasonGames: games });
     expect(r.factorBreakdown.blendedStdDev).toBeGreaterThanOrEqual(3.5);
-    // Probability is high but not certain.
-    expect(r.probability.over).toBeLessThanOrEqual(99);
+    // Probability is high but capped at 95 (iter 4 tightening — was
+    // 99 before; the 95% ceiling matches MLB and prevents absurd
+    // claims that the May 2026 calibration showed never materialize).
+    expect(r.probability.over).toBeLessThanOrEqual(95);
     expect(r.probability.over).toBeGreaterThan(50);
+  });
+
+  it('caps overProbability at 95 and underProbability at 5 (iter 4)', () => {
+    // Construct a scenario that would naively produce 99% via Gaussian
+    // CDF — a player crushing a low line with zero variance. Pre-iter-4
+    // the clamp was [0.01, 0.99] and this would land at 99%; after the
+    // tightening it lands at 95%, matching MLB's discipline and the
+    // May 2026 calibration evidence that 95-99% claims never hit at
+    // the rates the model implies.
+    const games: PlayerGame[] = [];
+    for (let i = 0; i < 30; i++) {
+      games.push(game({ gameId: `g${i}`, points: 50 }));
+    }
+    const r = project({ selectedStat: 'points', lineValue: 5, seasonGames: games });
+    expect(r.probability.over).toBeLessThanOrEqual(95);
+    expect(r.probability.over).toBeGreaterThanOrEqual(80);
+    expect(r.probability.under).toBeGreaterThanOrEqual(5);
   });
 
   it('raises confidence when more data windows agree', () => {

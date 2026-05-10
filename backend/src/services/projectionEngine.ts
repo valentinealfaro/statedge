@@ -613,7 +613,19 @@ export function project(inp: ProjectionInputs): ProjectionResult {
 
   const z = (line - contextAdjusted) / blendedStdDev;
   const overP = 1 - normalCdf(z);
-  const overProbability = Math.round(clamp(overP, 0.01, 0.99) * 100);
+  // Iter 4 of formula loop: tighten NBA clamp from [0.01, 0.99] →
+  // [0.05, 0.95] to match MLB's discipline.
+  // Evidence: the user-shared May 2026 calibration showed even the
+  // 85%+ probability bucket landed at 66.9% observed across 1892
+  // graded rows (MLB). Models claiming 95-99% probability are
+  // structurally overclaiming — same dynamic applies in NBA where
+  // there's no projection_history yet to prove it via calibration
+  // (deferred per memory), but the dynamics of Gaussian-CDF over a
+  // stat-floor std-dev are identical, and the prior on a [0.01,0.99]
+  // clamp was just looser than MLB's, not principled. Capping at
+  // 0.95 leaves room for "strong" predictions while preventing the
+  // absurd 99% claims that fed inflated EV scoring + card eligibility.
+  const overProbability = Math.round(clamp(overP, 0.05, 0.95) * 100);
   const underProbability = 100 - overProbability;
 
   // Projected range: ±1 SD around the context-adjusted projection.
