@@ -174,7 +174,7 @@ export function NavBar() {
               className={`${sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}${liveCounts.ufc > 0 ? ' has-live' : ''}`}
               title={liveCounts.ufc > 0 ? `${liveCounts.ufc} UFC ${liveCounts.ufc === 1 ? 'fight' : 'fights'} live` : undefined}
             >
-              MMA
+              UFC
             </Link>
             <Link
               to="/wnba/compare"
@@ -232,7 +232,7 @@ export function NavBar() {
               className={`${sport === 'mma' ? 'navlink active sport-mma' : 'navlink'}${liveCounts.ufc > 0 ? ' has-live' : ''}`}
               title={liveCounts.ufc > 0 ? `${liveCounts.ufc} UFC ${liveCounts.ufc === 1 ? 'fight' : 'fights'} live` : undefined}
             >
-              MMA
+              UFC
             </Link>
             <Link
               to="/news"

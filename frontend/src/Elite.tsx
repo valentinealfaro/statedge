@@ -224,11 +224,13 @@ export function Elite() {
             )}
           </div>
           <p className="muted small" style={{ margin: 0, fontSize: 13, lineHeight: 1.6, maxWidth: 720 }}>
-            Cross-sport ticket combining the day's strongest legs from MLB and NBA into
-            ONE play. Target: 3-leg at 6× payout, full institutional filter. Fallbacks:
-            2-leg at 3×, then progressively-relaxed tiers — there's always a play.
-            The grade and tier label tell you which tier produced the ticket so you
-            can size accordingly. MMA joins when its projection engine ships.
+            Cross-sport ticket combining the day's strongest legs from NBA, MLB, and
+            UFC into ONE play. Target: 3-leg at 6× payout, full institutional filter.
+            Fallbacks: 2-leg at 3×, then progressively-relaxed tiers — there's always
+            a play. The grade and tier label tell you which tier produced the ticket
+            so you can size accordingly. UFC contribution rides on the moneyline-
+            anchored projection engine (Phase 136); a deeper fighter-stat fundamental
+            engine is on the roadmap.
           </p>
         </header>
 
