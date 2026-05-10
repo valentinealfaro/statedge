@@ -10,19 +10,23 @@ import { UserMenu } from './UserMenu';
 // Sport-grouped navigation per the UX spec ("institutional sports
 // intelligence operating system, not a collection of pages").
 //
-// Top nav: NBA · MLB · (sport switcher pill)
-// Subnav (per sport): Compare · Slate · Standings · Calibration
-//   — only the items that actually exist for each sport are rendered.
+// Top nav (Pro): ★ Elite · Dashboard · Best Bets · ★ Starred · NBA ·
+//   MLB · MMA. Each sport tab pulses red while at least one game in
+//   that sport is live; Best Bets pulses on any sport live; ★ Elite
+//   shows a HIT/MISS check + 'in flight' pulse for today's ticket.
 //
-// What's deliberately NOT in the nav yet (per mission's "no fake
-// completeness" rule):
-//   - Dashboard — needs cross-sport queries + UI work; saved to
-//     roadmap as concrete next slice.
-//   - Research Lab — needs prop / line / matchup explorers; saved
-//     to roadmap.
-//   - MLB Standings — page doesn't exist yet.
-// All three land in the nav as soon as they're real pages, not
-// placeholder links.
+// Subnav (per sport):
+//   - NBA / MLB / WNBA: Compare · Slate · History · Standings · Calibration
+//   - MMA: Scoreboard · Slate (richer subnav lands when a UFC
+//     projection engine + standings/calibration story exists).
+//
+// Items appear here only when their pages actually exist — adding
+// placeholder links would violate the mission's no-fake-completeness
+// rule. Still deferred:
+//   - Research Lab (prop / line / matchup explorers — roadmap).
+//   - UFC standings / calibration (waiting on the projection engine).
+//   - WNBA enrichment is deprio'd per the 2026-05-09 sport-priorities
+//     decision; existing WNBA subnav stays as-is, no new features.
 
 type SportKey = 'nba' | 'mlb' | 'wnba' | 'mma';
 
@@ -58,8 +62,10 @@ const MLB_SUBNAV: SubnavItem[] = [
   { label: 'Calibration', path: '/mlb/calibration' },
 ];
 
-// WNBA subnav — Phases 74-78 shipped. Full institutional surface area
-// matches NBA + MLB.
+// WNBA subnav — Phases 74-78 shipped. Full surface area matches NBA
+// + MLB. Per the 2026-05-09 sport-priorities decision, WNBA is on
+// maintenance only — existing surfaces stay live but no new features
+// are scoped (MMA replaced WNBA as the third focus sport).
 const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Compare', path: '/wnba/compare' },
   { label: 'Slate', path: '/wnba/slate' },
@@ -68,7 +74,10 @@ const WNBA_SUBNAV: SubnavItem[] = [
   { label: 'Calibration', path: '/wnba/calibration' },
 ];
 
-// MMA subnav — Phase 107 foundation, Phase 110a adds slate.
+// MMA subnav — Phase 107 foundation + Phase 110a slate + Phase 146
+// fight detail + Phase 148p live-grading wiring. Scoreboard / slate
+// is the institutional surface today; standings + calibration land
+// when the UFC projection engine ships.
 const MMA_SUBNAV: SubnavItem[] = [
   { label: 'Scoreboard', path: '/mma/scoreboard' },
   { label: 'Slate',      path: '/mma/slate' },
