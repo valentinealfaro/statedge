@@ -153,6 +153,8 @@ export function Home() {
         <p>
           <Link to="/nba/standings" className="footer-link">NBA standings</Link>
           {' · '}
+          <Link to="/nba/slate" className="footer-link">NBA slate</Link>
+          {' · '}
           <Link to="/mlb/standings" className="footer-link">MLB standings</Link>
           {' · '}
           <Link to="/mlb/slate" className="footer-link">MLB slate</Link>
@@ -160,6 +162,10 @@ export function Home() {
           <Link to="/mlb/slate/history" className="footer-link">MLB history</Link>
           {' · '}
           <Link to="/mlb/calibration" className="footer-link">MLB calibration</Link>
+          {' · '}
+          <Link to="/mma/scoreboard" className="footer-link">UFC scoreboard</Link>
+          {' · '}
+          <Link to="/mma/slate" className="footer-link">UFC slate</Link>
         </p>
         <p>Stats and analysis only. No odds, no gambling advice.</p>
       </footer>

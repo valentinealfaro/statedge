@@ -437,7 +437,10 @@ function downloadStarredCsv(
     const live = liveByKey.get(p.id);
     rows.push([
       new Date(p.starredAt).toISOString(),
-      p.sport.toUpperCase(),
+      // Use the user-facing label (UFC, not MMA) so the downloaded CSV
+      // matches what the in-app pill shows. Internal `mma` sport code
+      // doesn't appear anywhere in the UI.
+      SPORT_LABEL[p.sport],
       esc(p.playerName),
       esc(p.team ?? ''),
       esc(p.statLabel),
