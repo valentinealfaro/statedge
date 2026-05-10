@@ -1491,7 +1491,11 @@ function StrengthCard({ sport, data }: { sport: Sport; data: StrengthData }) {
     : data.avgEdge >= 8 ? 'Strong'
     : data.avgEdge >= 4 ? 'Moderate'
     : 'Light';
-  const slatePath = sport === 'nba' ? '/nba/slate' : sport === 'mlb' ? '/mlb/slate' : '/wnba/slate';
+  const slatePath =
+    sport === 'nba'  ? '/nba/slate'
+    : sport === 'mlb' ? '/mlb/slate'
+    : sport === 'mma' ? '/mma/slate'
+    : '/wnba/slate';
   return (
     <Link
       to={slatePath}
