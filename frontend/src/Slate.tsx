@@ -37,6 +37,7 @@ import { Skeleton } from './Skeleton';
 import { useSavedParlays, type SavedParlay } from './savedParlays';
 import { SlateCalibration } from './SlateCalibration';
 import { LiveVerdictPill, SlateLiveStateProvider, useLiveLegState } from './slateLiveState';
+import { useStarredProps } from './starredProps';
 import { SlateHistory } from './SlateHistory';
 import { SlateManualEntry } from './SlateManualEntry';
 import { SlatePaywall } from './SlatePaywall';
@@ -717,6 +718,8 @@ function LineCard({
       >
         {inParlay ? '✓' : '+'}
       </button>
+
+      <LineCardStar line={line} />
 
       {inj && <InjuryChip injury={inj} />}
       {showEdge && (
@@ -2068,6 +2071,62 @@ function PropRow({
         </button>
       )}
     </div>
+  );
+}
+
+// Star button for the LineCard — toggles add/remove from /starred
+// watchlist. Persists via useStarredProps localStorage hook. Sits next
+// to the parlay-pin in the top-right corner of the card.
+function LineCardStar({ line }: { line: SlateResolvedLine }) {
+  const { isStarred, toggle } = useStarredProps();
+  const lean = (line.projection?.edge.lean ?? '').toLowerCase().includes('under') ? 'UNDER' : 'OVER';
+  const id = `nba-${line.playerId}-${line.statKey}-${line.line}-${lean}`;
+  const starred = isStarred(id);
+  const prob = lean === 'OVER'
+    ? (line.projection?.probability.over ?? line.hitProbability?.hitOver ?? 50)
+    : (line.projection?.probability.under ?? line.hitProbability?.hitUnder ?? 50);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggle({
+          sport: 'nba',
+          playerId: line.playerId,
+          playerName: line.playerName,
+          team: line.team,
+          statKey: line.statKey,
+          statLabel: line.statLabel,
+          line: line.line,
+          direction: lean,
+          snapshot: {
+            probability: prob,
+            edgePercent: line.projection?.edge.score ?? 0,
+            projection: line.projection?.projection.final ?? null,
+          },
+        });
+      }}
+      title={starred ? 'Unstar — removes from /starred' : 'Star — track on /starred'}
+      aria-label={starred ? 'Unstar' : 'Star'}
+      className="slate-star"
+      style={{
+        position: 'absolute',
+        top: 8,
+        right: 44,
+        width: 28, height: 28,
+        borderRadius: '50%',
+        border: '1px solid var(--border-default)',
+        background: starred ? 'rgba(255,213,79,0.16)' : 'var(--surface-0)',
+        color: starred ? '#ffd54f' : 'rgba(255,255,255,0.45)',
+        fontSize: 14, fontWeight: 800,
+        cursor: 'pointer',
+        zIndex: 2,
+        transition: 'color var(--motion-fast), background var(--motion-fast), border-color var(--motion-fast)',
+      }}
+    >
+      {starred ? '★' : '☆'}
+    </button>
   );
 }
 

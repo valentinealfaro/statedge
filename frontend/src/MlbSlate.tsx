@@ -40,6 +40,7 @@ import { MlbPlayerDrilldown, type DrilldownPlayer } from './MlbPlayerDrilldown';
 import { MlbTodaysGames } from './MlbTodaysGames';
 import { NavBar } from './NavBar';
 import { Skeleton } from './Skeleton';
+import { useStarredProps } from './starredProps';
 import { useTitle } from './useTitle';
 import { WhyPickPanel } from './WhyPickPanel';
 
@@ -1505,6 +1506,7 @@ function WildCardCard({
                 <span className={`best-pick-leg-conf conf-${conf.toLowerCase()}`}>
                   {conf}
                 </span>
+                <MlbLegStar leg={l} />
               </div>
               <div className="best-pick-leg-evbar">
                 <span
@@ -1799,6 +1801,7 @@ function ComboCard({
                 <span className={`best-pick-leg-conf conf-${conf.toLowerCase()}`}>
                   {conf}
                 </span>
+                <MlbLegStar leg={l} />
               </div>
               <div className="best-pick-leg-evbar">
                 <span
@@ -1897,5 +1900,68 @@ function Stat({
       <span className="mlb-stat-label">{label}</span>
       <span className="mlb-stat-value">{value}</span>
     </div>
+  );
+}
+
+type MlbStarLeg = {
+  playerId: number;
+  playerName: string;
+  team: string | null;
+  statKey: string;
+  statLabel: string;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+  probability: number;
+  edgePercent: number;
+  projection?: number;
+};
+
+// Star toggle for an MLB combo leg — same /starred watchlist as the
+// NBA LineCard star and the Best Bets row star. Uses the
+// useStarredProps localStorage hook. Accepts a structural type so it
+// works for both regular combo legs (MlbSlateLeg) and Wild Card legs
+// (MlbWildCardLeg) since they share the relevant fields.
+function MlbLegStar({ leg }: { leg: MlbStarLeg }) {
+  const { isStarred, toggle } = useStarredProps();
+  const id = `mlb-${leg.playerId}-${leg.statKey}-${leg.line}-${leg.direction}`;
+  const starred = isStarred(id);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggle({
+          sport: 'mlb',
+          playerId: leg.playerId,
+          playerName: leg.playerName,
+          team: leg.team,
+          statKey: leg.statKey,
+          statLabel: leg.statLabel,
+          line: leg.line,
+          direction: leg.direction,
+          snapshot: {
+            probability: leg.probability,
+            edgePercent: leg.edgePercent,
+            projection: leg.projection ?? null,
+          },
+        });
+      }}
+      title={starred ? 'Unstar — removes from /starred' : 'Star — track on /starred'}
+      aria-label={starred ? 'Unstar' : 'Star'}
+      style={{
+        marginLeft: 'auto',
+        background: 'transparent',
+        border: 'none',
+        color: starred ? '#ffd54f' : 'rgba(255,255,255,0.30)',
+        fontSize: 14, fontWeight: 800,
+        cursor: 'pointer',
+        padding: '0 4px',
+        lineHeight: 1,
+        transition: 'color var(--motion-fast)',
+      }}
+    >
+      {starred ? '★' : '☆'}
+    </button>
   );
 }
