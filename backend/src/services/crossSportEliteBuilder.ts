@@ -1,11 +1,14 @@
 // Cross-sport Elite ticket builder — always produces a play.
 //
-// Per the user's product directive: combine NBA + MLB (+ MMA when its
-// projection engine ships) legs into a single ticket, and ALWAYS
-// return something. The institutional bar still grades the ticket
-// (A+/A/B for clean Elite, C/D for relaxed-fallback "best of the
-// day"), but we never publish nothing — there's always a "today's
-// best play" even on quiet boards.
+// Per the user's product directive: combine NBA + MLB + UFC legs into
+// a single ticket and ALWAYS return something. The institutional bar
+// still grades the ticket (A+/A/B for clean Elite, C/D for relaxed-
+// fallback "best of the day"), but we never publish nothing — there's
+// always a "today's best play" even on quiet boards. UFC contribution
+// rides on the Phase 136 moneyline-anchored projection engine
+// (mma/projectionEngine.projectUfcProp) — a market-anchored heuristic
+// that gets swapped for a deeper fighter-stat fundamental engine in
+// a future phase without changing this builder's contract.
 //
 // Strategy: progressive fallback through quality tiers. The engine
 // tries strict 3-leg → strict 2-leg → relaxed 3-leg → relaxed 2-leg,
@@ -13,8 +16,9 @@
 // produces the first valid combination wins, and the ticket is
 // graded according to which tier it came from.
 //
-// Pure function. Inputs: MLB + NBA resolved-slate arrays. Output:
-// EliteTicket (always non-null when ≥2 candidates exist anywhere).
+// Pure function. Inputs: MLB + NBA resolved-slate arrays + UFC stored
+// lines + UFC moneylines. Output: EliteTicket (always non-null when
+// ≥2 candidates exist anywhere across the three sports).
 
 import type { ResolvedLine as NbaResolvedLine } from './slatePipeline.js';
 import type { ResolvedMlbLine } from './mlbSlatePipeline.js';
@@ -475,10 +479,11 @@ function scoreTicket(rawLegs: EliteCandidate[], legCountLabel: '3-leg' | '2-leg'
 
 function legToElite(c: EliteCandidate): EliteLeg {
   // EliteLeg.playerId is typed `number`. Coerce; non-numeric string
-  // ids (rare for MLB/NBA — this is only relevant for future MMA
-  // where ESPN athlete ids may be alphanumeric) collapse to 0 so the
-  // shape stays valid. The display name carries identity in those
-  // cases anyway.
+  // ids (rare for MLB/NBA — relevant for UFC where ESPN athlete ids
+  // are sometimes alphanumeric) collapse to 0 so the shape stays
+  // valid. The display name carries identity in those cases anyway,
+  // and espnAthleteId carries the canonical id separately for
+  // headshot resolution.
   const numericId = typeof c.playerId === 'string' && /^\d+$/.test(c.playerId)
     ? Number(c.playerId)
     : Number(c.playerId);
