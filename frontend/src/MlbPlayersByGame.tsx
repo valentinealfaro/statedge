@@ -8,17 +8,79 @@
 // explaining the formula. Game-grouped accordion below renders only
 // the players that pass the active filter.
 
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
 import {
   getMlbSlatePlayers,
+  liveGradeLegs,
+  type EliteLegLiveState,
   type MlbPlayerSlateEntry,
   type MlbPlayerSlateLine,
   type MlbSlateGameGroup,
   type MlbSlatePlayersResponse,
 } from './api';
+import { LiveVerdictPill } from './slateLiveState';
 import { Skeleton } from './Skeleton';
+
+// Page-local live-state context. Polls /api/slate/live-grade with the
+// top legs from this page's data every 60s and exposes the resulting
+// map via context so deeply-nested LineRows can read their own state
+// without prop-threading. Keyed on `playerId-statKey-line-direction`.
+const MlbLiveCtx = createContext<Map<string, EliteLegLiveState>>(new Map());
+
+function useMlbPlayersLiveProvider(data: MlbSlatePlayersResponse | null) {
+  const [byKey, setByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+  // Snapshot top-40 legs across the page (by edge%) to bound per-poll
+  // ESPN/MLB-feed traffic.
+  const top = useMemo(() => {
+    if (!data) return [];
+    const all: Array<{ playerId: number; playerName: string; statKey: string; line: number; direction: 'OVER' | 'UNDER'; edge: number }> = [];
+    for (const g of data.games) {
+      for (const p of g.players) {
+        for (const l of p.lines) {
+          all.push({
+            playerId: p.playerId,
+            playerName: p.playerName,
+            statKey: l.statKey,
+            line: l.line,
+            direction: l.direction,
+            edge: l.edgePercent,
+          });
+        }
+      }
+    }
+    return all.sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge)).slice(0, 40);
+  }, [data]);
+  const sig = top.map((t) => `${t.playerId}:${t.statKey}:${t.line}:${t.direction}`).join('|');
+  useEffect(() => {
+    if (top.length === 0) { setByKey(new Map()); return; }
+    let cancelled = false;
+    const tick = () => {
+      liveGradeLegs(top.map((t) => ({
+        playerId: t.playerId,
+        playerName: t.playerName,
+        statKey: t.statKey,
+        direction: t.direction,
+        line: t.line,
+      })))
+        .then((states) => {
+          if (cancelled) return;
+          const m = new Map<string, EliteLegLiveState>();
+          for (let i = 0; i < states.length; i++) {
+            const t = top[i]!;
+            m.set(`${t.playerId}-${t.statKey}-${t.line}-${t.direction}`, states[i]!);
+          }
+          setByKey(m);
+        })
+        .catch(() => { /* silent */ });
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return byKey;
+}
 
 const HOW_MANY_AUTO_EXPAND = 3;
 
@@ -77,6 +139,9 @@ export function MlbPlayersByGame() {
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, []);
+
+  // Live-grade the visible legs every 60s (top-40 by edge%).
+  const liveByKey = useMlbPlayersLiveProvider(data);
 
   const trimmedSearch = search.trim().toLowerCase();
 
@@ -142,6 +207,7 @@ export function MlbPlayersByGame() {
   }
 
   return (
+    <MlbLiveCtx.Provider value={liveByKey}>
     <div style={{ marginTop: 16 }}>
       {/* Top Institutional Edges hero — top 5 cross-game edges
           surfaced as compact hero cards. Highest-conviction picks
@@ -222,6 +288,7 @@ export function MlbPlayersByGame() {
         ))}
       </div>
     </div>
+    </MlbLiveCtx.Provider>
   );
 }
 
@@ -521,15 +588,17 @@ function PlayerCard({ player }: { player: MlbPlayerSlateEntry }) {
         )}
       </div>
 
-      <LineRow line={top} highlight />
+      <LineRow line={top} highlight playerId={player.playerId} />
       {showAll && player.lines.slice(1).map((l, i) => (
-        <LineRow key={i} line={l} />
+        <LineRow key={i} line={l} playerId={player.playerId} />
       ))}
     </div>
   );
 }
 
-function LineRow({ line, highlight }: { line: MlbPlayerSlateLine; highlight?: boolean }) {
+function LineRow({ line, highlight, playerId }: { line: MlbPlayerSlateLine; highlight?: boolean; playerId: number }) {
+  const liveByKey = useContext(MlbLiveCtx);
+  const liveState = liveByKey.get(`${playerId}-${line.statKey}-${line.line}-${line.direction}`) ?? null;
   const isOver = line.direction === 'OVER';
   const probColor = line.probability >= 70 ? '#66bb6a'
     : line.probability >= 55 ? '#7aa2ff'
@@ -551,8 +620,9 @@ function LineRow({ line, highlight }: { line: MlbPlayerSlateLine; highlight?: bo
       <span className="muted small" style={{ minWidth: 56 }}>
         {highlight ? 'Top play:' : ''}
       </span>
-      <span style={{ fontWeight: 600, flex: 1 }}>
-        {line.statLabel} {line.line}
+      <span style={{ fontWeight: 600, flex: 1, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{line.statLabel} {line.line}</span>
+        <LiveVerdictPill state={liveState} compact />
       </span>
       <span style={{ fontWeight: 700, color: probColor }}>
         {isOver ? '↑' : '↓'} {Math.round(line.probability)}%
