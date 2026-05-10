@@ -592,16 +592,56 @@ h3 {
 .hit-badge.gray  { background: #1f2330; color: #c8cfdc; border: 1px solid #2a2f3a; }
 .hit-sub { font-size: 11px; color: #8a93a6; margin-top: 3px; }
 
+/* Iter 24: freshness banner upgraded from plain inline text to a
+   pill chip with a tiny pulsing live indicator on fresh data. The
+   stale variant gets an amber treatment so degraded data is
+   visible at a glance. Used on Slate / NBA / MLB / Compare pages,
+   so this propagates site-wide. */
 .freshness {
-  display: inline-block;
-  font-size: 12px;
-  color: #8a93a6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
   margin: 4px 0 18px;
+  padding: 4px 10px 4px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-pill);
 }
-.freshness.stale { color: #f0b352; }
+.freshness::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: 0 0 8px rgba(109, 208, 122, 0.55);
+  animation: freshness-pulse 2.4s ease-in-out infinite;
+}
+.freshness.stale {
+  color: var(--warn);
+  background: rgba(255, 184, 107, 0.08);
+  border-color: rgba(255, 184, 107, 0.30);
+}
+.freshness.stale::before {
+  background: var(--warn);
+  box-shadow: 0 0 8px rgba(255, 184, 107, 0.55);
+  animation: none;
+}
+@keyframes freshness-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .freshness::before { animation: none; }
+}
 
-.pos { color: #6ee7a4; }
-.neg { color: #ef6a6a; }
+/* Semantic colors — use the same hot/cold tokens the rest of the
+   palette uses so semantic color is consistent everywhere. */
+.pos { color: var(--hot); font-weight: 600; }
+.neg { color: var(--cold); font-weight: 600; }
 
 .chart {
   background: #14171f;
@@ -625,7 +665,12 @@ h3 {
 }
 .games th { color: #8a93a6; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-.muted { color: #8a93a6; font-size: 14px; }
+/* Iter 24: muted secondary text uses the design token instead of
+   the raw hex literal, so future palette tweaks propagate site-wide
+   automatically. Slightly lighter to improve legibility on dark
+   gradient backgrounds (#8a93a6 → text-3 = #8a93a6 today, but the
+   token absorbs future shifts). */
+.muted { color: var(--text-3); font-size: 14px; line-height: 1.55; }
 .error { color: #ef6a6a; font-size: 14px; }
 
 .mode-tabs {
