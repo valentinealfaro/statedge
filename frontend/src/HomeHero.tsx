@@ -28,21 +28,37 @@ export function HomeHero() {
   const hasData = headline && headline.withClosing > 0;
 
   return (
-    <header style={{
+    <header className="hero-shell" style={{
       position: 'relative',
       maxWidth: 1100,
       margin: '0 auto',
       padding: '48px 24px 32px',
     }}>
+      {/* Subtle terminal-grid backdrop — premium texture without noise */}
+      <div aria-hidden style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        backgroundImage: `
+          radial-gradient(ellipse 60% 40% at 50% 0%, rgba(91,141,239,0.08) 0%, transparent 60%),
+          linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)
+        `,
+        backgroundSize: 'auto, 40px 40px, 40px 40px',
+        maskImage: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 80%)',
+        WebkitMaskImage: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 80%)',
+      }} />
+
       {/* Top strip — terminal-style metadata: brand mark + live time */}
       <div style={{
+        position: 'relative',
         display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
         flexWrap: 'wrap', gap: 12, marginBottom: 32,
         borderBottom: '1px solid rgba(255,255,255,0.08)',
         paddingBottom: 12,
       }}>
         <div style={{
-          fontSize: 11, fontWeight: 800, letterSpacing: '0.12em',
+          fontSize: 11, fontWeight: 800, letterSpacing: '0.14em',
           textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         }}>
@@ -53,10 +69,12 @@ export function HomeHero() {
           color: 'rgba(255,255,255,0.5)',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           display: 'flex', alignItems: 'center', gap: 6,
+          letterSpacing: '0.06em',
         }}>
-          <span style={{
+          <span className="live-pulse" style={{
             display: 'inline-block', width: 7, height: 7, borderRadius: 3.5,
             background: '#66bb6a',
+            boxShadow: '0 0 0 0 rgba(102,187,106,0.7)',
           }} />
           LIVE · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {now.toLocaleDateString([], { month: 'short', day: 'numeric' })}
         </div>
@@ -64,6 +82,7 @@ export function HomeHero() {
 
       {/* Headline — split. Left: "We beat the market." Right: stat */}
       <div style={{
+        position: 'relative',
         display: 'grid',
         gridTemplateColumns: 'minmax(0, 1fr) auto',
         gap: 32, alignItems: 'center',
@@ -73,7 +92,12 @@ export function HomeHero() {
           <h1 style={{
             margin: 0, fontSize: 'clamp(34px, 6vw, 56px)',
             fontWeight: 900, lineHeight: 1.05,
-            letterSpacing: '-0.03em',
+            letterSpacing: '-0.035em',
+            background: 'linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.72) 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            color: 'transparent',
           }}>
             {hasData ? <>We beat the market.</> : <>Find your edge.</>}
           </h1>
@@ -119,6 +143,7 @@ export function HomeHero() {
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
               color: rateColor(headline.beatRate),
               letterSpacing: '-0.04em',
+              textShadow: `0 0 40px ${rateColor(headline.beatRate)}40`,
             }}>
               {headline.beatRate !== null ? `${headline.beatRate.toFixed(1)}%` : '—'}
             </div>
@@ -190,18 +215,19 @@ function CtaButton({ to, children, accent, gold, subtle }: {
     border = 'rgba(255,255,255,0.12)';
   }
   return (
-    <Link to={to} style={{
-      padding: '8px 14px',
+    <Link to={to} className="hero-cta" style={{
+      padding: '9px 16px',
       background: bg,
       color,
       border: `1px solid ${border}`,
-      borderRadius: 6,
+      borderRadius: 8,
       fontSize: 13,
       fontWeight: 700,
       textDecoration: 'none',
       letterSpacing: '0.02em',
-      transition: 'transform 120ms, filter 120ms',
+      transition: 'transform 160ms cubic-bezier(0.4,0,0.2,1), filter 160ms, box-shadow 160ms, border-color 160ms',
       whiteSpace: 'nowrap',
+      boxShadow: gold ? '0 0 0 1px rgba(255,213,79,0.25), 0 6px 18px rgba(255,213,79,0.18)' : undefined,
     }}>
       {children}
     </Link>

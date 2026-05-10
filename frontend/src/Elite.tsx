@@ -259,12 +259,26 @@ function ViewTab({ active, onClick, children, accent }: { active: boolean; onCli
 function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTicket; date?: string }) {
   const gradeColor = ticket.grade === 'A+' ? '#66bb6a' : ticket.grade === 'A' ? '#7aa2ff' : '#ffd54f';
   return (
-    <section style={{
-      padding: 20,
-      background: 'linear-gradient(135deg, rgba(255,213,79,0.06) 0%, rgba(102,187,106,0.04) 100%)',
-      border: `2px solid ${gradeColor}55`,
-      borderRadius: 12,
+    <section className="fade-up" style={{
+      position: 'relative',
+      padding: 24,
+      background: `
+        radial-gradient(ellipse 50% 100% at 0% 0%, ${gradeColor}10 0%, transparent 60%),
+        radial-gradient(ellipse 60% 70% at 100% 100%, ${gradeColor}08 0%, transparent 60%),
+        linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+        var(--surface-1)
+      `,
+      border: `1px solid ${gradeColor}50`,
+      borderRadius: 14,
+      boxShadow: `0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 40px ${gradeColor}1a, 0 4px 14px rgba(0,0,0,0.45)`,
+      overflow: 'hidden',
     }}>
+      <span aria-hidden style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        height: 1,
+        background: `linear-gradient(90deg, transparent, ${gradeColor}99, transparent)`,
+      }} />
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -305,7 +319,12 @@ function TicketCard({ ticket, date }: { ticket: EliteTicket | CrossSportEliteTic
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 6 }}>
-            <span style={{ fontSize: 42, fontWeight: 900, color: gradeColor, lineHeight: 1 }}>
+            <span style={{
+              fontSize: 48, fontWeight: 900, color: gradeColor, lineHeight: 1,
+              letterSpacing: '-0.04em',
+              textShadow: `0 0 28px ${gradeColor}66`,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}>
               {ticket.grade}
             </span>
             <div>
@@ -360,14 +379,15 @@ function LegCard({ leg, index }: { leg: EliteLeg; index: number }) {
 
   return (
     <Wrapper>
-    <div style={{
-      padding: 12,
-      background: 'rgba(0,0,0,0.25)',
+    <div className="elite-leg-card" style={{
+      position: 'relative',
+      padding: 14,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.28)',
       border: '1px solid rgba(255,255,255,0.08)',
       borderLeft: `3px solid ${dirColor}`,
-      borderRadius: 6,
+      borderRadius: 8,
       cursor: profileLink ? 'pointer' : 'default',
-      transition: 'background 120ms, border-color 120ms',
+      transition: 'background 200ms cubic-bezier(0.4,0,0.2,1), border-color 200ms, transform 200ms',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flexShrink: 0 }}>

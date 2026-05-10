@@ -34,20 +34,43 @@ export function HomeEliteTeaser() {
   return (
     <Link
       to="/elite"
+      className="elite-teaser fade-up"
       style={{
+        position: 'relative',
         display: 'block',
         margin: '24px auto',
         maxWidth: 1100,
-        padding: '20px 24px',
-        background: 'linear-gradient(135deg, rgba(255,213,79,0.06) 0%, rgba(102,187,106,0.04) 100%)',
-        border: `1px solid ${gradeColor}55`,
-        borderRadius: 12,
+        padding: '22px 26px',
+        background: `
+          radial-gradient(ellipse 30% 80% at 0% 50%, rgba(255,213,79,0.10) 0%, transparent 60%),
+          radial-gradient(ellipse 30% 80% at 100% 50%, rgba(102,187,106,0.06) 0%, transparent 60%),
+          linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%),
+          var(--surface-1)
+        `,
+        border: `1px solid ${gradeColor}40`,
+        borderRadius: 14,
         textDecoration: 'none',
         color: 'inherit',
-        transition: 'transform 120ms, border-color 120ms',
+        transition: 'transform 200ms cubic-bezier(0.4,0,0.2,1), border-color 200ms, box-shadow 200ms',
+        boxShadow: `0 1px 0 rgba(255,255,255,0.05) inset, 0 8px 24px ${gradeColor}1a, 0 2px 6px rgba(0,0,0,0.35)`,
+        overflow: 'hidden',
       }}
     >
+      <span aria-hidden style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        background: `linear-gradient(90deg, transparent 0%, ${gradeColor}11 50%, transparent 100%)`,
+        opacity: 0.5,
+      }} />
+      <span aria-hidden style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        height: 1,
+        background: `linear-gradient(90deg, transparent, ${gradeColor}80, transparent)`,
+      }} />
       <div style={{
+        position: 'relative',
         display: 'grid',
         gridTemplateColumns: 'auto auto 1fr auto',
         gap: 24,
@@ -70,6 +93,8 @@ export function HomeEliteTeaser() {
         <div style={{
           fontSize: 56, fontWeight: 900, lineHeight: 1, color: gradeColor,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          textShadow: `0 0 24px ${gradeColor}55`,
+          letterSpacing: '-0.04em',
         }}>
           {ticket.grade}
         </div>

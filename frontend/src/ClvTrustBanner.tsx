@@ -65,15 +65,30 @@ export function ClvTrustBanner({ sport }: Props = {}) {
 
   return (
     <section
+      className="fade-up"
       style={{
+        position: 'relative',
         margin: '24px auto',
         maxWidth: 1100,
-        padding: 24,
-        background: 'linear-gradient(135deg, rgba(102,187,106,0.06) 0%, rgba(122,162,255,0.06) 100%)',
-        border: '1px solid rgba(102,187,106,0.25)',
-        borderRadius: 12,
+        padding: 26,
+        background: `
+          radial-gradient(ellipse 50% 80% at 0% 0%, rgba(102,187,106,0.10) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 80% at 100% 100%, rgba(122,162,255,0.08) 0%, transparent 60%),
+          linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 28%),
+          var(--surface-1)
+        `,
+        border: '1px solid rgba(102,187,106,0.30)',
+        borderRadius: 14,
+        boxShadow: '0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 40px rgba(102,187,106,0.10), 0 4px 14px rgba(0,0,0,0.35)',
+        overflow: 'hidden',
       }}
     >
+      <span aria-hidden style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(102,187,106,0.55), rgba(122,162,255,0.55), transparent)',
+      }} />
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <div>
           <div style={{
@@ -181,23 +196,38 @@ function WindowCard({ label, view, accent }: { label: string; view: SportFiltere
     : '#ef5350';
   return (
     <div style={{
-      padding: 14,
-      background: 'rgba(0,0,0,0.25)',
-      border: `1px solid ${accent ? 'rgba(102,187,106,0.3)' : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 8,
+      position: 'relative',
+      padding: 16,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%), rgba(0,0,0,0.30)',
+      border: `1px solid ${accent ? 'rgba(102,187,106,0.35)' : 'rgba(255,255,255,0.08)'}`,
+      borderRadius: 10,
+      boxShadow: accent ? '0 6px 18px rgba(102,187,106,0.10)' : 'none',
+      overflow: 'hidden',
     }}>
+      <span aria-hidden style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: accent
+          ? 'linear-gradient(90deg, transparent, rgba(102,187,106,0.50), transparent)'
+          : 'linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)',
+      }} />
       <div style={{
         fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
-        textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
       }}>
         {label}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6 }}>
-        <span style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1 }}>
+        <span style={{
+          fontSize: 36, fontWeight: 900, color, lineHeight: 1,
+          letterSpacing: '-0.03em',
+          textShadow: rate !== null ? `0 0 22px ${color}55` : 'none',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
           {rate !== null ? `${rate.toFixed(1)}%` : '—'}
         </span>
       </div>
-      <div className="muted small" style={{ fontSize: 11, marginTop: 4 }}>
+      <div className="muted small" style={{ fontSize: 11, marginTop: 6, color: 'rgba(255,255,255,0.6)' }}>
         {view.withClosing > 0
           ? `${view.beatMarket} of ${view.withClosing} props beat the close`
           : 'No graded props yet'}
