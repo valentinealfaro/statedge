@@ -59,17 +59,29 @@ export function _resetCalibrationCache(): void {
 //     same prior the aggregator uses for its bucket display.
 
 const MIN_BUCKET_SAMPLES = 30;
-// Raised from 7 → 15 after an audit caught a -23.5% global
-// calibration gap (predicted 89.6% / observed 66.1% across 2135
-// graded rows, May 2026 window). Per-stat gaps were even worse:
-// singles -68pp, doubles -95pp, strikeouts -55pp, hits -34pp.
-// At MAX_SHIFT = 7 the adjustment couldn't possibly correct the
-// overclaim — an "85%+" bucket landing at 67% observed needed a
-// -24pt shift but got capped to -7pt, leaving 17pt of bias. 15pt
-// is still a cap (won't blow up on freaky thin-bucket noise — the
-// 30-sample floor and Bayesian smoothing already guard that), but
-// it actually lets the loop close large structural gaps.
-const MAX_SHIFT = 15;
+// Sample-tiered cap. Iter 2 raised from 7 → 15 after the May 2026
+// calibration showed a -23.5% global gap and -68pp / -95pp / -55pp
+// per-stat gaps. With 158-sample singles bucket sitting at 24%
+// observed vs 88% predicted, even the 15pp cap left 49pp of bias.
+//
+// Iter 6 makes the cap proportional to bucket sample size, on the
+// reasoning that large-sample buckets have already been Bayesian-
+// smoothed and the residual signal is reliable enough to trust:
+//
+//   - Sample 30-99   → cap 15pp (existing — small sample, conservative)
+//   - Sample 100-499 → cap 25pp (decent sample, large correction OK)
+//   - Sample 500+    → cap 35pp (trust the data, close the gap)
+//
+// At 100 samples Bayesian smoothing pulls the observed only ~17%
+// toward the 55% prior; at 500 samples only ~4%. So when the cap
+// is below the observed-vs-predicted gap, the cap is the bottleneck,
+// not noise. Tiering lets large-sample structural gaps close without
+// risking thin-bucket overcorrection.
+function maxShiftForSample(graded: number): number {
+  if (graded < 100)  return 15;
+  if (graded < 500)  return 25;
+  return 35;
+}
 
 function findBucket(
   buckets: MlbCalibrationBucket[],
@@ -148,7 +160,11 @@ export function applyCalibrationAdjustment(
   // ~55% prior. Use it as the target.
   const target = chosen.smoothedHitRate;
   const rawShift = target - predictedProbability;
-  const cappedShift = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, rawShift));
+  // Sample-tiered cap — see maxShiftForSample for the reasoning.
+  // Iter 6 lets large buckets (≥100, ≥500 samples) close gaps that
+  // the previous flat 15pp cap couldn't.
+  const cap = maxShiftForSample(chosen.graded);
+  const cappedShift = Math.max(-cap, Math.min(cap, rawShift));
   // Don't bother adjusting tiny gaps — calibration is fine there.
   if (Math.abs(cappedShift) < 1.5) {
     return {

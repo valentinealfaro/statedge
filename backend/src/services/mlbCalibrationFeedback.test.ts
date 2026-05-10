@@ -90,16 +90,60 @@ describe('applyCalibrationAdjustment — sample guards', () => {
     expect(adj.shift).toBe(0);
   });
 
-  test('Cap at ±15pts even when gap is huge (raised from 7pp after May 2026 audit)', () => {
+  test('Cap at ±15pts on small bucket (30-99 samples)', () => {
     const r = report({
       byProbability: [
-        bucket({ label: '70-75%', smoothedHitRate: 30, graded: 100 }),
+        bucket({ label: '70-75%', smoothedHitRate: 30, graded: 80 }),
       ],
     });
     const adj = applyCalibrationAdjustment(72, r);
-    // Raw shift = 30 - 72 = -42, cap at -15.
+    // Raw shift = 30 - 72 = -42, cap at -15 (small-bucket tier).
     expect(adj.shift).toBe(-15);
     expect(adj.adjustedProbability).toBe(57);
+  });
+});
+
+describe('applyCalibrationAdjustment — sample-tiered cap (iter 6)', () => {
+  // Tiered cap: 15pp under 100 samples, 25pp at 100-499, 35pp at 500+.
+  // Reasoning: Bayesian smoothing already pulls thin buckets toward
+  // the prior, so large-bucket signal is reliable enough to apply
+  // larger corrections. Without tiering, the user-shared singles
+  // bucket (158 samples, 88→24 gap) was capped at 15pp leaving 49pp
+  // of overclaim residual.
+  test('100-sample bucket allows up to 25pp shift', () => {
+    const r = report({
+      byProbability: [
+        bucket({ label: '85%+', smoothedHitRate: 50, graded: 150 }),
+      ],
+    });
+    const adj = applyCalibrationAdjustment(88, r);
+    // Raw -38, capped at -25 for the 100-499 tier.
+    expect(adj.shift).toBe(-25);
+    expect(adj.adjustedProbability).toBe(63);
+  });
+
+  test('500+ sample bucket allows up to 35pp shift', () => {
+    const r = report({
+      byProbability: [
+        bucket({ label: '85%+', smoothedHitRate: 55, graded: 1500 }),
+      ],
+    });
+    const adj = applyCalibrationAdjustment(91, r);
+    // Raw -36, capped at -35 for the 500+ tier.
+    expect(adj.shift).toBe(-35);
+    expect(adj.adjustedProbability).toBe(56);
+  });
+
+  test('Singles 88→24 with 158 samples (the user-shared case): 25pp cap closes 25 of 64pp gap', () => {
+    const r = report({
+      byStatType: [
+        bucket({ label: 'singles', smoothedHitRate: 24, graded: 158 }),
+      ],
+    });
+    const adj = applyCalibrationAdjustment(88, r, 'singles');
+    // Per-stat preferred (158 ≥ 30), 100-499 tier → 25pp cap.
+    expect(adj.shift).toBe(-25);
+    expect(adj.adjustedProbability).toBe(63);
   });
 });
 
@@ -118,8 +162,9 @@ describe('applyCalibrationAdjustment — per-stat bucket preferred', () => {
       ],
     });
     const adj = applyCalibrationAdjustment(88, r, 'singles');
-    // Per-stat shift dominates: target = 25, predicted = 88 → cap -15.
-    expect(adj.shift).toBe(-15);
+    // Per-stat shift dominates: target = 25, predicted = 88 → cap -25
+    // (158 samples = 100-499 tier under iter-6 sample-tiered cap).
+    expect(adj.shift).toBe(-25);
     expect(adj.reason).toMatch(/stat-type singles/);
   });
 
@@ -134,7 +179,8 @@ describe('applyCalibrationAdjustment — per-stat bucket preferred', () => {
     });
     const adj = applyCalibrationAdjustment(88, r, 'home_runs');
     // Stat bucket below 30-sample floor → falls through to prob bucket.
-    expect(adj.shift).toBe(-15);   // prob bucket: target 70, predicted 88, cap -15
+    // Prob bucket has 200 samples (100-499 tier) → cap -25, raw -18.
+    expect(adj.shift).toBe(-18);   // prob bucket: target 70, predicted 88, raw fits within cap
     expect(adj.reason).toMatch(/bucket 85%\+/);
   });
 
