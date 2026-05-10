@@ -22,10 +22,13 @@ import { useTitle } from './useTitle';
 const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', mlb: 'MLB', mma: 'UFC' };
 const SPORT_COLOR: Record<Sport, string> = { nba: '#7aa2ff', mlb: '#66bb6a', mma: '#ef5350' };
 
+type StarredSortKey = 'date' | 'sport' | 'verdict' | 'edge';
+
 export function StarredPage() {
   useTitle(['Starred props', 'Watchlist']);
   const { items, unstar, clear } = useStarredProps();
   const [liveByKey, setLiveByKey] = useState<Map<string, EliteLegLiveState>>(new Map());
+  const [sortKey, setSortKey] = useState<StarredSortKey>('date');
 
   // Poll live grading for every starred prop. Capped at 50 because
   // the backend caps the request at 50 legs per call. Skip MMA — the
@@ -187,8 +190,48 @@ export function StarredPage() {
               </div>
             )}
 
+            {/* Sort bar — Bloomberg-watchlist convention. Default
+                is date-desc (newest stars first). Other options sort
+                by sport tag, current verdict (HIT first / MISS last),
+                or by snapshot edge%. */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              marginBottom: 12, padding: '8px 12px',
+              background: 'rgba(0,0,0,0.20)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 11,
+            }}>
+              <span style={{ color: 'rgba(255,255,255,0.55)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', fontSize: 10 }}>
+                Sort
+              </span>
+              {(['date', 'sport', 'verdict', 'edge'] as const).map((k) => {
+                const active = sortKey === k;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setSortKey(k)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-pill)',
+                      border: '1px solid',
+                      borderColor: active ? 'rgba(122,162,255,0.55)' : 'rgba(255,255,255,0.10)',
+                      background: active ? 'rgba(122,162,255,0.14)' : 'transparent',
+                      color: active ? '#7aa2ff' : 'rgba(255,255,255,0.65)',
+                      fontWeight: 800, letterSpacing: '0.04em',
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {k === 'date' ? 'Newest' : k === 'sport' ? 'Sport' : k === 'verdict' ? 'Verdict' : 'Edge'}
+                  </button>
+                );
+              })}
+            </div>
+
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.map((p) => (
+              {sortStarred(items, sortKey, liveByKey).map((p) => (
                 <StarredRow
                   key={p.id}
                   prop={p}
@@ -282,6 +325,43 @@ function StarredRow({ prop, live, onUnstar }: { prop: StarredProp; live: EliteLe
       </button>
     </li>
   );
+}
+
+// Stable sort the watchlist by the user-selected key. Verdict order:
+// HIT first, ON_PACE_HIT, IN_FLIGHT, PENDING, PUSH, MISS, ON_PACE_MISS,
+// UNGRADED last — matches the Bloomberg "best news at top" convention.
+function sortStarred(
+  items: StarredProp[],
+  sortKey: StarredSortKey,
+  liveByKey: Map<string, EliteLegLiveState>,
+): StarredProp[] {
+  const arr = [...items];
+  if (sortKey === 'date') {
+    arr.sort((a, b) => b.starredAt - a.starredAt);
+  } else if (sortKey === 'sport') {
+    const order: Record<Sport, number> = { nba: 0, mlb: 1, mma: 2 };
+    arr.sort((a, b) => order[a.sport] - order[b.sport] || b.starredAt - a.starredAt);
+  } else if (sortKey === 'verdict') {
+    const verdictRank = (id: string) => {
+      const s = liveByKey.get(id);
+      if (!s) return 7;
+      switch (s.verdict) {
+        case 'HIT':           return 0;
+        case 'ON_PACE_HIT':   return 1;
+        case 'IN_FLIGHT':     return 2;
+        case 'PENDING':       return 3;
+        case 'PUSH':          return 4;
+        case 'MISS':          return 5;
+        case 'ON_PACE_MISS':  return 6;
+        case 'UNGRADED':      return 8;
+        default:              return 7;
+      }
+    };
+    arr.sort((a, b) => verdictRank(a.id) - verdictRank(b.id) || b.starredAt - a.starredAt);
+  } else if (sortKey === 'edge') {
+    arr.sort((a, b) => b.snapshot.edgePercent - a.snapshot.edgePercent);
+  }
+  return arr;
 }
 
 // Export the user's watchlist to CSV. Includes the snapshot taken at
