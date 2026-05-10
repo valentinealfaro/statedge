@@ -20,6 +20,7 @@ import {
   type SlateProjection,
   type SlateResolvedLine,
 } from './api';
+import { LiveVerdictPill, SlateLiveStateProvider, useLiveLegState } from './slateLiveState';
 import { Skeleton } from './Skeleton';
 import { teamIdFromAbbr } from './teams';
 
@@ -319,6 +320,7 @@ export function NbaPlayersByGame() {
   );
 
   return (
+    <SlateLiveStateProvider lines={lines} topN={40}>
     <div style={{ marginTop: 16 }}>
       {topEdges.length > 0 && <TopInstitutionalEdges entries={topEdges} />}
 
@@ -394,6 +396,7 @@ export function NbaPlayersByGame() {
         ))}
       </div>
     </div>
+    </SlateLiveStateProvider>
   );
 }
 
@@ -670,15 +673,16 @@ function PlayerCard({ player }: { player: UiPlayer }) {
         )}
       </div>
 
-      <LineRow line={top} highlight />
+      <LineRow line={top} highlight playerId={player.playerId} />
       {showAll && player.lines.slice(1).map((l, i) => (
-        <LineRow key={i} line={l} />
+        <LineRow key={i} line={l} playerId={player.playerId} />
       ))}
     </div>
   );
 }
 
-function LineRow({ line, highlight }: { line: UiLine; highlight?: boolean }) {
+function LineRow({ line, highlight, playerId }: { line: UiLine; highlight?: boolean; playerId: number }) {
+  const liveState = useLiveLegState(playerId, line.statKey, line.line, line.direction);
   const isOver = line.direction === 'OVER';
   const probColor = line.probability >= 70 ? '#66bb6a'
     : line.probability >= 55 ? '#7aa2ff'
@@ -700,8 +704,9 @@ function LineRow({ line, highlight }: { line: UiLine; highlight?: boolean }) {
       <span className="muted small" style={{ minWidth: 56 }}>
         {highlight ? 'Top play:' : ''}
       </span>
-      <span style={{ fontWeight: 600, flex: 1 }}>
-        {line.statLabel} {line.line}
+      <span style={{ fontWeight: 600, flex: 1, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{line.statLabel} {line.line}</span>
+        <LiveVerdictPill state={liveState} compact />
       </span>
       <span style={{ fontWeight: 700, color: probColor }}>
         {isOver ? '↑' : '↓'} {Math.round(line.probability)}%
