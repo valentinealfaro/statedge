@@ -567,6 +567,7 @@ function SlateTodayBody(props: SlateTodayBodyProps) {
           parlays={savedParlays}
           onOpen={(p) => setParlay(p.legs)}
           onRemove={removeParlay}
+          lines={lines}
         />
       )}
 
@@ -2264,10 +2265,12 @@ function SavedParlaysSection({
   parlays,
   onOpen,
   onRemove,
+  lines,
 }: {
   parlays: SavedParlay[];
   onOpen: (p: SavedParlay) => void;
   onRemove: (id: string) => void;
+  lines: SlateResolvedLine[];
 }) {
   return (
     <div className="saved-parlays">
@@ -2281,6 +2284,7 @@ function SavedParlaysSection({
                 {p.legs.length} {p.legs.length === 1 ? 'leg' : 'legs'} ·
                 {' '}{new Date(p.savedAt).toLocaleDateString()}
               </span>
+              <SavedParlayLiveRollup parlay={p} lines={lines} />
             </button>
             <button
               className="link saved-parlay-remove"
@@ -2293,6 +2297,82 @@ function SavedParlaysSection({
         ))}
       </ul>
     </div>
+  );
+}
+
+// Live rollup chip for a saved parlay. Resolves each leg id through
+// the current slate's resolved-lines (to recover lean direction since
+// saved parlays persist only `playerId-statKey-line`), reads each
+// leg's live state from the SlateLiveStateProvider context, and
+// renders a compact "1H · 1L · 0M" chip beside the parlay name.
+// Self-hides when no leg has progressed.
+function SavedParlayLiveRollup({
+  parlay,
+  lines,
+}: {
+  parlay: SavedParlay;
+  lines: SlateResolvedLine[];
+}) {
+  // Decode each leg-id "playerId-statKey-line" by scanning from both
+  // ends so multi-token statKeys (e.g. `three_pt_made`) parse
+  // correctly. statKey contains hyphens? No — statKeys are snake_case.
+  // The id format is unambiguous: first segment = playerId (numeric),
+  // last segment = line (numeric), middle = statKey.
+  const resolved = parlay.legs.map((id) => {
+    const firstDash = id.indexOf('-');
+    const lastDash = id.lastIndexOf('-');
+    if (firstDash < 0 || lastDash <= firstDash) {
+      return null;
+    }
+    const playerId = Number(id.slice(0, firstDash));
+    const statKey = id.slice(firstDash + 1, lastDash);
+    const lineNum = Number(id.slice(lastDash + 1));
+    if (!Number.isFinite(playerId) || !Number.isFinite(lineNum)) return null;
+    const slateLine = lines.find(
+      (l) => l.playerId === playerId && l.statKey === statKey && l.line === lineNum,
+    );
+    const dir = (slateLine?.hitProbability?.lean === 'UNDER' ? 'UNDER' : 'OVER') as 'OVER' | 'UNDER';
+    return { playerId, statKey, line: lineNum, dir };
+  });
+  return <SavedParlayLiveTally resolved={resolved.filter((r): r is NonNullable<typeof r> => r !== null)} />;
+}
+
+// Internal — read each leg's live state via the slate context and
+// render a compact rollup chip. Calls the hook in a loop, which is
+// safe here because parlay.legs is a stable-length array per render.
+function SavedParlayLiveTally({
+  resolved,
+}: {
+  resolved: Array<{ playerId: number; statKey: string; line: number; dir: 'OVER' | 'UNDER' }>;
+}) {
+  const legStates: Array<ReturnType<typeof useLiveLegState>> = [];
+  for (const r of resolved) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const st = useLiveLegState(r.playerId, r.statKey, r.line, r.dir);
+    legStates.push(st);
+  }
+  let hit = 0, miss = 0, live = 0;
+  for (const s of legStates) {
+    if (!s) continue;
+    const v = s.verdict;
+    if (v === 'HIT' || v === 'ON_PACE_HIT') hit++;
+    else if (v === 'MISS' || v === 'ON_PACE_MISS' || v === 'PUSH') miss++;
+    else if (v === 'IN_FLIGHT') live++;
+  }
+  if (hit + miss + live === 0) return null;
+  const dotColor = miss > 0 ? '#ef5350' : live > 0 ? '#ffd54f' : '#66bb6a';
+  return (
+    <span style={{
+      marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+    }}>
+      <span className="live-pulse" style={{
+        display: 'inline-block', width: 6, height: 6, borderRadius: 3, background: dotColor,
+      }} />
+      {hit > 0 && <span style={{ color: '#66bb6a' }}>{hit}H</span>}
+      {live > 0 && <span style={{ color: '#ffd54f' }}>{live}L</span>}
+      {miss > 0 && <span style={{ color: '#ef5350' }}>{miss}M</span>}
+    </span>
   );
 }
 
