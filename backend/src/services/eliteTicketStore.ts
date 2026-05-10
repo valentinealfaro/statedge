@@ -9,7 +9,66 @@
 // the historical view can show the full ledger.
 
 import { getPool, isDbConfigured } from '../db.js';
+import { fetchScoreboard, fetchGameSummary, type EspnPlayerLine } from '../nba/espn.js';
 import type { CrossSportTicket } from './crossSportEliteBuilder.js';
+
+// Stat-key sets for sport detection inside the grader. Mirrors the
+// frontend's detectLegSport() and the cross-sport builder's
+// collectSports() — keeping them in sync is the responsibility of
+// whoever adds a new stat key (one place each).
+const MLB_STAT_KEYS = new Set([
+  'home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis',
+  'walks', 'stolen_bases', 'strikeouts', 'doubles', 'triples', 'ks',
+  'pitcher_outs', 'innings_pitched', 'earned_runs_allowed',
+  'hits_allowed', 'walks_allowed', 'home_runs_allowed',
+]);
+const MMA_STAT_KEYS = new Set([
+  'sig_strikes', 'rd1_sig_strikes', 'takedowns', 'rd1_takedowns',
+  'knockdowns', 'rounds', 'fight_time', 'fantasy_score', 'control_time',
+]);
+
+function legSport(statKey: string): 'mlb' | 'nba' | 'mma' {
+  if (MMA_STAT_KEYS.has(statKey)) return 'mma';
+  if (MLB_STAT_KEYS.has(statKey)) return 'mlb';
+  return 'nba';
+}
+
+// Map our NBA stat keys to the field on EspnPlayerLine.
+function nbaStatValue(player: EspnPlayerLine, statKey: string): number | null {
+  switch (statKey) {
+    case 'points': return player.points;
+    case 'rebounds': return player.rebounds;
+    case 'assists': return player.assists;
+    case 'steals': return player.steals;
+    case 'blocks': return player.blocks;
+    case 'turnovers': return player.turnovers;
+    case 'three_pt_made': {
+      const dash = player.threePt.indexOf('-');
+      return dash > 0 ? Number(player.threePt.slice(0, dash)) : null;
+    }
+    case 'fg_made': {
+      const dash = player.fg.indexOf('-');
+      return dash > 0 ? Number(player.fg.slice(0, dash)) : null;
+    }
+    case 'ft_made': {
+      const dash = player.ft.indexOf('-');
+      return dash > 0 ? Number(player.ft.slice(0, dash)) : null;
+    }
+    case 'pra': return player.points + player.rebounds + player.assists;
+    case 'pr':  return player.points + player.rebounds;
+    case 'pa':  return player.points + player.assists;
+    case 'ra':  return player.rebounds + player.assists;
+    case 'stocks': return player.steals + player.blocks;
+    default: return null;
+  }
+}
+
+// Direction-aware hit/miss for a single leg given the actual stat
+// value. Pushes (actual === line) return null.
+function outcomeFromActual(actual: number, line: number, direction: 'OVER' | 'UNDER'): boolean | null {
+  if (actual === line) return null;
+  return direction === 'OVER' ? actual > line : actual < line;
+}
 
 let tableEnsured = false;
 
@@ -192,6 +251,7 @@ export async function gradeEliteTickets(): Promise<{ graded: number; pending: nu
       const v = await gradeOneLeg({
         gameDate: t.ticket_date,
         playerId: leg.playerId,
+        playerName: leg.playerName,
         statKey: leg.statKey,
         direction: leg.direction,
         line: leg.line,
@@ -216,35 +276,96 @@ export async function gradeEliteTickets(): Promise<{ graded: number; pending: nu
   return { graded, pending };
 }
 
-// Look up a single leg's hit/miss from the existing projection_history
-// stores. Returns null when no graded row matches yet.
+// Look up a single leg's hit/miss for the elite ticket grader.
+// MLB legs join mlb_projection_history (the MLB grader populates
+// hit_or_miss when stat tables update). NBA legs fetch the day's
+// ESPN scoreboard and resolve the player's box-score line directly
+// — no separate NBA projection_history table needed for grading.
+// MMA stays ungraded for now (no settled-fight stat ingestion yet).
 async function gradeOneLeg(args: {
   gameDate: Date;
   playerId: number;
+  playerName: string;
   statKey: string;
   direction: 'OVER' | 'UNDER';
   line: number;
 }): Promise<boolean | null> {
-  const pool = getPool();
-  // Try MLB first (numeric playerId is MLB Stats API id when leg
-  // came from MLB engine).
-  const mlb = await pool.query<{ hit_or_miss: boolean | null }>(
-    `SELECT hit_or_miss
-       FROM mlb_projection_history
-      WHERE game_date = $1
-        AND player_id = $2
-        AND selected_stat = $3
-        AND direction = $4
-      ORDER BY id DESC
-      LIMIT 1`,
-    [args.gameDate, args.playerId, args.statKey, args.direction],
-  ).catch(() => ({ rows: [] as Array<{ hit_or_miss: boolean | null }> }));
-  if (mlb.rows[0]?.hit_or_miss !== undefined && mlb.rows[0].hit_or_miss !== null) {
-    return mlb.rows[0].hit_or_miss;
+  const sport = legSport(args.statKey);
+
+  if (sport === 'mlb') {
+    const pool = getPool();
+    const mlb = await pool.query<{ hit_or_miss: boolean | null }>(
+      `SELECT hit_or_miss
+         FROM mlb_projection_history
+        WHERE game_date = $1
+          AND player_id = $2
+          AND selected_stat = $3
+          AND direction = $4
+        ORDER BY id DESC
+        LIMIT 1`,
+      [args.gameDate, args.playerId, args.statKey, args.direction],
+    ).catch(() => ({ rows: [] as Array<{ hit_or_miss: boolean | null }> }));
+    if (mlb.rows[0]?.hit_or_miss !== undefined && mlb.rows[0].hit_or_miss !== null) {
+      return mlb.rows[0].hit_or_miss;
+    }
+    return null;
   }
-  // WNBA — for cross-sport NBA legs we don't have NBA projection_history
-  // yet (NBA uses its own cache, not a graded log). NBA + UFC tickets
-  // therefore stay ungraded until those grading pipelines exist.
-  // That's HONEST per the no-fake-grading rule.
+
+  if (sport === 'nba') {
+    return await gradeNbaLegLive(args);
+  }
+
+  // MMA — no graded fight-stat source yet. Tickets with UFC legs
+  // stay ungraded. HONEST per the no-fake-grading rule.
   return null;
+}
+
+// Per-NBA-leg live grade. Fetches the day's ESPN scoreboard, finds
+// the COMPLETED game the player was in, pulls the box score, looks
+// up the player's stat value, applies direction-aware outcome rule.
+// Returns null when the player didn't play (DNP), the game wasn't
+// completed, or the stat key isn't in our NBA vocabulary.
+async function gradeNbaLegLive(args: {
+  gameDate: Date;
+  playerId: number;
+  playerName: string;
+  statKey: string;
+  direction: 'OVER' | 'UNDER';
+  line: number;
+}): Promise<boolean | null> {
+  try {
+    const isoDate = args.gameDate.toISOString().slice(0, 10);
+    const scoreboard = await fetchScoreboard(isoDate);
+    const finals = scoreboard.games.filter((g) => g.status.completed);
+    if (finals.length === 0) return null;
+
+    // We don't know which game the player was in — walk completed
+    // games until we find them. Each game summary is one HTTP call;
+    // typically <= 10 NBA games per night so this is fine for a
+    // grade-time lookup that only runs once per ticket.
+    for (const g of finals) {
+      const summary = await fetchGameSummary(g.id, 'nba');
+      const allPlayers = [
+        ...summary.away.starters, ...summary.away.bench,
+        ...summary.home.starters, ...summary.home.bench,
+      ];
+      const matchById = allPlayers.find((p) => Number(p.athleteId) === args.playerId);
+      const matchByName = matchById
+        ?? allPlayers.find((p) => p.displayName === args.playerName);
+      if (!matchByName) continue;
+      // Player played in this game (or DNP-ed in it).
+      if (matchByName.didNotPlay || matchByName.minutes === 0) {
+        // DNP — don't fabricate a 0. Tick stays ungraded for now;
+        // human review can override if the player was genuinely out.
+        return null;
+      }
+      const actual = nbaStatValue(matchByName, args.statKey);
+      if (actual === null) return null;
+      return outcomeFromActual(actual, args.line, args.direction);
+    }
+    return null;
+  } catch (err) {
+    console.warn('nba live grade failed', (err as Error).message);
+    return null;
+  }
 }
