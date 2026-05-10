@@ -43,7 +43,11 @@ export type LegLiveVerdict =
   | 'HIT'            // final, hit
   | 'MISS'           // final, miss
   | 'PUSH'           // final, equal to line
-  | 'UNGRADED';      // can't grade (e.g. MMA, no live source)
+  | 'UNGRADED';      // no honest live signal — e.g. unsupported UFC
+                      // stat keys (rd1_*, rounds, fight_time, fantasy_score),
+                      // a missing source feed, or a fighter we can't match
+                      // on the scoreboard. Frontend hides the pill for
+                      // UNGRADED so users never see a fabricated verdict.
 
 export type LegLiveState = {
   playerId: number;

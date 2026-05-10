@@ -1,6 +1,9 @@
-// WNBA routes mounted at /api/wnba. Phase 74 surface area: enough to
-// power the WNBA standings page + nav entry + future scoreboard rail.
-// Compare/slate/calibration land in subsequent phases.
+// WNBA routes mounted at /api/wnba. Phases 74-78 shipped the full
+// WNBA surface area: standings, scoreboard, team list, compare,
+// slate, calibration, game detail. Per the 2026-05-09 sport-
+// priorities decision WNBA is now on maintenance only — these routes
+// stay live but no new WNBA features are scoped (MMA replaced WNBA
+// as the third focus sport).
 
 import { Router } from 'express';
 import {
