@@ -1,14 +1,15 @@
-// Mobile sticky bottom nav — Phase 85, refreshed Phase 148i. Visible
-// only on mobile (≤768px). Five-tap surface that gets users to the
-// platform's institutional surfaces in one tap, plus the live-pulse
-// per-sport signal so users can see which sport is active without
-// drilling in.
+// Mobile sticky bottom nav — Phase 85, refreshed Phase 148i + 148p.
+// Visible only on mobile (≤768px). Six-tap surface that gets users to
+// the platform's institutional surfaces in one tap, plus the live-
+// pulse per-sport signal so users can see which sport is active
+// without drilling in.
 //
 // Item order is value-of-pick-first:
-//   ★ Elite  →  Best Bets  →  ★ Starred  →  NBA  →  MLB
+//   ★ Elite  →  Best Bets  →  ★ Starred  →  NBA  →  MLB  →  UFC
 // Dashboard moved off (still in main NavBar). WNBA dropped per the
-// sport-priorities decision (no new WNBA features). MMA stays in the
-// main NavBar — UFC slate doesn't yet feed live tracking the same way.
+// sport-priorities decision. UFC joined as the third sport tab once
+// iter 44 wired live grading via fightcenter — same live-pulse signal
+// as NBA + MLB now that there's an in-fight verdict to surface.
 
 import { Link, useLocation } from 'react-router-dom';
 import { useEliteLiveTally } from './useEliteLiveTally';
@@ -32,6 +33,7 @@ const ITEMS: MbnItem[] = [
   { label: '★',        path: '/starred',       key: 'starred',   color: '#ffd54f', matchPath: (p) => p === '/starred' },
   { label: 'NBA',      path: '/nba/compare',   key: 'nba',       color: '#7aa2ff' },
   { label: 'MLB',      path: '/mlb/compare',   key: 'mlb',       color: '#66bb6a' },
+  { label: 'UFC',      path: '/mma/scoreboard', key: 'mma',      color: '#ef5350' },
 ];
 
 export function MobileBottomNav() {
@@ -48,6 +50,7 @@ export function MobileBottomNav() {
   function liveDot(key: string): boolean {
     if (key === 'nba') return liveCounts.nba > 0;
     if (key === 'mlb') return liveCounts.mlb > 0;
+    if (key === 'mma') return liveCounts.ufc > 0;
     if (key === 'starred') return starredTally.liveInFlight > 0 || starredTally.hit > 0 || starredTally.miss > 0;
     if (key === 'best-bets') return (liveCounts.nba + liveCounts.mlb + liveCounts.ufc) > 0;
     if (key === 'elite') return eliteTally.inFlight > 0;

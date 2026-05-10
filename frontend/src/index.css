@@ -2680,7 +2680,10 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
     right: 0;
     z-index: 50;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* Six taps: ★ Elite · Bets · ★ Starred · NBA · MLB · UFC.
+       Was repeat(4, 1fr) which silently wrapped the last items
+       onto a second row when ITEMS grew past four. */
+    grid-template-columns: repeat(6, 1fr);
     background: rgba(13, 17, 23, 0.96);
     backdrop-filter: blur(8px);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
