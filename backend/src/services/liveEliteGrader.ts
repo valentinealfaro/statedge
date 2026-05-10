@@ -1,16 +1,26 @@
-// Live per-leg grader — Phase 145.
+// Live per-leg grader — Phase 145, extended through Phase 148o
+// (UFC fightcenter wiring) + iter 86-87 (espnAthleteId thread).
 //
 // Companion to eliteTicketStore.ts. Where eliteTicketStore.gradeOneLeg()
 // only returns a final boolean once a game completes, this service
 // returns IN-FLIGHT state too: the player's current stat value, the
 // game's status (pre/live/final), and a per-leg verdict that can be
 // PENDING / IN_FLIGHT / HIT / MISS / PUSH / ON_PACE_HIT (already
-// locked in for OVER legs) / ON_PACE_MISS (locked out for UNDER legs).
+// locked in for OVER legs) / ON_PACE_MISS (locked out for UNDER
+// legs) / UNGRADED (no honest live signal available).
 //
-// Used by the /api/slate/elite/live-state endpoint so the Elite ticket
-// page can show a real-time scoreboard of "leg 1: 18 / 22.5 PTS · IN
-// FLIGHT", "leg 2: HIT" etc. — making the institutional truth metric
-// visible while games are running, not just retrospectively.
+// Per-sport pipeline:
+//   - NBA: ESPN scoreboard + game summary → per-player live boxscore
+//   - MLB: StatsAPI /feed/live → per-batter/pitcher live boxscore
+//   - UFC: ESPN scoreboard fighter match → fightcenter for live
+//          in-fight stats (sig_strikes / takedowns / knockdowns /
+//          control_time only; other UFC keys honestly UNGRADED).
+//          UFC legs prefer espnAthleteId over playerId for the
+//          scoreboard-id match path (UFC ids are alphanumeric).
+//
+// Used by /api/slate/elite/live-state (today's persisted ticket) +
+// /api/slate/live-grade (generic per-leg grader for slate cards,
+// starred props, Best Bets watchlist, etc.).
 
 import { fetchScoreboard, fetchGameSummary, type EspnPlayerLine } from '../nba/espn.js';
 import { getLiveGameFeed, getSchedule, type MlbLiveBoxscorePlayer } from '../mlb/client.js';
