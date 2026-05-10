@@ -18,6 +18,7 @@ import {
   type UfcMoneylineEvent,
   type UfcScoreboardResponse,
 } from './api';
+import { MmaFighterTonightSlate } from './MmaFighterTonightSlate';
 import { NavBar } from './NavBar';
 import { PlayerNewsSection } from './PlayerNewsSection';
 import { Skeleton } from './Skeleton';
@@ -208,6 +209,14 @@ export function MmaFighter() {
               ))}
             </div>
           </section>
+        )}
+
+        {/* Tonight's UFC slate — self-hides when fighter isn't featured */}
+        {fighter && fighterId && (
+          <MmaFighterTonightSlate
+            fighterId={fighterId}
+            fighterName={fighter.displayName}
+          />
         )}
 
         {fighter && fighterId && (
