@@ -1,11 +1,19 @@
 // /starred — user's personal watchlist of starred props with live state.
-// Phase 148.
+// Phase 148, extended through Phase 148n (notifications lifted to App
+// via GlobalNotifications) + iter 35 (sort selector) + iter 55 (CSV).
 //
-// Local-storage-backed. Polls /api/slate/live-grade every 60s with the
-// list of starred props so the verdict pill ticks for the user's own
-// follow-list — separate from the slate-page top-40 poll, so even
-// off-slate / older starred picks get tracked as long as their game
-// can be graded by the engine.
+// Local-storage-backed (per-uid scoping via userKey, capped at 50).
+// Polls /api/slate/live-grade every 60s with the list of starred props
+// so the verdict pill ticks for the user's own follow-list — separate
+// from the slate-page top-40 poll, so even off-slate / older starred
+// picks get tracked as long as their game can be graded by the engine.
+//
+// Page surface: rollup chip (hit / live / miss / pending), pill-style
+// 4-option sort selector (Newest · Sport · Verdict · Edge), CSV export
+// with snapshot + live state, opt-in button for desktop notifications.
+// Notifications themselves are mounted globally at the App level
+// (GlobalNotifications) so they fire from any page; this page surfaces
+// only the opt-in CTA + permission state for UX.
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
