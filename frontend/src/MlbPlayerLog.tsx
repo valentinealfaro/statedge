@@ -27,6 +27,7 @@ import {
   type MlbStatMeta,
 } from './api';
 import { MlbPlayerAvatar, MlbTeamLogo } from './Avatar';
+import { MlbPlayerTonightSlate } from './MlbPlayerTonightSlate';
 import { NavBar } from './NavBar';
 import { PlayerNewsSection } from './PlayerNewsSection';
 import { PlayerProjectionTrail } from './PlayerProjectionTrail';
@@ -198,6 +199,11 @@ export function MlbPlayerLog() {
 
         {log && (
           <p className="mlb-disclaimer">{(log as { disclaimer?: string }).disclaimer ?? ''}</p>
+        )}
+
+        {/* Tonight's slate — self-hides when this player isn't featured */}
+        {player && Number.isFinite(playerId) && (
+          <MlbPlayerTonightSlate playerId={playerId} />
         )}
 
         {player && (
