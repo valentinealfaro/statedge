@@ -38,12 +38,14 @@ import { WnbaSlate } from './WnbaSlate';
 import { WnbaSlateHistory } from './WnbaSlateHistory';
 import { WnbaStandings } from './WnbaStandings';
 
-// Routes are sport-grouped per the UX spec: /nba/* and /mlb/*. Old
-// flat routes (/compare, /slate, /standings) redirect to the
+// Routes are sport-grouped per the UX spec: /nba/* / /mlb/* / /mma/*.
+// Old flat routes (/compare, /slate, /standings) redirect to the
 // sport-prefixed equivalents so existing bookmarks don't break.
 // "Pages that don't exist yet" are deliberately NOT routed — per the
-// mission's "no fake completeness" rule, /dashboard and /nba/research
-// land when they're real, not as empty placeholders.
+// mission's "no fake completeness" rule. /nba/research is the
+// remaining example: routed when there's a real Research Lab to
+// land on, not as an empty placeholder. (Dashboard shipped under
+// Phase 100 and is routed at /dashboard.)
 export function App() {
   return (
     <BrowserRouter>

@@ -3059,8 +3059,11 @@ export async function getMlbSlatePlayers(): Promise<MlbSlatePlayersResponse> {
 }
 
 // =============================================================
-// WNBA — Phase 74 foundation. Standings + scoreboard + team list.
-// Compare/slate/calibration land in subsequent phases.
+// WNBA — Phases 74-78 shipped: standings, scoreboard, team list,
+// compare, slate, calibration, game detail. Per the 2026-05-09
+// sport-priorities decision WNBA is on maintenance only — these
+// surfaces stay live but no new WNBA features are scoped (MMA
+// replaced WNBA as the third focus sport).
 // =============================================================
 
 export type WnbaTeam = {
