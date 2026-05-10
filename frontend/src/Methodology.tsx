@@ -11,6 +11,7 @@
 
 import { Link } from 'react-router-dom';
 import { BeatRateTrend } from './BeatRateTrend';
+import { EliteHeatmap } from './EliteHeatmap';
 import { EngineStatus } from './EngineStatus';
 import { NavBar } from './NavBar';
 import { useTitle } from './useTitle';
@@ -226,6 +227,11 @@ export function Methodology() {
             blurb="How much does our line move after publish? Stable + Confirmed = market validated. Eroded = market disagreed."
           />
         </div>
+
+        {/* 90-day Elite track-record heatmap. Third visual proof
+            (alongside beat-rate trend + engine status) that we publish
+            receipts. Self-hides until ≥3 graded days exist. */}
+        <EliteHeatmap />
 
         {/* Beat-rate time series — proves the receipt is more than
             a snapshot. Self-hides until graded volume accumulates. */}
