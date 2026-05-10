@@ -5,7 +5,14 @@
 //
 // Sport-agnostic: takes the union of fields available across NBA /
 // MLB / WNBA slate legs, renders only the ones present. Used inside
-// every slate card across all three sports.
+// every NBA / MLB / WNBA slate card.
+//
+// UFC slate uses a compact 3-column PropChip grid (different visual
+// language) and renders rationale + edge inline rather than via this
+// expand panel. Best Bets surfaces UFC rationale through the same
+// 'Why this pick' chevron-expand row that NBA + MLB use, so the
+// 'every leg surfaces reasoning' invariant holds across surfaces
+// even when this specific component isn't the renderer.
 
 import { useState } from 'react';
 
