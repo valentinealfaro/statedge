@@ -147,6 +147,15 @@ export type ProjectionInputs = {
   // (higher variance, hook risk for pitchers, rest/garbage-time risk
   // for hitters). null when odds aren't posted (early in the day).
   gameScript: number | null;
+
+  // Market-implied probability for THIS prop's direction at THIS line
+  // — read from the most-recent market_snapshot for (player, stat,
+  // line). 0-100 scale, direction-aware (i.e. for an OVER prop,
+  // pass the OVER's implied prob; for UNDER, pass UNDER's).
+  // When present, the engine uses this for edge math instead of the
+  // 50% v0 baseline. When null, falls back to 50 — same behavior as
+  // before this field existed, so callers can opt in incrementally.
+  marketImpliedProb: number | null;
 };
 
 // Stat-type risk per the StatEdge MLB spec. Used as a floor on
@@ -1025,7 +1034,14 @@ export function computeMlbProjection(inputs: ProjectionInputs): ProjectionResult
   const trapTier = trapTierFromScore(trapScore);
 
   // ----- Edge -----
-  const impliedBreakEven = 50;     // baseline for v0; spec evolves later
+  // Use the real market-implied probability when the caller has it
+  // (read from market_snapshots at slate-build time). Falls back to
+  // 50% only when the prop has no captured market line — that path
+  // matches the v0 behavior and is structurally honest about the
+  // unknown rather than fabricating a baseline.
+  const impliedBreakEven = inputs.marketImpliedProb !== null
+    ? inputs.marketImpliedProb
+    : 50;
   const edgePercent = round1(probability - impliedBreakEven);
   const edgeScore = clamp(Math.round((edgePercent + 25) * 2), 0, 100);
 
@@ -1441,6 +1457,13 @@ export type ProjectStatArgs = {
   // gives us the lineup but tonight's starting pitcher needs
   // probable-pitchers parsing, which is a follow-up).
   opposingPitcherId?: number;
+  // Market-implied probability for THIS direction at THIS line, 0-100.
+  // When the slate pipeline has a captured market_snapshot for the
+  // prop, it computes the de-vigged implied probability for the
+  // requested side and passes it here so edge math anchors against
+  // real bookmaker conviction instead of the 50/50 v0 baseline.
+  // Optional — engine falls back to 50% when not provided.
+  marketImpliedProb?: number;
 };
 
 export async function projectMlbStat(
@@ -1537,6 +1560,12 @@ export async function projectMlbStat(
     bvp,
     opposingPitcherId: args.opposingPitcherId ?? null,
     gameScript,
+    // marketImpliedProb is wired by the slate pipeline when it has a
+    // captured market_snapshot for this prop. The orchestrator passes
+    // it through args; callers who don't query market_snapshots leave
+    // it null and the engine falls back to the 50% baseline (matches
+    // the v0 behavior so this layer is opt-in incrementally).
+    marketImpliedProb: args.marketImpliedProb ?? null,
   };
 
   const projection = computeMlbProjection(inputs);

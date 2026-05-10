@@ -77,6 +77,7 @@ function inputs(over: Partial<ProjectionInputs> = {}): ProjectionInputs {
     bvp: null,
     opposingPitcherId: null,
     gameScript: null,
+    marketImpliedProb: null,
     ...over,
   };
 }
@@ -743,5 +744,30 @@ describe('computeMlbProjection — weight renormalization', () => {
     expect(r.projection).toBeGreaterThan(0);
     // weights should renormalize across just last10 + last5
     expect(Object.keys(r.weightsUsed)).toContain('last10');
+  });
+});
+
+describe('computeMlbProjection — market-implied edge baseline', () => {
+  // Two projections with identical inputs but different
+  // marketImpliedProb settings — verify edgePercent anchors against
+  // the real market line, not the 50% v0 baseline.
+  test('null marketImpliedProb keeps the 50% baseline (v0 behavior)', () => {
+    const r = computeMlbProjection(inputs({ marketImpliedProb: null }));
+    // edge = probability - 50 (the v0 fallback)
+    expect(r.edgePercent).toBeCloseTo(r.probability - 50, 1);
+  });
+
+  test('marketImpliedProb anchors edge against the real bookmaker line', () => {
+    // Same model, but the book is sitting at 65% implied — edge should
+    // collapse from the v0-inflated number to the real disagreement.
+    const r = computeMlbProjection(inputs({ marketImpliedProb: 65 }));
+    // Probability stays the same; edge is now probability - 65.
+    expect(r.edgePercent).toBeCloseTo(r.probability - 65, 1);
+  });
+
+  test('marketImpliedProb at 50 is identical to the null fallback', () => {
+    const a = computeMlbProjection(inputs({ marketImpliedProb: null }));
+    const b = computeMlbProjection(inputs({ marketImpliedProb: 50 }));
+    expect(b.edgePercent).toBe(a.edgePercent);
   });
 });
