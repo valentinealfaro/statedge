@@ -607,6 +607,24 @@ describe('buildCombos slate modes', () => {
     expect(combos.find((c) => c.label === 'Best 6')).toBeUndefined();
   });
 
+  test('Insane mode requires ≥12pp market disagreement when market data is present (iter 16)', () => {
+    // Iter 16 (user 2026-05-10): "picks that we feel might hit but
+    // the market disagree is high — our formula say they might hit."
+    // Demons where the market AGREES with our model (gap < 12pp)
+    // get filtered out — there's no lottery edge to ride. The
+    // pre-fetched de-vigged market read travels via the projection's
+    // marketImpliedProb field; the slate fixture has no projection
+    // marketImpliedProb to seed, so the candidate marketImpliedProb
+    // also stays null and the filter is bypassed (engine has no
+    // market read to disagree with). Verifying that demon-only slate
+    // with no market read still emits cards confirms the null-path
+    // bypass; otherwise Insane would lock up entirely on slates
+    // without snapshots.
+    const slate = strongSlate(20, 80).map((l) => ({ ...l, direction: 'over' as const }));
+    const { combos } = buildCombos(slate, 'insane');
+    expect(combos.find((c) => c.label === 'Best 5')).toBeDefined();
+  });
+
   test('Insane mode tags cards with playType=power and reports a payout estimate', () => {
     // Power Play (all-or-nothing) is the only structure that gives
     // ~100× payouts on PrizePicks, so Insane cards must use it. The

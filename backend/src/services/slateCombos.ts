@@ -470,28 +470,27 @@ function modeScore(mode: ResolvedSlateMode, c: ComboCandidate): number {
     );
   }
   if (mode === 'insane') {
-    // Insane: real-lottery mode. Iter 11 reshape (user 2026-05-10):
-    // "We need to make this like a real lottery pick — crazy wild
-    // picks not the same ones from the balance tabs." So Insane:
+    // Insane: real-lottery mode. Iter 16 (user 2026-05-10):
+    // "picks that we feel might hit but the market disagree is high
+    // —  our formula say they might hit." Market disagreement is now
+    // the lead signal. The pre-iter-16 weights led with projection
+    // separation, which surfaces demons the model thinks blow out
+    // the line — but if every book agrees with the blow-out call
+    // there's no lottery edge to ride. The lottery exists when the
+    // market thinks unlikely AND we think likely; that gap is the
+    // payout.
     //
-    //  1. is demon-only at the eligibility filter (see pickModeAware),
-    //  2. ranks DIFFERENTLY than Balanced — favors LARGE projection
-    //     separation on the OVER side (the model thinks PP pumped
-    //     the line but the player still clears it big), instead of
-    //     "high probability + small edge" which is what Balanced
-    //     rewards and what produced the 77/74/71/69/68/62 lineup
-    //     the user complained about.
-    //
-    // Demon-under and Goblin-over still get the obviousness penalty
-    // (applied uniformly via `penalty`) — Insane respects the same
-    // rule, it just leans into the upside dimension harder.
+    // Demon-only filter still applies via pickModeAware. Demon-under
+    // and Goblin-over still get the obviousness penalty (applied
+    // uniformly via `penalty`).
     const demonOverEdge = (c.isDemon && c.direction === 'OVER')
-      ? c.projectionDistanceScore * 0.30   // bigger projection gap = bigger upside
+      ? c.projectionDistanceScore * 0.20
       : 0;
     return (
-      c.projectionDistanceScore * 0.50    // separation dominates over probability
-      + c.edgePercent * 0.20
-      + c.edgeScore * 0.10
+      c.marketDisagreementScore * 0.50    // ← market disagreement leads
+      + c.projectionDistanceScore * 0.25  // model conviction (does it really clear?)
+      + c.edgePercent * 0.15
+      + c.edgeScore * 0.05
       - c.risk * 0.05
       + demonOverEdge
       + penalty
@@ -1481,16 +1480,25 @@ function pickModeAware<T extends ComboCandidate>(
       const atVolume = dist < ctx.seasonAvg * 0.10;
       return !atVolume;
     });
-    // Iter 11 (user 2026-05-10): "We need to make this like a real
-    // lottery pick. This needs to be really all demons." Pre-iter-11
-    // Insane recycled the same legs Balanced surfaced — high-prob
-    // standard props that just happen to clear the eligibility floor.
-    // A real lottery card uses Demon-restricted props (over-only,
-    // pumped lines that PrizePicks tagged as harder-to-clear), not
-    // standard or Goblin lines that already have favorite-friendly
-    // pricing. Hard demon-only filter; relax fallback below catches
-    // the case where the slate has fewer than `target` demons.
+    // Iter 11 (user 2026-05-10): demon-only — real lottery picks need
+    // Demon-restricted props (over-only, pumped lines PrizePicks
+    // tagged harder-to-clear), not standard or Goblin lines that
+    // already have favorite-friendly pricing.
     filtered = filtered.filter((c) => c.isDemon);
+    // Iter 16 (user 2026-05-10): market-disagreement is the defining
+    // edge for Insane. User directive: "picks that we feel might hit
+    // but the market disagree is high — our formula say they might
+    // hit." So in addition to demon-only, every Insane candidate must
+    // show ≥12pp gap between our model probability and the de-vigged
+    // sportsbook market read. Without that gap the leg is just a
+    // consensus pick PrizePicks already labeled hard — no lottery
+    // edge to ride. When marketImpliedProb is null (no snapshot for
+    // this leg), we let it through — the engine has no market read
+    // to disagree with, so demon-only must carry the filter alone.
+    filtered = filtered.filter((c) => {
+      if (c.marketImpliedProb === null || c.marketImpliedProb === undefined) return true;
+      return Math.abs(c.probability - c.marketImpliedProb) >= 12;
+    });
   } else if (eff === 'aggressive') {
     filtered = filtered.filter((c) => {
       const ctx = (c as { context?: { seasonAvg: number } }).context;
@@ -1611,22 +1619,19 @@ const SUBTITLES: Record<Combo['label'], string> = {
   'Wild Card': 'Higher Risk · Higher Upside',
 };
 
-// Insane-mode override copy. Lottery-ticket framing: low hit rate,
-// max upside available on PrizePicks. Numbers reference Power Play
-// + Demon-stacked payouts (FAQ weights: 1.05× per Demon).
+// Insane-mode override copy. Iter 16 reshape (user 2026-05-10):
+// Insane = market-disagreement lottery. Picks where our formula
+// says might hit AND the de-vigged market disagrees by ≥12pp.
+// Demon-only stays. Numbers reference Power Play + Demon-stacked
+// payouts (FAQ weights: 1.05× per Demon).
 //   5-leg Power Play, 5 Demons: 20 × 1.05^5 ≈ 25.5×   (5/5 base 20× — VERIFY)
 //   6-leg Power Play, 6 Demons: 14 × 1.05^6 ≈ 18.7×   (6/6 base 14× — VERIFIED May 2026)
-//
-// Pre-iter-10 the 6-leg target was labeled ~50× (33-leg base 37.5× +
-// demon stack). That 37.5× was the contest 1st-place leaderboard
-// prize, not the 6/6 hit payout. Corrected per user-provided May
-// 2026 in-app screenshot: 6/6 standard payout = 14×.
 const INSANE_SUBTITLES: Record<Combo['label'], string> = {
-  'Best 2': 'Lottery · 2-leg Power Play',
-  'Best 3': 'Lottery · 3-leg Power Play',
-  'Best 4': 'Lottery · 4-leg Power Play',
-  'Best 5': 'Lottery · ~25× target with Demon stack',
-  'Best 6': 'Lottery · ~18× target with Demon stack',
+  'Best 2': 'Market disagrees · 2-leg Power Play',
+  'Best 3': 'Market disagrees · 3-leg Power Play',
+  'Best 4': 'Market disagrees · 4-leg Power Play',
+  'Best 5': 'Market disagrees · ~25× target with Demon stack',
+  'Best 6': 'Market disagrees · ~18× target with Demon stack',
   'Wild Card': 'Lottery · maximum-upside fallback',
 };
 
