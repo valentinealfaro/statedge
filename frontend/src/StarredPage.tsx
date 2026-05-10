@@ -127,6 +127,22 @@ export function StarredPage() {
                 <span style={{ flex: 1 }} />
                 <button
                   type="button"
+                  onClick={() => downloadStarredCsv(items, liveByKey)}
+                  title="Export your starred props (with live verdicts) to CSV"
+                  style={{
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                    padding: '4px 10px', borderRadius: 4,
+                    background: 'transparent',
+                    color: '#7aa2ff',
+                    border: '1px solid rgba(122,162,255,0.30)',
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  ⬇ CSV
+                </button>
+                <button
+                  type="button"
                   onClick={() => { if (confirm('Clear all starred props?')) clear(); }}
                   style={{
                     fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
@@ -139,6 +155,28 @@ export function StarredPage() {
                   }}
                 >
                   Clear all
+                </button>
+              </div>
+            )}
+            {/* Even when nothing has resolved yet, expose the export
+                so users can pull a snapshot of their watchlist. */}
+            {items.length > 0 && (tally.hit + tally.live + tally.miss) === 0 && (
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => downloadStarredCsv(items, liveByKey)}
+                  title="Export your starred props to CSV"
+                  style={{
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                    padding: '4px 10px', borderRadius: 4,
+                    background: 'transparent',
+                    color: '#7aa2ff',
+                    border: '1px solid rgba(122,162,255,0.30)',
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  ⬇ CSV
                 </button>
               </div>
             )}
@@ -238,4 +276,57 @@ function StarredRow({ prop, live, onUnstar }: { prop: StarredProp; live: EliteLe
       </button>
     </li>
   );
+}
+
+// Export the user's watchlist to CSV. Includes the snapshot taken at
+// star-time (so users have the original probability/edge/projection
+// even after the slate rolls off) plus the current live verdict and
+// value when known. RFC 4180 escaping. Filename auto-stamps today's
+// date.
+function downloadStarredCsv(
+  items: StarredProp[],
+  liveByKey: Map<string, EliteLegLiveState>,
+): void {
+  if (items.length === 0) return;
+  const cols = [
+    'starred_at', 'sport', 'player', 'team',
+    'stat', 'line', 'direction',
+    'snapshot_probability_pct', 'snapshot_edge_pp', 'snapshot_projection',
+    'live_verdict', 'live_current_value', 'live_game_status',
+  ];
+  const esc = (v: unknown): string => {
+    const s = v === null || v === undefined ? '' : String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const rows = [cols.join(',')];
+  for (const p of items) {
+    const live = liveByKey.get(p.id);
+    rows.push([
+      new Date(p.starredAt).toISOString(),
+      p.sport.toUpperCase(),
+      esc(p.playerName),
+      esc(p.team ?? ''),
+      esc(p.statLabel),
+      p.line,
+      p.direction,
+      p.snapshot.probability.toFixed(2),
+      p.snapshot.edgePercent.toFixed(2),
+      p.snapshot.projection !== null ? p.snapshot.projection.toFixed(2) : '',
+      live?.verdict ?? '',
+      live?.currentValue ?? '',
+      live?.gameStatus ?? '',
+    ].join(','));
+  }
+  const csv = rows.join('\n');
+  const ts = new Date().toISOString().slice(0, 10);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `statedge-starred-${ts}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
