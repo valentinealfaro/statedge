@@ -20,7 +20,74 @@ import {
 } from './mlbProjectionEngine.js';
 import { computeMlbLast10 } from './mlbLast10Engine.js';
 import { statMeta, type MlbStatKey } from '../mlb/stats.js';
-import { getPool } from '../db.js';
+import { getPool, isDbConfigured } from '../db.js';
+
+// ---------- Market-implied prob lookup ----------
+//
+// Iter 3 of the formula loop wires real bookmaker implied probability
+// into the projection engine via market_snapshots. Iter 1 added the
+// optional ProjectionInputs.marketImpliedProb field; iter 2 pivoted
+// to the calibration cap raise. This closes iter 1's loop so the
+// engine actually sees real market data in production.
+//
+// Strategy:
+//   - Look up the most-recent market_snapshot for this MLB player +
+//     stat + line + direction.
+//   - Filter to real sportsbooks. PrizePicks + Underdog are DFS books
+//     that price symmetric flex payouts (their `implied_probability`
+//     is structurally ~50%, not a market read), so we exclude them
+//     and prefer FanDuel / DraftKings / BetMGM / etc.
+//   - Take the latest captured_at within the last 7 days.
+//   - Returns null when no usable snapshot — engine falls back to
+//     50% baseline (same as iter-1's null path), so missing market
+//     data is honest, not pretend-50.
+
+// DFS books — their published probability is a flex-payout artifact,
+// not a real bookmaker line. Exclude from the market-implied lookup.
+const DFS_BOOKMAKERS = new Set(['prizepicks', 'underdog']);
+
+async function fetchLatestMlbMarketImpliedProb(args: {
+  playerId: number;
+  statKey: MlbStatKey;
+  line: number;
+  direction: 'OVER' | 'UNDER';
+}): Promise<number | null> {
+  if (!isDbConfigured()) return null;
+  try {
+    const pool = getPool();
+    // Match direction: snapshot direction stored as 'over'/'under'/'both'.
+    // 'both' rows accept either side, so include them as fallback.
+    const dirLower = args.direction === 'OVER' ? 'over' : 'under';
+    const result = await pool.query<{ implied: string | null }>(
+      `SELECT implied_probability::text AS implied
+         FROM market_snapshots
+        WHERE sport = 'mlb'
+          AND internal_player_id = $1::text
+          AND stat_key = $2
+          AND ABS(line_value - $3::numeric) < 0.01
+          AND (direction = $4 OR direction = 'both')
+          AND COALESCE(bookmaker, '') NOT IN ('prizepicks', 'underdog')
+          AND implied_probability IS NOT NULL
+          AND captured_at >= (NOW() - INTERVAL '7 days')
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+      [String(args.playerId), args.statKey, args.line, dirLower],
+    );
+    const row = result.rows[0];
+    if (!row?.implied) return null;
+    const pct = Number(row.implied);
+    if (!Number.isFinite(pct)) return null;
+    // implied_probability is stored as a 0..1 fraction in market_snapshots.
+    // Convert to 0..100 to match the engine's MarketImpliedProb contract.
+    const asPercent = pct <= 1 ? pct * 100 : pct;
+    // Sanity-clamp to [1, 99] so a freaky stored value can't break edge math.
+    return Math.max(1, Math.min(99, asPercent));
+  } catch {
+    return null;     // DB blip → silent fallback, consistent with iter-1
+  }
+}
+
+void DFS_BOOKMAKERS;       // referenced via inline NOT IN clause above; kept for grep-able doc
 
 // ---------- Inputs ----------
 
@@ -194,6 +261,17 @@ async function resolveOneLine(
       : bookable === 'under' ? 'UNDER'
       : await pickBetterDirection(raw, player.isPitcher);
 
+    // Look up the latest real-bookmaker implied probability for this
+    // exact prop. Best-effort: when no snapshot exists or the DB is
+    // unreachable, falls through to null and the engine uses the v0
+    // 50% baseline (same as before iter 1).
+    const marketImpliedProb = await fetchLatestMlbMarketImpliedProb({
+      playerId: raw.playerId,
+      statKey: raw.statKey,
+      line: raw.line,
+      direction: modelDirection,
+    });
+
     const projection = await projectMlbStat({
       playerId: raw.playerId,
       statKey: raw.statKey,
@@ -203,6 +281,7 @@ async function resolveOneLine(
       isHome: raw.isHome,
       gamePk: raw.gamePk,
       opposingPitcherId: raw.opposingPitcherId,
+      marketImpliedProb: marketImpliedProb ?? undefined,
     });
 
     const last10 = await computeMlbLast10({
