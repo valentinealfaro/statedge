@@ -1918,8 +1918,24 @@ export async function getUfcScoreboard(): Promise<UfcScoreboardResponse> {
   return (await res.json()) as UfcScoreboardResponse;
 }
 
-// Phase 146 — UFC fight detail (ESPN-style fight card with career
-// stats comparison + live status).
+// Phase 146 — UFC fight detail (ESPN-style fight card with bio +
+// this-fight live stats). Career averages aren't in any public
+// ESPN endpoint; we surface live in-fight stats instead, which are
+// actually more useful for a live-tracked product.
+export type UfcFighterLiveStats = {
+  knockdowns: number | null;
+  sigStrikesLanded: number | null;
+  sigStrikesAttempted: number | null;
+  totalStrikesLanded: number | null;
+  totalStrikesAttempted: number | null;
+  headStrikesLanded: number | null;
+  bodyStrikesLanded: number | null;
+  legStrikesLanded: number | null;
+  takedownsLanded: number | null;
+  takedownsAttempted: number | null;
+  submissionAttempts: number | null;
+  timeInControlSec: number | null;
+};
 export type UfcFighterBio = {
   id: string;
   displayName: string;
@@ -1928,15 +1944,13 @@ export type UfcFighterBio = {
   age: number | null;
   reach: string | null;
   stance: string | null;
-  sigStrLpm: number | null;
-  sigStrAcc: number | null;
-  tdAvg: number | null;
-  tdAcc: number | null;
-  subAvg: number | null;
+  weightClass: string | null;
   flag: string | null;
   flagAlt: string | null;
+  country: string | null;
   headshot: string | null;
   record: string | null;
+  liveStats: UfcFighterLiveStats | null;
 };
 export type UfcFightDetailResponse = {
   event: Pick<UfcEvent, 'id' | 'name' | 'shortName' | 'date' | 'state' | 'venue'>;

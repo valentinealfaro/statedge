@@ -161,8 +161,14 @@ function projectFighter(c: Record<string, unknown>): UfcFighter {
   const flag = a['flag'] as Record<string, unknown> | undefined;
   const records = (c['records'] as Array<Record<string, unknown>> | undefined) ?? [];
   const headshot = a['headshot'] as Record<string, unknown> | undefined;
+  // Note: ESPN's MMA scoreboard puts the athlete id on the OUTER
+  // competitor (`c.id`), not on the inner `competitor.athlete` object
+  // (which only carries displayName/shortName/flag). Reading `a.id`
+  // would get undefined. The competitor.id IS the athlete id since
+  // each MMA competitor IS an athlete (type: 'athlete').
+  const competitorId = c['id'];
   return {
-    id: String(a['id'] ?? ''),
+    id: String(competitorId ?? a['id'] ?? ''),
     displayName: String(a['displayName'] ?? ''),
     shortName: String(a['shortName'] ?? ''),
     headshot: typeof headshot?.['href'] === 'string' ? (headshot['href'] as string) : null,
@@ -171,107 +177,182 @@ function projectFighter(c: Record<string, unknown>): UfcFighter {
   };
 }
 
-// ─── Fighter biometrics + career stats ───────────────────────────
+// ─── Fighter bio + this-fight live stats ─────────────────────────
 //
-// ESPN exposes career averages on the athletes endpoint at
-// /sports/mma/ufc/athletes/:id . The shape varies but we project the
-// common fields: height, weight, age, reach, stance + the five UFC
-// "tale of the tape" striking/grappling averages (sig-strikes-landed-
-// per-minute, accuracy, takedown avg, accuracy, submission avg).
-// All fields are optional — UFC bio data isn't always populated for
-// debutants.
+// ESPN's /apis/common/v3/sports/mma/ufc/fightcenter/{eventId}?fightId=
+// endpoint returns the same data the UFC fightcenter web page renders:
+// bio (height/weight/age/reach/stance/headshot/flag/country/weightClass)
+// + per-fighter live in-fight stats (knockdowns, sig strikes, takedowns,
+// head/body/leg strike splits, time in control).
+//
+// Career averages (SIG STR LPM / accuracy / takedown avg / etc.) are
+// NOT exposed on any public ESPN MMA endpoint — they're computed by
+// ESPN's frontend from career fight aggregation. So this engine pivots
+// to live in-fight stats: more useful for a live-tracked product, and
+// they actually exist in the data.
 
 export type UfcFighterBio = {
   id: string;
   displayName: string;
-  height: string | null;        // formatted, e.g. "6' 2""
-  weight: string | null;        // formatted, e.g. "185 lbs"
+  height: string | null;
+  weight: string | null;
   age: number | null;
-  reach: string | null;         // e.g. "75""
-  stance: string | null;        // "Orthodox" | "Southpaw" | "Switch"
-  sigStrLpm: number | null;     // significant strikes landed per minute
-  sigStrAcc: number | null;     // 0..1
-  tdAvg: number | null;         // takedowns per 15 min
-  tdAcc: number | null;         // 0..1
-  subAvg: number | null;        // submission attempts per 15 min
-  flag: string | null;          // country flag URL
-  flagAlt: string | null;       // country full name
+  reach: string | null;
+  stance: string | null;
+  weightClass: string | null;
+  flag: string | null;
+  flagAlt: string | null;
+  country: string | null;
   headshot: string | null;
   record: string | null;
+  // Per-fight live stats — populated when ESPN's competitor.stats
+  // array carries them (during/after the fight). Null pre-fight.
+  liveStats: UfcFighterLiveStats | null;
 };
 
-export async function fetchUfcFighterBio(athleteId: string): Promise<UfcFighterBio | null> {
-  if (!athleteId) return null;
-  const url = `${ESPN}/athletes/${encodeURIComponent(athleteId)}`;
+export type UfcFighterLiveStats = {
+  knockdowns: number | null;
+  sigStrikesLanded: number | null;
+  sigStrikesAttempted: number | null;
+  totalStrikesLanded: number | null;
+  totalStrikesAttempted: number | null;
+  headStrikesLanded: number | null;
+  bodyStrikesLanded: number | null;
+  legStrikesLanded: number | null;
+  takedownsLanded: number | null;
+  takedownsAttempted: number | null;
+  submissionAttempts: number | null;
+  // Time-in-control reported in seconds.
+  timeInControlSec: number | null;
+};
+
+export type UfcFightCenterFighter = {
+  fighter: UfcFighterBio;
+  side: 'red' | 'blue';
+  isWinner: boolean;
+};
+
+export type UfcFightCenterResult = {
+  red: UfcFighterBio | null;
+  blue: UfcFighterBio | null;
+};
+
+export async function fetchUfcFightCenter(
+  eventId: string,
+  fightId: string,
+): Promise<UfcFightCenterResult> {
+  if (!eventId || !fightId) return { red: null, blue: null };
+  const url = `https://site.web.api.espn.com/apis/common/v3/sports/mma/ufc/fightcenter/${encodeURIComponent(eventId)}?fightId=${encodeURIComponent(fightId)}`;
   let json: Record<string, unknown>;
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'StatEdgeBot/1.0' } });
-    if (!res.ok) return null;
+    if (!res.ok) return { red: null, blue: null };
     json = await res.json() as Record<string, unknown>;
   } catch {
-    return null;
+    return { red: null, blue: null };
   }
-  const athlete = json['athlete'] as Record<string, unknown> | undefined;
-  if (!athlete) return null;
 
-  const flag = athlete['flag'] as Record<string, unknown> | undefined;
-  const headshot = athlete['headshot'] as Record<string, unknown> | undefined;
-
-  // Height ("displayHeight"), weight ("displayWeight"), reach
-  // ("displayReach") are pre-formatted strings on ESPN. age + stance
-  // come back as primitives.
-  const height = stringOrNull(athlete['displayHeight']);
-  const weight = stringOrNull(athlete['displayWeight']);
-  const reach = stringOrNull(athlete['displayReach']);
-  const stance = stringOrNull(athlete['stance']);
-  const ageNum = typeof athlete['age'] === 'number' ? athlete['age'] : null;
-
-  // Career striking/grappling averages live under athlete.statistics
-  // (newer ESPN payloads) or athlete.statisticsLog (older). We probe
-  // both. The five fields we care about live under these category keys.
-  const stats = (athlete['statistics'] as Record<string, unknown> | undefined) ?? null;
-  const cat = stats ? (stats['categories'] as Array<Record<string, unknown>> | undefined) : undefined;
-  const flat = new Map<string, number>();
-  if (Array.isArray(cat)) {
-    for (const c of cat) {
-      const arr = (c['stats'] ?? []) as Array<Record<string, unknown>>;
-      for (const s of arr) {
-        const k = String(s['name'] ?? '').toLowerCase();
-        const v = typeof s['value'] === 'number' ? s['value'] : Number(s['value']);
-        if (k && Number.isFinite(v)) flat.set(k, v);
-      }
+  // Walk every card (main / prelims1 / prelims2) → competitions[] until
+  // we find the matching fight id. Each segment is keyed differently
+  // depending on the event so we iterate values.
+  const cards = (json['cards'] ?? {}) as Record<string, unknown>;
+  for (const segName of Object.keys(cards)) {
+    const seg = cards[segName] as Record<string, unknown> | undefined;
+    if (!seg) continue;
+    const comps = (seg['competitions'] ?? []) as Array<Record<string, unknown>>;
+    for (const comp of comps) {
+      if (String(comp['id'] ?? '') !== fightId) continue;
+      const competitors = (comp['competitors'] ?? []) as Array<Record<string, unknown>>;
+      // ESPN doesn't tag corners as red/blue explicitly on MMA; we use
+      // `order` (1 = red, 2 = blue) which is consistent with their UI.
+      const red  = competitors.find((c) => c['order'] === 1) ?? competitors[0];
+      const blue = competitors.find((c) => c['order'] === 2) ?? competitors[1];
+      return {
+        red:  red  ? projectFightCenterCompetitor(red) : null,
+        blue: blue ? projectFightCenterCompetitor(blue) : null,
+      };
     }
   }
+  return { red: null, blue: null };
+}
 
+function projectFightCenterCompetitor(c: Record<string, unknown>): UfcFighterBio {
+  const a = (c['athlete'] ?? {}) as Record<string, unknown>;
+  const flag = a['flag'] as Record<string, unknown> | undefined;
+  const headshot = a['headshot'] as Record<string, unknown> | undefined;
+  const stance = a['stance'] as Record<string, unknown> | undefined;
+  const weightClass = a['weightClass'] as Record<string, unknown> | undefined;
+  const stats = (c['stats'] ?? []) as Array<Record<string, unknown>>;
   return {
-    id: athleteId,
-    displayName: String(athlete['displayName'] ?? ''),
-    height,
-    weight,
-    age: ageNum,
-    reach,
-    stance,
-    sigStrLpm: pickStat(flat, ['sigstrlandedperminute', 'siglandedperminute', 'striking_sigstrlpm']),
-    sigStrAcc: pickStat(flat, ['sigstrikeaccuracy', 'striking_sigaccuracy']),
-    tdAvg: pickStat(flat, ['takedownaverage', 'grappling_tdavg', 'tdavg']),
-    tdAcc: pickStat(flat, ['takedownaccuracy', 'grappling_tdaccuracy']),
-    subAvg: pickStat(flat, ['submissionaverage', 'grappling_subavg', 'subavg']),
+    id: String(a['id'] ?? c['id'] ?? ''),
+    displayName: String(a['displayName'] ?? ''),
+    height: stringOrNull(a['displayHeight']),
+    weight: stringOrNull(a['displayWeight']),
+    age: typeof a['age'] === 'number' ? (a['age'] as number) : null,
+    reach: stringOrNull(a['displayReach']),
+    stance: stringOrNull(stance?.['text']),
+    weightClass: stringOrNull(weightClass?.['text']),
     flag: typeof flag?.['href'] === 'string' ? (flag['href'] as string) : null,
     flagAlt: typeof flag?.['alt'] === 'string' ? (flag['alt'] as string) : null,
+    country: stringOrNull(a['country']),
     headshot: typeof headshot?.['href'] === 'string' ? (headshot['href'] as string) : null,
-    record: stringOrNull(athlete['record']),
+    record: stringOrNull(c['displayRecord']),
+    liveStats: stats.length > 0 ? extractLiveStats(stats) : null,
+  };
+}
+
+function extractLiveStats(stats: Array<Record<string, unknown>>): UfcFighterLiveStats {
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const s of stats) byName.set(String(s['name'] ?? '').toLowerCase(), s);
+
+  // ESPN's combat stats come as "landed/attempted" in displayValue (the
+  // numeric `value` is just landed). Parse the displayValue when we
+  // need both numbers.
+  const split = (key: string): [number | null, number | null] => {
+    const s = byName.get(key.toLowerCase());
+    if (!s) return [null, null];
+    const dv = String(s['displayValue'] ?? '');
+    const slash = dv.indexOf('/');
+    if (slash > 0) {
+      const a = Number(dv.slice(0, slash));
+      const b = Number(dv.slice(slash + 1));
+      return [Number.isFinite(a) ? a : null, Number.isFinite(b) ? b : null];
+    }
+    const v = typeof s['value'] === 'number' ? s['value'] : Number(s['value']);
+    return [Number.isFinite(v) ? v : null, null];
+  };
+
+  const single = (key: string): number | null => {
+    const s = byName.get(key.toLowerCase());
+    if (!s) return null;
+    const v = typeof s['value'] === 'number' ? s['value'] : Number(s['value']);
+    return Number.isFinite(v) ? v : null;
+  };
+
+  const [sigL, sigA] = split('sigStrikes');
+  const [totL, totA] = split('totalStrikes');
+  const [headL] = split('headStrikes');
+  const [bodyL] = split('bodyStrikes');
+  const [legL] = split('legStrikes');
+  const [tdL, tdA] = split('takedowns');
+
+  return {
+    knockdowns: single('knockDowns'),
+    sigStrikesLanded: sigL,
+    sigStrikesAttempted: sigA,
+    totalStrikesLanded: totL,
+    totalStrikesAttempted: totA,
+    headStrikesLanded: headL,
+    bodyStrikesLanded: bodyL,
+    legStrikesLanded: legL,
+    takedownsLanded: tdL,
+    takedownsAttempted: tdA,
+    submissionAttempts: single('submissions'),
+    timeInControlSec: single('timeInControl'),
   };
 }
 
 function stringOrNull(v: unknown): string | null {
   if (typeof v === 'string' && v.trim().length > 0) return v;
-  return null;
-}
-
-function pickStat(flat: Map<string, number>, keys: string[]): number | null {
-  for (const k of keys) {
-    const v = flat.get(k);
-    if (v !== undefined) return v;
-  }
   return null;
 }

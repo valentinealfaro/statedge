@@ -6,7 +6,7 @@
 // big-game cron, add fighter profile pages mirroring NBA/MLB.
 
 import { Router } from 'express';
-import { fetchUfcScoreboard, fetchUfcFighterBio, type UfcEvent, type UfcFight } from '../mma/espn.js';
+import { fetchUfcScoreboard, fetchUfcFightCenter, type UfcEvent, type UfcFight } from '../mma/espn.js';
 import { getUfcMoneylines } from '../mma/odds.js';
 import {
   getLatestMmaDailySlate,
@@ -58,10 +58,9 @@ mmaRouter.get('/fight/:eventId/:fightId', async (req, res) => {
       res.status(404).json({ error: 'fight not found' });
       return;
     }
-    const [redBio, blueBio] = await Promise.all([
-      fight.fighters.red ? fetchUfcFighterBio(fight.fighters.red.id) : Promise.resolve(null),
-      fight.fighters.blue ? fetchUfcFighterBio(fight.fighters.blue.id) : Promise.resolve(null),
-    ]);
+    // One fightcenter call returns BOTH fighters' bio + this-fight
+    // live stats. Replaces the earlier per-athlete fan-out.
+    const fc = await fetchUfcFightCenter(eventId, fightId);
     res.setHeader('Cache-Control', 'public, max-age=30');
     res.json({
       event: {
@@ -73,7 +72,7 @@ mmaRouter.get('/fight/:eventId/:fightId', async (req, res) => {
         venue: event.venue,
       },
       fight,
-      bios: { red: redBio, blue: blueBio },
+      bios: { red: fc.red, blue: fc.blue },
     });
   } catch (err) {
     console.error('mma/fight detail failed', err);

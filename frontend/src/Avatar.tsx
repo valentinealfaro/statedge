@@ -212,11 +212,16 @@ type UfcFighterAvatarProps = {
   athleteId: string | number;
   name: string;
   size?: 'sm' | 'md' | 'lg';
+  // Override the default ESPN headshot URL — used when the parent
+  // already has a known-good URL from a richer endpoint (e.g.
+  // fightcenter) rather than the conventional id-based pattern.
+  headshotOverride?: string | null;
 };
 
-export function UfcFighterAvatar({ athleteId, name, size = 'md' }: UfcFighterAvatarProps) {
+export function UfcFighterAvatar({ athleteId, name, size = 'md', headshotOverride }: UfcFighterAvatarProps) {
   const [failed, setFailed] = useState(false);
-  if (!athleteId || failed) {
+  const src = headshotOverride || (athleteId ? ufcFighterHeadshotUrl(athleteId) : null);
+  if (!src || failed) {
     return (
       <div className={`avatar avatar-fallback ${size}`} aria-label={name}>
         {initials(name)}
@@ -226,7 +231,7 @@ export function UfcFighterAvatar({ athleteId, name, size = 'md' }: UfcFighterAva
   return (
     <img
       className={`avatar player ${size}`}
-      src={ufcFighterHeadshotUrl(athleteId)}
+      src={src}
       alt={name}
       onError={() => setFailed(true)}
       loading="lazy"

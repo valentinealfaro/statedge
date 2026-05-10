@@ -242,63 +242,102 @@ export function MmaFightDetail() {
             <CountryStrip bio={bios.blue} fallback={fight.fighters.blue?.flag ?? null} side="right" />
           </div>
 
-          {/* Tale-of-the-tape stat comparison table */}
-          <div style={{ padding: '14px 0' }}>
+          {/* Bio comparison table — always shown */}
+          <div style={{ padding: '14px 0 4px' }}>
             <StatRow label="Height" leftRaw={bios.red?.height ?? null} rightRaw={bios.blue?.height ?? null} />
             <StatRow label="Weight" leftRaw={bios.red?.weight ?? null} rightRaw={bios.blue?.weight ?? null} />
             <StatRow label="Age" leftRaw={bios.red?.age?.toString() ?? null} rightRaw={bios.blue?.age?.toString() ?? null} />
             <StatRow label="Reach" leftRaw={bios.red?.reach ?? null} rightRaw={bios.blue?.reach ?? null} />
             <StatRow label="Stance" leftRaw={bios.red?.stance ?? null} rightRaw={bios.blue?.stance ?? null} />
-            <StatRow
-              label="Sig Str LPM"
-              leftRaw={bios.red?.sigStrLpm != null ? bios.red.sigStrLpm.toFixed(2) : null}
-              rightRaw={bios.blue?.sigStrLpm != null ? bios.blue.sigStrLpm.toFixed(2) : null}
-              compareNumeric={{ left: bios.red?.sigStrLpm ?? null, right: bios.blue?.sigStrLpm ?? null }}
-            />
-            <StatRow
-              label="Sig Str Acc"
-              leftRaw={bios.red?.sigStrAcc != null ? formatPct(bios.red.sigStrAcc) : null}
-              rightRaw={bios.blue?.sigStrAcc != null ? formatPct(bios.blue.sigStrAcc) : null}
-              compareNumeric={{ left: bios.red?.sigStrAcc ?? null, right: bios.blue?.sigStrAcc ?? null }}
-            />
-            <StatRow
-              label="TD Avg"
-              leftRaw={bios.red?.tdAvg != null ? bios.red.tdAvg.toFixed(2) : null}
-              rightRaw={bios.blue?.tdAvg != null ? bios.blue.tdAvg.toFixed(2) : null}
-              compareNumeric={{ left: bios.red?.tdAvg ?? null, right: bios.blue?.tdAvg ?? null }}
-            />
-            <StatRow
-              label="TD Acc"
-              leftRaw={bios.red?.tdAcc != null ? formatPct(bios.red.tdAcc) : null}
-              rightRaw={bios.blue?.tdAcc != null ? formatPct(bios.blue.tdAcc) : null}
-              compareNumeric={{ left: bios.red?.tdAcc ?? null, right: bios.blue?.tdAcc ?? null }}
-            />
-            <StatRow
-              label="Sub Avg"
-              leftRaw={bios.red?.subAvg != null ? bios.red.subAvg.toFixed(2) : null}
-              rightRaw={bios.blue?.subAvg != null ? bios.blue.subAvg.toFixed(2) : null}
-              compareNumeric={{ left: bios.red?.subAvg ?? null, right: bios.blue?.subAvg ?? null }}
-            />
           </div>
 
-          {/* Full Profile links */}
+          {/* This-fight live stats — only when fight has progressed */}
+          {(bios.red?.liveStats || bios.blue?.liveStats) && (
+            <>
+              <div style={{
+                padding: '10px 16px',
+                borderTop: '1px solid var(--border-subtle)',
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.10em',
+                textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)',
+                background: 'rgba(0,0,0,0.20)',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                {(isLive || isFinal) && (
+                  <span className="live-pulse" style={{
+                    display: 'inline-block', width: 6, height: 6, borderRadius: 3,
+                    background: isLive ? '#ef5350' : '#66bb6a',
+                  }} />
+                )}
+                {isFinal ? 'Final fight stats' : isLive ? 'Live fight stats' : 'Fight stats'}
+              </div>
+              <div style={{ padding: '6px 0 14px' }}>
+                <StatRow
+                  label="Knockdowns"
+                  leftRaw={liveCount(bios.red?.liveStats?.knockdowns)}
+                  rightRaw={liveCount(bios.blue?.liveStats?.knockdowns)}
+                  compareNumeric={{ left: bios.red?.liveStats?.knockdowns ?? null, right: bios.blue?.liveStats?.knockdowns ?? null }}
+                />
+                <StatRow
+                  label="Sig strikes"
+                  leftRaw={liveLandedAttempted(bios.red?.liveStats?.sigStrikesLanded, bios.red?.liveStats?.sigStrikesAttempted)}
+                  rightRaw={liveLandedAttempted(bios.blue?.liveStats?.sigStrikesLanded, bios.blue?.liveStats?.sigStrikesAttempted)}
+                  compareNumeric={{ left: bios.red?.liveStats?.sigStrikesLanded ?? null, right: bios.blue?.liveStats?.sigStrikesLanded ?? null }}
+                />
+                <StatRow
+                  label="Total strikes"
+                  leftRaw={liveLandedAttempted(bios.red?.liveStats?.totalStrikesLanded, bios.red?.liveStats?.totalStrikesAttempted)}
+                  rightRaw={liveLandedAttempted(bios.blue?.liveStats?.totalStrikesLanded, bios.blue?.liveStats?.totalStrikesAttempted)}
+                  compareNumeric={{ left: bios.red?.liveStats?.totalStrikesLanded ?? null, right: bios.blue?.liveStats?.totalStrikesLanded ?? null }}
+                />
+                <StatRow
+                  label="Head / Body / Leg"
+                  leftRaw={liveStrikeSplit(bios.red?.liveStats)}
+                  rightRaw={liveStrikeSplit(bios.blue?.liveStats)}
+                />
+                <StatRow
+                  label="Takedowns"
+                  leftRaw={liveLandedAttempted(bios.red?.liveStats?.takedownsLanded, bios.red?.liveStats?.takedownsAttempted)}
+                  rightRaw={liveLandedAttempted(bios.blue?.liveStats?.takedownsLanded, bios.blue?.liveStats?.takedownsAttempted)}
+                  compareNumeric={{ left: bios.red?.liveStats?.takedownsLanded ?? null, right: bios.blue?.liveStats?.takedownsLanded ?? null }}
+                />
+                <StatRow
+                  label="Submission att"
+                  leftRaw={liveCount(bios.red?.liveStats?.submissionAttempts)}
+                  rightRaw={liveCount(bios.blue?.liveStats?.submissionAttempts)}
+                  compareNumeric={{ left: bios.red?.liveStats?.submissionAttempts ?? null, right: bios.blue?.liveStats?.submissionAttempts ?? null }}
+                />
+                <StatRow
+                  label="Time in control"
+                  leftRaw={liveTime(bios.red?.liveStats?.timeInControlSec)}
+                  rightRaw={liveTime(bios.blue?.liveStats?.timeInControlSec)}
+                  compareNumeric={{ left: bios.red?.liveStats?.timeInControlSec ?? null, right: bios.blue?.liveStats?.timeInControlSec ?? null }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Full Profile links — defend against empty IDs. The
+              fightcenter response carries the canonical numeric ids
+              (which we prefer); the scoreboard ids are populated as a
+              fallback by the patched projector. If both are empty we
+              render nothing rather than a broken link. */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             padding: '0 20px 16px',
             gap: 16,
           }}>
-            {fight.fighters.red && (
+            {(bios.red?.id || fight.fighters.red?.id) && (
               <Link
-                to={`/mma/fighter/${fight.fighters.red.id}`}
+                to={`/mma/fighter/${bios.red?.id || fight.fighters.red?.id}`}
                 style={{ fontSize: 12, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none', textAlign: 'left' }}
               >
                 Full Profile →
               </Link>
             )}
-            {fight.fighters.blue && (
+            {(bios.blue?.id || fight.fighters.blue?.id) && (
               <Link
-                to={`/mma/fighter/${fight.fighters.blue.id}`}
+                to={`/mma/fighter/${bios.blue?.id || fight.fighters.blue?.id}`}
                 style={{ fontSize: 12, fontWeight: 700, color: '#7aa2ff', textDecoration: 'none', textAlign: 'right' }}
               >
                 Full Profile →
@@ -351,7 +390,7 @@ function FighterHeader({
   bio: UfcFighterBio | null;
   side: 'left' | 'right';
 }) {
-  if (!fighter) {
+  if (!fighter && !bio) {
     return (
       <div style={{ textAlign: side === 'left' ? 'left' : 'right' }}>
         <span style={{ color: 'rgba(255,255,255,0.45)' }}>TBD</span>
@@ -359,6 +398,27 @@ function FighterHeader({
     );
   }
   const align = side === 'left' ? 'flex-start' : 'flex-end';
+  // Prefer the fightcenter bio for both id (numeric) and headshot (it
+  // has both reliably). Fall back to scoreboard fighter if bio missing.
+  const id = bio?.id || fighter?.id || '';
+  const displayName = bio?.displayName || fighter?.displayName || 'TBD';
+  const record = bio?.record ?? fighter?.record ?? null;
+  const headshotOverride = bio?.headshot ?? fighter?.headshot ?? null;
+  const profileHref = id ? `/mma/fighter/${id}` : null;
+
+  const NameWrap = profileHref
+    ? ({ children }: { children: React.ReactNode }) => (
+        <Link to={profileHref} style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}>
+          {children}
+        </Link>
+      )
+    : ({ children }: { children: React.ReactNode }) => <>{children}</>;
+  const AvatarWrap = profileHref
+    ? ({ children }: { children: React.ReactNode }) => (
+        <Link to={profileHref} style={{ flexShrink: 0, lineHeight: 0 }}>{children}</Link>
+      )
+    : ({ children }: { children: React.ReactNode }) => <span style={{ flexShrink: 0, lineHeight: 0 }}>{children}</span>;
+
   return (
     <div style={{
       display: 'flex',
@@ -367,30 +427,34 @@ function FighterHeader({
       gap: 14,
       justifyContent: align,
     }}>
-      <Link to={`/mma/fighter/${fighter.id}`} style={{ flexShrink: 0 }}>
-        <UfcFighterAvatar athleteId={fighter.id} name={fighter.displayName} size="lg" />
-      </Link>
+      <AvatarWrap>
+        <UfcFighterAvatar
+          athleteId={id}
+          name={displayName}
+          size="lg"
+          headshotOverride={headshotOverride}
+        />
+      </AvatarWrap>
       <div style={{
         textAlign: side === 'left' ? 'left' : 'right',
         minWidth: 0,
       }}>
-        <Link
-          to={`/mma/fighter/${fighter.id}`}
-          style={{
+        <NameWrap>
+          <span style={{
             display: 'block',
             fontSize: 18, fontWeight: 900,
-            color: 'var(--text-1)', textDecoration: 'none',
+            color: 'var(--text-1)',
             letterSpacing: '-0.3px',
-          }}
-        >
-          {fighter.displayName}
-        </Link>
+          }}>
+            {displayName}
+          </span>
+        </NameWrap>
         <div className="muted small" style={{
           marginTop: 4, fontSize: 12,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           color: 'rgba(255,255,255,0.6)',
         }}>
-          {bio?.record ?? fighter.record ?? '—'}
+          {record ?? '—'}
         </div>
       </div>
     </div>
@@ -497,11 +561,33 @@ function StatRow({
   );
 }
 
-function formatPct(v: number): string {
-  // ESPN reports percentages as 0-100 sometimes, 0-1 other times.
-  // Normalize: if < 1.5, treat as fraction.
-  const pct = v <= 1.5 ? v * 100 : v;
-  return `${pct.toFixed(2)}%`;
+// Live-stat formatters — return em-dash for null so StatRow renders
+// the muted placeholder consistently.
+function liveCount(v: number | null | undefined): string | null {
+  return v == null ? null : String(v);
+}
+function liveLandedAttempted(landed: number | null | undefined, attempted: number | null | undefined): string | null {
+  if (landed == null && attempted == null) return null;
+  if (landed != null && attempted != null && attempted > 0) {
+    const pct = Math.round((landed / attempted) * 100);
+    return `${landed}/${attempted} (${pct}%)`;
+  }
+  if (landed != null) return String(landed);
+  return null;
+}
+function liveStrikeSplit(s: { headStrikesLanded: number | null; bodyStrikesLanded: number | null; legStrikesLanded: number | null } | null | undefined): string | null {
+  if (!s) return null;
+  if (s.headStrikesLanded == null && s.bodyStrikesLanded == null && s.legStrikesLanded == null) return null;
+  const h = s.headStrikesLanded ?? 0;
+  const b = s.bodyStrikesLanded ?? 0;
+  const l = s.legStrikesLanded ?? 0;
+  return `${h} / ${b} / ${l}`;
+}
+function liveTime(sec: number | null | undefined): string | null {
+  if (sec == null) return null;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function winnerName(winnerId: string, red: UfcFighter | null, blue: UfcFighter | null): string {
