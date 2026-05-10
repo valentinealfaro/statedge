@@ -14,6 +14,7 @@
 
 import { fetchScoreboard, fetchGameSummary, type EspnPlayerLine } from '../nba/espn.js';
 import { getLiveGameFeed, getSchedule, type MlbLiveBoxscorePlayer } from '../mlb/client.js';
+import { fetchUfcScoreboard, fetchUfcFightCenter } from '../mma/espn.js';
 
 const MLB_STAT_KEYS = new Set([
   'home_runs', 'total_bases', 'rbis', 'runs', 'hits', 'hits_runs_rbis',
@@ -283,6 +284,121 @@ function mlbStatValue(p: MlbLiveBoxscorePlayer, statKey: string): number | null 
   }
 }
 
+// MMA live grader — Phase 148o.
+//
+// Walks today's UFC scoreboard, finds the event + fight that contains
+// the fighter (by athlete id when present, else display-name match),
+// fetches the fightcenter for live in-fight stats, then maps the
+// statKey to the appropriate stat field. Stats supported:
+//   - sig_strikes     → competitor.stats.sigStrikesLanded
+//   - takedowns       → competitor.stats.takedownsLanded
+//   - knockdowns      → competitor.stats.knockdowns
+//   - control_time    → competitor.stats.timeInControlSec
+// Other UFC stat keys (rd1_*, rounds, fight_time, fantasy_score) need
+// either round-by-round data or live fight clock — left UNGRADED for
+// honesty.
+async function gradeMmaLegLive(leg: LegInput, _gameDate: string): Promise<LegLiveState> {
+  const fallback: LegLiveState = {
+    playerId: leg.playerId,
+    playerName: leg.playerName,
+    statKey: leg.statKey,
+    direction: leg.direction,
+    line: leg.line,
+    currentValue: null,
+    gameStatus: 'unknown',
+    verdict: 'UNGRADED',
+  };
+  // Stat keys we can grade from this-fight live data.
+  const supported = new Set(['sig_strikes', 'takedowns', 'knockdowns', 'control_time']);
+  if (!supported.has(leg.statKey)) {
+    return fallback;     // honest UNGRADED for unsupported stat keys
+  }
+
+  try {
+    const events = await fetchUfcScoreboard().catch(() => []);
+    if (!events || events.length === 0) return fallback;
+
+    const playerIdStr = String(leg.playerId);
+    const targetName = mmaNorm(leg.playerName);
+
+    // Find the event + fight + corner containing this fighter. Prefer
+    // numeric id match; fall back to normalized display-name match
+    // (which mirrors how /elite cross-sport pairs fighters).
+    type Hit = { eventId: string; fightId: string; eventState: 'pre' | 'in' | 'post'; fightState: 'pre' | 'in' | 'post' };
+    let hit: Hit | null = null;
+    for (const ev of events) {
+      for (const f of ev.fights) {
+        for (const corner of [f.fighters.red, f.fighters.blue]) {
+          if (!corner) continue;
+          const idMatch = corner.id && corner.id === playerIdStr;
+          const nameMatch = !idMatch && mmaNorm(corner.displayName) === targetName;
+          if (idMatch || nameMatch) {
+            hit = { eventId: ev.id, fightId: f.id, eventState: ev.state, fightState: f.state };
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (hit) break;
+    }
+    if (!hit) return fallback;
+
+    const status: LegLiveState['gameStatus'] =
+      hit.fightState === 'post' ? 'final'
+      : hit.fightState === 'in' ? 'live'
+      : hit.fightState === 'pre' ? 'pre'
+      : 'unknown';
+
+    if (status === 'pre') {
+      return { ...fallback, gameStatus: 'pre', verdict: 'PENDING' };
+    }
+
+    // Pull this-fight stats.
+    const fc = await fetchUfcFightCenter(hit.eventId, hit.fightId);
+    const me = fc.red?.id === playerIdStr || mmaNorm(fc.red?.displayName ?? '') === targetName
+      ? fc.red
+      : fc.blue?.id === playerIdStr || mmaNorm(fc.blue?.displayName ?? '') === targetName
+      ? fc.blue
+      : null;
+    if (!me?.liveStats) {
+      return { ...fallback, gameStatus: status };
+    }
+    const stats = me.liveStats;
+    let cur: number | null = null;
+    switch (leg.statKey) {
+      case 'sig_strikes': cur = stats.sigStrikesLanded; break;
+      case 'takedowns':   cur = stats.takedownsLanded; break;
+      case 'knockdowns':  cur = stats.knockdowns; break;
+      case 'control_time': cur = stats.timeInControlSec; break;
+    }
+    if (cur === null) {
+      return { ...fallback, gameStatus: status };
+    }
+    return {
+      ...fallback,
+      currentValue: cur,
+      gameStatus: status,
+      verdict: verdictForLive(cur, leg.line, leg.direction, status === 'final'),
+    };
+  } catch (err) {
+    console.warn('mma live grade failed', (err as Error).message);
+    return fallback;
+  }
+}
+
+// Diacritic + punctuation strip for fighter-name matching. Mirrors the
+// fighterNorm() used in the /elite cross-sport route so UFC slate
+// names (admin-pasted) line up with ESPN scoreboard display names.
+function mmaNorm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // strip diacritics
+    .replace(/\./g, '')                // "C. Carpenter" → "c carpenter"
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Public entry point. Grades every leg in parallel; failures yield a
 // PENDING / UNGRADED fallback per-leg rather than failing the whole
 // request. Caller passes the game date (YYYY-MM-DD ET) so the response
@@ -296,17 +412,9 @@ export async function liveGradeElite(
       const sport = legSport(leg.statKey);
       if (sport === 'nba') return gradeNbaLegLive(leg, gameDate);
       if (sport === 'mlb') return gradeMlbLegLive(leg, gameDate);
-      // MMA — no live per-fight stat ingestion. Stays UNGRADED.
-      return {
-        playerId: leg.playerId,
-        playerName: leg.playerName,
-        statKey: leg.statKey,
-        direction: leg.direction,
-        line: leg.line,
-        currentValue: null,
-        gameStatus: 'unknown' as const,
-        verdict: 'UNGRADED' as const,
-      };
+      // MMA — supported stat keys grade against fightcenter live stats;
+      // unsupported ones (rounds, fantasy_score, etc.) stay UNGRADED.
+      return gradeMmaLegLive(leg, gameDate);
     }),
   );
 }
