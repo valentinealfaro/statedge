@@ -1539,6 +1539,31 @@ function WildCardCard({
                 )}
               </div>
               <div className="best-pick-wild-evidence">{l.wildCardReason}</div>
+              {/* Free-tier engine reasoning — matches the NBA LineCard
+                  block. Rendered above the Pro WhyPickPanel so users
+                  on either plan see the audit trail. */}
+              {l.reasonCodes && l.reasonCodes.length > 0 && (
+                <div style={{
+                  margin: '8px 16px 0',
+                  padding: '8px 10px',
+                  background: 'rgba(102,187,106,0.06)',
+                  border: '1px solid rgba(102,187,106,0.18)',
+                  borderLeft: '2px solid rgba(102,187,106,0.45)',
+                  borderRadius: 'var(--radius-sm)',
+                }}>
+                  <div style={{
+                    fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                    textTransform: 'uppercase', color: '#66bb6a', marginBottom: 4,
+                  }}>
+                    Why this pick
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 14, fontSize: 11, lineHeight: 1.5, color: 'rgba(255,255,255,0.78)' }}>
+                    {l.reasonCodes.slice(0, 3).map((n, i) => (
+                      <li key={i} style={{ marginBottom: 1 }}>{n}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <WhyPickPanel
                 sportColor="#66bb6a"
                 leg={{
@@ -1842,6 +1867,31 @@ function ComboCard({
                   </span>
                 )}
               </div>
+              {/* Free-tier engine reasoning — matches the NBA LineCard
+                  block. Rendered above the Pro WhyPickPanel so users
+                  on either plan see the audit trail. */}
+              {l.reasonCodes && l.reasonCodes.length > 0 && (
+                <div style={{
+                  margin: '8px 16px 0',
+                  padding: '8px 10px',
+                  background: 'rgba(102,187,106,0.06)',
+                  border: '1px solid rgba(102,187,106,0.18)',
+                  borderLeft: '2px solid rgba(102,187,106,0.45)',
+                  borderRadius: 'var(--radius-sm)',
+                }}>
+                  <div style={{
+                    fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                    textTransform: 'uppercase', color: '#66bb6a', marginBottom: 4,
+                  }}>
+                    Why this pick
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 14, fontSize: 11, lineHeight: 1.5, color: 'rgba(255,255,255,0.78)' }}>
+                    {l.reasonCodes.slice(0, 3).map((n, i) => (
+                      <li key={i} style={{ marginBottom: 1 }}>{n}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <WhyPickPanel
                 sportColor="#66bb6a"
                 leg={{
