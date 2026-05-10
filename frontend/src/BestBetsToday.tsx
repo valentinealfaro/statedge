@@ -317,6 +317,24 @@ export function BestBetsToday() {
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
             {sorted.length} {sorted.length === 1 ? 'pick' : 'picks'} · top 50 live-tracked
           </span>
+          <button
+            type="button"
+            onClick={() => downloadCsv(sorted)}
+            disabled={sorted.length === 0}
+            title="Export the current filtered + sorted view to CSV"
+            style={{
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+              padding: '5px 10px', borderRadius: 4,
+              background: 'transparent',
+              color: '#7aa2ff',
+              border: '1px solid rgba(122,162,255,0.30)',
+              cursor: sorted.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: sorted.length === 0 ? 0.5 : 1,
+              textTransform: 'uppercase',
+            }}
+          >
+            ⬇ CSV
+          </button>
         </div>
 
         {isLoading && (
@@ -387,6 +405,54 @@ export function BestBetsToday() {
 
 function makeKey(b: { playerId: number; statKey: string; line: number; direction: 'OVER' | 'UNDER' }): string {
   return `${b.playerId}-${b.statKey}-${b.line}-${b.direction}`;
+}
+
+// Export the current filtered + sorted bets as a CSV download.
+// Institutional users move this kind of data through spreadsheets;
+// shipping a one-click export is cheap and high-value. CSV-quotes
+// fields that contain commas/quotes/newlines per RFC 4180.
+function downloadCsv(bets: UnifiedBet[]): void {
+  if (bets.length === 0) return;
+  const cols = [
+    'rank', 'sport', 'player', 'team',
+    'stat', 'line', 'direction',
+    'probability_pct', 'edge_pp', 'ev_pct',
+    'projection_mu', 'projection_low', 'projection_high',
+  ];
+  const esc = (v: unknown): string => {
+    const s = v === null || v === undefined ? '' : String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const rows = [cols.join(',')];
+  bets.forEach((b, i) => {
+    rows.push([
+      i + 1,
+      b.sport.toUpperCase(),
+      esc(b.playerName),
+      esc(b.team ?? ''),
+      esc(b.statLabel),
+      b.line,
+      b.direction,
+      b.probability.toFixed(2),
+      b.edgePercent.toFixed(2),
+      (b.ev * 100).toFixed(2),
+      b.projection !== null ? b.projection.toFixed(2) : '',
+      b.rangeLow !== null ? b.rangeLow.toFixed(2) : '',
+      b.rangeHigh !== null ? b.rangeHigh.toFixed(2) : '',
+    ].join(','));
+  });
+  const csv = rows.join('\n');
+  const ts = new Date().toISOString().slice(0, 10);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `statedge-best-bets-${ts}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function BetRow({ bet, rank, live, expanded, onToggleExpand }: {
