@@ -4428,12 +4428,17 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   gap: 12px;
 }
 
+/* Iter 19: slate-card (per-prop tile in the main grid) leveled up.
+   Bigger radius matching the parlay cards, real rest-state shadow,
+   softer hover that previews the brand glow without screaming. The
+   in-parlay state stays a strong green to telegraph "this is on
+   your card right now". */
 .slate-card {
   position: relative;
   background: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%), var(--surface-1);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 2px 8px rgba(0,0,0,0.18);
   transition: border-color var(--motion-medium), background var(--motion-medium), transform var(--motion-medium), box-shadow var(--motion-medium);
 }
 .slate-card::before {
@@ -4441,26 +4446,29 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   pointer-events: none;
 }
 .slate-card:hover {
-  border-color: var(--brand-blue);
-  background: linear-gradient(180deg, rgba(91,141,239,0.05) 0%, rgba(91,141,239,0) 60%), var(--surface-2);
+  border-color: rgba(91,141,239,0.45);
+  background: linear-gradient(180deg, rgba(91,141,239,0.06) 0%, rgba(91,141,239,0) 60%), var(--surface-2);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-elevated);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 10px 28px rgba(0,0,0,0.32),
+    0 0 0 1px rgba(91, 141, 239, 0.18);
 }
 .slate-card.in-parlay {
   border-color: var(--hot);
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.06) inset,
-    0 0 0 1px rgba(110,231,164,0.30),
-    0 8px 22px rgba(110,231,164,0.16),
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 0 0 1px rgba(110,231,164,0.35),
+    0 10px 28px rgba(110,231,164,0.20),
     0 2px 6px rgba(0,0,0,0.30);
 }
 .slate-card.in-parlay::before {
-  background: linear-gradient(90deg, transparent, rgba(110,231,164,0.50), transparent);
+  background: linear-gradient(90deg, transparent, rgba(110,231,164,0.55), transparent);
 }
 .slate-card-body {
   display: flex;
@@ -4625,28 +4633,34 @@ tr.by-opp-row.clickable:hover { background: #1a1f2b; }
 }
 .slate-card-meta .avatar { width: 18px; height: 18px; padding: 1px; }
 
+/* Iter 19: the line number is the primary read on each slate tile.
+   Bumped to 36px with a softer brand gradient and a subtle shadow
+   ring. Stat label below it tightened with crisper letter spacing
+   so it reads as a deliberate caption, not chrome. */
 .slate-line {
-  margin: 10px 0 8px;
+  margin: 12px 0 10px;
   text-align: center;
 }
 .slate-line-num {
   display: block;
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: -1px;
   background: linear-gradient(135deg, #5b8def 0%, #6ee7a4 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   line-height: 1;
+  text-shadow: 0 0 24px rgba(91, 141, 239, 0.18);
 }
 .slate-line-stat {
   display: block;
-  font-size: 11px;
-  color: #8a93a6;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 2px;
+  letter-spacing: 0.08em;
+  margin-top: 6px;
 }
 
 .slate-badge {
