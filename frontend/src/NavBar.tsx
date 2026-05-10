@@ -261,7 +261,7 @@ export function NavBar() {
       {/* Subnav — visible only inside a sport. Mirrors NBA <-> MLB
           structure for muscle-memory consistency. */}
       {sport && subnav.length > 0 && (
-        <nav className={`subnav subnav-${sport}`} aria-label={`${sport.toUpperCase()} sections`}>
+        <nav className={`subnav subnav-${sport}`} aria-label={`${sport === 'mma' ? 'UFC' : sport.toUpperCase()} sections`}>
           {subnav.map((item) => (
             <Link
               key={item.path}

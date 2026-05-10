@@ -148,7 +148,11 @@ export function EnginePulseStrip() {
             color: SPORT_COLOR[latest.sport] ?? '#cccccc',
             textTransform: 'uppercase', whiteSpace: 'nowrap',
           }}>
-            {KIND_LABEL[latest.kind] ?? latest.kind} · {latest.sport === 'cross' ? 'XS' : latest.sport.toUpperCase()}
+            {KIND_LABEL[latest.kind] ?? latest.kind} · {
+              latest.sport === 'cross' ? 'XS'
+              : latest.sport === 'mma' ? 'UFC'
+              : latest.sport.toUpperCase()
+            }
           </span>
           <span style={{
             fontSize: 12, fontWeight: 600,

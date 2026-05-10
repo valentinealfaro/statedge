@@ -748,7 +748,7 @@ function LegCard({ leg, index, live }: { leg: EliteLeg; index: number; live: Eli
                 fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
                 color: sportColor, marginRight: 6,
               }}>
-                {sport.toUpperCase()}
+                {sport === 'mma' ? 'UFC' : sport.toUpperCase()}
               </span>
               <span style={{ fontSize: 14, fontWeight: 800 }}>
                 {leg.playerName}

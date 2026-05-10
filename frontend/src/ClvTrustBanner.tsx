@@ -56,11 +56,14 @@ export function ClvTrustBanner({ sport }: Props = {}) {
   if (!hasAny) return null;
 
   const seasonAboveBar = wSn.beatRate !== null && wSn.beatRate >= 55;
-  const eyebrow = sport
-    ? `STATEDGE ${sport.toUpperCase()} · TRUTH METRIC`
+  // 'mma' is internal; users see 'UFC'. Mirrors the SPORT_LABEL maps
+  // in StarredPage / NavSearch / News etc.
+  const sportLabel = sport ? (sport === 'mma' ? 'UFC' : sport.toUpperCase()) : null;
+  const eyebrow = sportLabel
+    ? `STATEDGE ${sportLabel} · TRUTH METRIC`
     : 'STATEDGE TRUTH METRIC';
-  const blurb = sport
-    ? `How often our published ${sport.toUpperCase()} projections beat the market's eventual closing line. Independent of game outcomes — pure process accuracy.`
+  const blurb = sportLabel
+    ? `How often our published ${sportLabel} projections beat the market's eventual closing line. Independent of game outcomes — pure process accuracy.`
     : 'How often our published projections beat the market\'s eventual closing line. Independent of game outcomes — pure process accuracy. Every published prop is graded against later snapshots; we publish the math.';
 
   return (

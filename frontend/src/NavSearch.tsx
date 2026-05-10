@@ -346,7 +346,7 @@ export function NavSearch() {
                     flexShrink: 0,
                   }}
                 >
-                  {t.sport.toUpperCase()}
+                  {SPORT_LABEL[t.sport]}
                 </span>
                 <span className="nav-search-name" style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
