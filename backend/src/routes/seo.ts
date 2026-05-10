@@ -25,6 +25,10 @@ const SITE_URL = (process.env.SITE_URL ?? 'https://statedge-frontend.vercel.app'
 // daily; news index changes whenever a new article publishes.
 const STATIC_PATHS: Array<{ path: string; changefreq: string; priority: number }> = [
   { path: '/',                    changefreq: 'daily',  priority: 1.0 },
+  // Institutional cross-sport surfaces — high crawl priority. These
+  // are publicly-browsable and refreshed every minute via live state.
+  { path: '/elite',               changefreq: 'hourly', priority: 0.9 },
+  { path: '/best-bets',           changefreq: 'hourly', priority: 0.9 },
   { path: '/news',                changefreq: 'hourly', priority: 0.9 },
   { path: '/methodology',         changefreq: 'monthly', priority: 0.8 },
   { path: '/clv',                 changefreq: 'daily',  priority: 0.8 },
