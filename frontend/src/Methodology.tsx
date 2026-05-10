@@ -196,6 +196,37 @@ export function Methodology() {
         </p>
 
         <h2 style={{ marginTop: 32, fontSize: 22, fontWeight: 800, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 8 }}>
+          Live grading
+        </h2>
+        <p style={{ fontSize: 14, lineHeight: 1.6 }}>
+          Every Elite leg, starred prop, and Best Bet shows a live verdict pill that
+          ticks once a minute against the in-game state. The grader is per-sport because
+          the authoritative scoreboards are different — but the verdict vocabulary
+          is shared across all of them so the UI reads identically whether the leg is
+          NBA, MLB, or UFC.
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'rgba(255,255,255,0.85)' }}>
+          <li><strong>NBA</strong> — ESPN scoreboard + game summary. Pulls per-player live boxscore lines, maps PrizePicks stat keys (points, rebounds, assists, threes, PRA, …) to the live counter, returns ON_PACE_HIT / ON_PACE_MISS while the game is running and HIT / MISS / PUSH after final.</li>
+          <li><strong>MLB</strong> — StatsAPI <code>/feed/live</code>. Per-batter / per-pitcher live boxscore for the day's schedule. Same verdict semantics; pitcher props (strikeouts, outs, hits-allowed) and hitter props (hits, total bases, RBI, HR, hits+runs+RBIs) all grade.</li>
+          <li>
+            <strong>UFC</strong> — ESPN fightcenter. Walks today's UFC scoreboard for the fighter (athlete-id match, falls back to display-name match), pulls fightcenter for live in-fight stats. Currently grades <code>sig_strikes</code>, <code>takedowns</code>, <code>knockdowns</code>, and <code>control_time</code>. Other UFC keys (<code>rd1_*</code>, <code>rounds</code>, <code>fight_time</code>, <code>fantasy_score</code>) honestly return <strong>UNGRADED</strong> rather than fake a verdict — they need round-by-round data or live fight-clock signal we don't have yet.
+          </li>
+        </ul>
+        <p style={{ fontSize: 13, lineHeight: 1.6, color: 'rgba(255,255,255,0.75)' }}>
+          Verdict vocabulary, in order of finality:
+          {' '}
+          <code>PENDING</code> (game not started) →
+          {' '}
+          <code>IN_FLIGHT</code> (live, no current value yet) →
+          {' '}
+          <code>ON_PACE_HIT</code> / <code>ON_PACE_MISS</code> (live, current pace projects past / shy of the line) →
+          {' '}
+          <code>HIT</code> / <code>MISS</code> / <code>PUSH</code> (final).
+          {' '}
+          <code>UNGRADED</code> means we have no honest live signal — surfaced as the absence of a pill so the user never confuses "no data" with "still in flight".
+        </p>
+
+        <h2 style={{ marginTop: 32, fontSize: 22, fontWeight: 800, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 8 }}>
           The truth metric
         </h2>
         <p style={{ fontSize: 14, lineHeight: 1.6 }}>
