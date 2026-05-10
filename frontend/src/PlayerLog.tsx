@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { PlayerAvatar, TeamLogo } from './Avatar';
 import {
   getPlayerById,
   getPlayerLast10,
@@ -137,11 +138,60 @@ export function PlayerLog() {
         {!player && !playerError && <Skeleton width="60%" height={32} />}
 
         {player && (
-          <div className="mlb-projection" style={{ marginBottom: 12 }}>
-            <div className="mlb-projection-head">
-              <h1 style={{ margin: 0 }}>{playerName || `Player ${playerId}`}</h1>
+          <div
+            className="player-profile-header fade-up"
+            style={{
+              position: 'relative',
+              display: 'flex', alignItems: 'center', gap: 18,
+              padding: '18px 20px',
+              marginBottom: 14,
+              background: `
+                linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%),
+                var(--surface-1)
+              `,
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+            }}
+          >
+            <span aria-hidden style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+              background: 'linear-gradient(90deg, transparent, rgba(122,162,255,0.55), transparent)',
+            }} />
+            <div style={{ flexShrink: 0 }}>
+              <PlayerAvatar playerId={playerId} name={playerName || `Player ${playerId}`} size="lg" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <h1 style={{
+                  margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-0.5px',
+                  background: 'linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.78) 100%)',
+                  WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent', color: 'transparent',
+                }}>
+                  {playerName || `Player ${playerId}`}
+                </h1>
+                {player.teamAbbreviation && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+                    padding: '3px 8px', borderRadius: 4,
+                    background: 'rgba(122,162,255,0.12)',
+                    color: '#7aa2ff',
+                    border: '1px solid rgba(122,162,255,0.30)',
+                    textTransform: 'uppercase',
+                  }}>
+                    {player.teamAbbreviation}
+                  </span>
+                )}
+              </div>
               {player.teamAbbreviation && (
-                <span className="mlb-projection-verdict">{player.teamAbbreviation}</span>
+                <div className="muted small" style={{
+                  marginTop: 6, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <TeamLogo abbr={player.teamAbbreviation} name={player.teamAbbreviation} size="md" />
+                  <span>{player.teamAbbreviation}</span>
+                </div>
               )}
             </div>
           </div>

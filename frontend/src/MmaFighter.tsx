@@ -98,19 +98,85 @@ export function MmaFighter() {
         {!scoreboard && !error && <Skeleton width="60%" height={32} />}
 
         {fighter && (
-          <header style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
-            {fighter.headshot && (
+          <header
+            className="player-profile-header fade-up"
+            style={{
+              position: 'relative',
+              display: 'flex', alignItems: 'center', gap: 18,
+              padding: '18px 20px',
+              marginBottom: 16,
+              background: `
+                linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 30%),
+                var(--surface-1)
+              `,
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+            }}
+          >
+            <span aria-hidden style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+              background: 'linear-gradient(90deg, transparent, rgba(239,83,80,0.55), transparent)',
+            }} />
+            {fighter.headshot ? (
               <img
                 src={fighter.headshot}
                 alt=""
                 loading="lazy"
-                style={{ width: 96, height: 96, borderRadius: 48, objectFit: 'cover', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }}
+                style={{
+                  width: 96, height: 96, borderRadius: 48, objectFit: 'cover',
+                  background: 'rgba(255,255,255,0.05)', flexShrink: 0,
+                  border: '1px solid rgba(239,83,80,0.30)',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.30)',
+                }}
               />
+            ) : (
+              <div style={{
+                width: 96, height: 96, borderRadius: 48, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)',
+                fontSize: 28, fontWeight: 900, color: 'rgba(255,255,255,0.55)',
+              }}>
+                {fighter.displayName.split(' ').map((p) => p[0]).join('').slice(0, 2)}
+              </div>
             )}
-            <div>
-              <h1 style={{ margin: 0 }}>{fighter.displayName}</h1>
-              <div className="muted small" style={{ marginTop: 4, display: 'flex', gap: 12 }}>
-                {fighter.record && <span>Record: <strong>{fighter.record}</strong></span>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <h1 style={{
+                  margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-0.5px',
+                  background: 'linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.78) 100%)',
+                  WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent', color: 'transparent',
+                }}>
+                  {fighter.displayName}
+                </h1>
+                <span style={{
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+                  padding: '3px 8px', borderRadius: 4,
+                  background: 'rgba(239,83,80,0.12)',
+                  color: '#ef5350',
+                  border: '1px solid rgba(239,83,80,0.30)',
+                  textTransform: 'uppercase',
+                }}>
+                  UFC
+                </span>
+              </div>
+              <div className="muted small" style={{
+                marginTop: 6, fontSize: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              }}>
+                {fighter.flag && (
+                  <img src={fighter.flag} alt="" loading="lazy"
+                    style={{ width: 22, height: 14, objectFit: 'cover', borderRadius: 2 }} />
+                )}
+                {fighter.record && (
+                  <span style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    Record: <strong style={{ color: 'var(--text-1)' }}>{fighter.record}</strong>
+                  </span>
+                )}
               </div>
             </div>
           </header>
