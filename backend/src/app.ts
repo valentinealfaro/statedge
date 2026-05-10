@@ -1,3 +1,26 @@
+// Backend Express app composition. Single createApp() that mounts
+// every router under /api/* (or root for SEO). Used by:
+//   - server.ts (local dev / docker)
+//   - api/index.ts (Vercel serverless wrapper)
+//
+// Sport-grouped routes:
+//   /api/mlb    full MLB surface (deepest)
+//   /api/mma    UFC scoreboard + slate + projections + fight detail
+//   /api/wnba   maintenance-only per the 2026-05-09 priorities decision
+//   (NBA lives under sport-default routes — /api/slate is NBA's slate
+//    for back-compat; /api/standings, /api/games, etc. are NBA too.)
+//
+// Cross-sport routes:
+//   /api/slate    NBA slate + cross-sport Elite + generic /live-grade
+//   /api/news     auto-generated articles + Vercel cron handlers
+//   /api/market   Market Brain admin + CLV truth metric + PrizePicks ingestion
+//   /api/calibration  cross-sport calibration aggregator
+//   /api/engine   ops counters (articles / snapshots / projections graded)
+//
+// Root-mounted (NOT /api):
+//   /sitemap.xml · /rss.xml · /robots.txt — SEO, frontend rewrites
+//   /news/:slug — SEO crawler stub for OG/Twitter meta on social shares
+
 import express, { type Express } from 'express';
 import cors from 'cors';
 import { searchRouter } from './routes/search.js';
