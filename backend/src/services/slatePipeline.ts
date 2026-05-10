@@ -1,6 +1,12 @@
-// End-to-end "raw line → resolved card" pipeline. Both the auto-fetch
-// and the (planned) image-upload paths funnel through here so the
-// front-end always gets the same response shape.
+// End-to-end "raw line → resolved card" pipeline for NBA. Three
+// ingestion paths funnel through here so the front-end always gets
+// the same response shape:
+//   - Auto-fetch (services/slatePrizePicks fetchPrizePicksNba)
+//   - JSON paste (POST /api/slate/parse — admin)
+//   - OCR image upload (POST /api/slate/parse-image → slateOcr.ocrPropBoard)
+// Each ingestion source yields RawLine[]; resolveSlate normalizes
+// names, runs the projection engine, builds combos, returns the
+// SlateResponse the frontend renders.
 
 import {
   getPlayerGameLogsBulkFromDb,
