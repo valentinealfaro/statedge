@@ -182,6 +182,9 @@ export const MLB_STDDEV_FLOOR: Record<MlbStatKey, number> = {
   strikeouts:           1.00,    // hitter K
   hits_runs_rbis:       1.50,
   hitter_fantasy_score: 4.00,
+  // PA is a 3-6 integer with low variance — almost everyone gets 4-5,
+  // outliers are mid-game subs or extra-innings affairs. 0.8 σ matches.
+  plate_appearances:    0.80,
   // Pitchers — counting stats over multiple innings, larger spread.
   ks:                   2.20,
   earned_runs_allowed:  1.50,
@@ -191,6 +194,9 @@ export const MLB_STDDEV_FLOOR: Record<MlbStatKey, number> = {
   innings_pitched:      1.00,
   home_runs_allowed:    0.65,
   pitches_thrown:       12.0,
+  // Pitcher fantasy: 3×IP + 3×K − 3×ER. σ for a starter ≈ √(9·σ²_IP +
+  // 9·σ²_K + 9·σ²_ER) ≈ √(9·1 + 9·4.8 + 9·2.25) ≈ 8.5 — round to 8.
+  pitcher_fantasy_score: 8.0,
 };
 
 // Stat-type risk per the StatEdge MLB spec. Used as a floor on
@@ -210,6 +216,7 @@ export const STAT_TYPE_RISK: Record<MlbStatKey, number> = {
   stolen_bases: 90,
   hits_runs_rbis: 50,
   hitter_fantasy_score: 50,
+  plate_appearances: 30,         // very stable — 4-5 PA most games
   ks: 45,                        // pitcher K
   earned_runs_allowed: 65,
   walks_allowed: 60,
@@ -218,6 +225,7 @@ export const STAT_TYPE_RISK: Record<MlbStatKey, number> = {
   innings_pitched: 35,
   home_runs_allowed: 80,
   pitches_thrown: 35,
+  pitcher_fantasy_score: 55,     // composite tracks ER + K variance
 };
 
 export type ProjectionResult = {
@@ -1829,10 +1837,12 @@ async function loadHittingBaselines(
     walks: number | null;
     strikeouts: number | null;
     stolen_bases: number | null;
+    plate_appearances: number | null;
   }>(
     `SELECT s.is_home, s.opponent_team_id,
             s.hits, s.singles, s.doubles, s.triples, s.home_runs, s.total_bases,
-            s.runs, s.rbis, s.walks, s.strikeouts, s.stolen_bases
+            s.runs, s.rbis, s.walks, s.strikeouts, s.stolen_bases,
+            s.plate_appearances
        FROM mlb_hitting_stats s
        JOIN mlb_games g ON g.id = s.game_id
       WHERE s.player_id = $1

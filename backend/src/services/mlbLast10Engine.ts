@@ -40,6 +40,7 @@ export type MlbLast10HitterStats = {
   walks: number | null;
   strikeouts: number | null;
   stolenBases: number | null;
+  plateAppearances: number | null;
 };
 export type MlbLast10PitcherStats = {
   outsRecorded: number | null;
@@ -263,12 +264,13 @@ async function readHittingGames(
     walks: number | null;
     strikeouts: number | null;
     stolen_bases: number | null;
+    plate_appearances: number | null;
   }>(
     `SELECT
        hs.game_id, g.game_date, hs.opponent_team_id, hs.is_home,
        hs.hits, hs.singles, hs.doubles, hs.triples, hs.home_runs,
        hs.total_bases, hs.runs, hs.rbis, hs.walks, hs.strikeouts,
-       hs.stolen_bases
+       hs.stolen_bases, hs.plate_appearances
      FROM mlb_hitting_stats hs
      JOIN mlb_games g ON g.id = hs.game_id
      WHERE hs.player_id = $1
@@ -300,6 +302,7 @@ async function readHittingGames(
         walks: r.walks,
         strikeouts: r.strikeouts,
         stolenBases: r.stolen_bases,
+        plateAppearances: r.plate_appearances,
       },
       pitcherStats: null,
     });

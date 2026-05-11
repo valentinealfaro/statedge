@@ -100,6 +100,9 @@ function shapeFor(key: MlbStatKey): DistShape {
       return 'integer_zero_inflated';
     case 'innings_pitched':
     case 'pitches_thrown':
+    case 'pitcher_fantasy_score':
+      // Pitcher fantasy is a real-valued composite (IP×3 + K×3 − ER×3).
+      // IP can be fractional so the score is continuous, not integer.
       return 'continuous_normal';
     default:
       return 'integer_normal';

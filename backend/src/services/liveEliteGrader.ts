@@ -293,6 +293,16 @@ function mlbStatValue(p: MlbLiveBoxscorePlayer, statKey: string): number | null 
       const rb = num(b.rbi) ?? 0;
       return h + r + rb;
     }
+    case 'plate_appearances': {
+      // Live MLB boxscore doesn't surface PA directly. Approximate as
+      // AB + BB + HBP — close enough during the game; sacrifices are
+      // rare enough that the under/over decision is unaffected.
+      const ab = num(b.atBats);
+      const bb = num(b.baseOnBalls);
+      const hbp = num(b.hitByPitch);
+      if (ab === null && bb === null && hbp === null) return null;
+      return (ab ?? 0) + (bb ?? 0) + (hbp ?? 0);
+    }
     case 'ks':                  return num(pi.strikeOuts);   // pitcher Ks
     case 'pitcher_outs':        return num(pi.outs);
     case 'innings_pitched':     return num(pi.inningsPitched);
@@ -300,6 +310,17 @@ function mlbStatValue(p: MlbLiveBoxscorePlayer, statKey: string): number | null 
     case 'hits_allowed':        return num(pi.hits);
     case 'walks_allowed':       return num(pi.baseOnBalls);
     case 'home_runs_allowed':   return num(pi.homeRuns);
+    case 'pitcher_fantasy_score': {
+      // Same formula as the post-game compute: 3 × IP + 3 × K − 3 × ER.
+      // Outs/3 substitutes for IP when the feed surfaces only outs.
+      const ipRaw = num(pi.inningsPitched);
+      const outs = num(pi.outs);
+      const ip = ipRaw ?? (outs === null ? null : outs / 3);
+      const ks = num(pi.strikeOuts);
+      const er = num(pi.earnedRuns);
+      if (ip === null && ks === null && er === null) return null;
+      return 3 * (ip ?? 0) + 3 * (ks ?? 0) - 3 * (er ?? 0);
+    }
     default: return null;
   }
 }

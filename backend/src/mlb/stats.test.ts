@@ -68,12 +68,13 @@ describe('valueFromHittingRow', () => {
   const fullRow = {
     hits: 3, singles: 1, doubles: 1, triples: 0, home_runs: 1,
     total_bases: 8, runs: 2, rbis: 4, walks: 1, strikeouts: 0,
-    stolen_bases: 1,
+    stolen_bases: 1, plate_appearances: 5,
   };
   test('reads direct columns', () => {
     expect(valueFromHittingRow('hits', fullRow)).toBe(3);
     expect(valueFromHittingRow('home_runs', fullRow)).toBe(1);
     expect(valueFromHittingRow('total_bases', fullRow)).toBe(8);
+    expect(valueFromHittingRow('plate_appearances', fullRow)).toBe(5);
   });
   test('hits_runs_rbis sums components', () => {
     expect(valueFromHittingRow('hits_runs_rbis', fullRow)).toBe(3 + 2 + 4);
@@ -114,5 +115,24 @@ describe('valueFromPitchingRow', () => {
   test('innings_pitched returns null on invalid input', () => {
     const bad = { ...fullRow, innings_pitched: 'NaN' };
     expect(valueFromPitchingRow('innings_pitched', bad)).toBeNull();
+  });
+  test('pitcher_fantasy_score = 3*IP + 3*K − 3*ER', () => {
+    // 3*6 + 3*8 − 3*2 = 18 + 24 − 6 = 36
+    expect(valueFromPitchingRow('pitcher_fantasy_score', fullRow)).toBe(36);
+  });
+  test('pitcher_fantasy_score falls back to outs/3 when IP is null', () => {
+    // outs_recorded 18 → IP=6. 3*6 + 3*8 − 3*2 = 36.
+    const noIp = { ...fullRow, innings_pitched: null };
+    expect(valueFromPitchingRow('pitcher_fantasy_score', noIp)).toBe(36);
+  });
+  test('pitcher_fantasy_score returns null when all inputs are null', () => {
+    const empty = {
+      ...fullRow,
+      innings_pitched: null,
+      outs_recorded: null,
+      strikeouts: null,
+      earned_runs_allowed: null,
+    };
+    expect(valueFromPitchingRow('pitcher_fantasy_score', empty)).toBeNull();
   });
 });

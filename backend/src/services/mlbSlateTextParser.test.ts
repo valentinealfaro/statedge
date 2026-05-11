@@ -42,6 +42,31 @@ describe('mlbSlateTextParser — single-line parsing', () => {
     expect(typeof r === 'object' && r.statKey).toBe('hitter_fantasy_score');
   });
 
+  test('hitter_ks maps to strikeouts', () => {
+    const r = _parseLineForTest('Aaron Judge|NYY|hitter_ks|0.5|over');
+    expect(typeof r === 'object' && r.statKey).toBe('strikeouts');
+  });
+
+  test('po maps to pitcher_outs', () => {
+    const r = _parseLineForTest('Gerrit Cole|NYY|po|17.5|over');
+    expect(typeof r === 'object' && r.statKey).toBe('pitcher_outs');
+  });
+
+  test('pitches maps to pitches_thrown', () => {
+    const r = _parseLineForTest('Gerrit Cole|NYY|pitches|92.5|both');
+    expect(typeof r === 'object' && r.statKey).toBe('pitches_thrown');
+  });
+
+  test('pa maps to plate_appearances', () => {
+    const r = _parseLineForTest('Aaron Judge|NYY|pa|4.5|over');
+    expect(typeof r === 'object' && r.statKey).toBe('plate_appearances');
+  });
+
+  test('pitcher_fs maps to pitcher_fantasy_score', () => {
+    const r = _parseLineForTest('Gerrit Cole|NYY|pitcher_fs|27.5|both');
+    expect(typeof r === 'object' && r.statKey).toBe('pitcher_fantasy_score');
+  });
+
   test('All three sides accepted (over / under / both)', () => {
     const o = _parseLineForTest('A|NYY|hits|1.5|over');
     const u = _parseLineForTest('A|NYY|hits|1.5|under');

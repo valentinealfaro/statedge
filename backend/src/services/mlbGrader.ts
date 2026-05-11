@@ -169,10 +169,11 @@ async function readHitterValueForDate(
     walks: number | null;
     strikeouts: number | null;
     stolen_bases: number | null;
+    plate_appearances: number | null;
   }>(
     `SELECT hs.hits, hs.singles, hs.doubles, hs.triples, hs.home_runs,
             hs.total_bases, hs.runs, hs.rbis, hs.walks, hs.strikeouts,
-            hs.stolen_bases
+            hs.stolen_bases, hs.plate_appearances
        FROM mlb_hitting_stats hs
        JOIN mlb_games g ON g.id = hs.game_id
       WHERE hs.player_id = $1 AND g.game_date = $2`,

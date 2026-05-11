@@ -81,6 +81,7 @@ const STAT_ALIASES: Record<string, MlbStatKey> = {
   hitter_fantasy_score: 'hitter_fantasy_score',
   // Aliases (external → canonical)
   hitter_strikeouts: 'strikeouts',
+  hitter_ks: 'strikeouts',
   hitter_fs: 'hitter_fantasy_score',
   hitter_fantasy: 'hitter_fantasy_score',
   fantasy_score: 'hitter_fantasy_score',
@@ -107,6 +108,16 @@ const STAT_ALIASES: Record<string, MlbStatKey> = {
   er: 'earned_runs_allowed',
   ip: 'innings_pitched',
   outs: 'pitcher_outs',
+  po: 'pitcher_outs',
+  pitches: 'pitches_thrown',
+  // New stat types added 2026-05-11 to cover PrizePicks pitcher-fantasy
+  // and plate-appearances lines that were silently dropping (~200 lines
+  // per slate on a typical paste).
+  pa: 'plate_appearances',
+  plate_appearances: 'plate_appearances',
+  pitcher_fs: 'pitcher_fantasy_score',
+  pitcher_fantasy: 'pitcher_fantasy_score',
+  pitcher_fantasy_score: 'pitcher_fantasy_score',
 };
 
 function mapStatKey(raw: string): MlbStatKey | null {

@@ -20,6 +20,7 @@ export type MlbHitterStatKey =
   | 'walks'
   | 'strikeouts'
   | 'stolen_bases'
+  | 'plate_appearances'
   | 'hits_runs_rbis'              // computed: hits + runs + rbis
   | 'hitter_fantasy_score';       // computed weighted score
 
@@ -31,7 +32,8 @@ export type MlbPitcherStatKey =
   | 'hits_allowed'
   | 'innings_pitched'
   | 'home_runs_allowed'
-  | 'pitches_thrown';
+  | 'pitches_thrown'
+  | 'pitcher_fantasy_score';      // computed: 3*IP + 3*K - 3*ER (PrizePicks-style)
 
 export type MlbStatKey = MlbHitterStatKey | MlbPitcherStatKey;
 
@@ -62,19 +64,21 @@ const HITTER_STATS: StatMeta[] = [
   { key: 'walks',                label: 'Walks',               playerType: 'hitter' },
   { key: 'strikeouts',           label: 'Strikeouts (Hitter)', playerType: 'hitter' },
   { key: 'stolen_bases',         label: 'Stolen Bases',        playerType: 'hitter' },
+  { key: 'plate_appearances',    label: 'Plate Appearances',   playerType: 'hitter' },
   { key: 'hits_runs_rbis',       label: 'Hits + Runs + RBIs',  playerType: 'hitter' },
   { key: 'hitter_fantasy_score', label: 'Hitter Fantasy Score',playerType: 'hitter' },
 ];
 
 const PITCHER_STATS: StatMeta[] = [
-  { key: 'ks',                  label: 'Strikeouts (Pitcher)',  playerType: 'pitcher' },
-  { key: 'earned_runs_allowed', label: 'Earned Runs Allowed',   playerType: 'pitcher' },
-  { key: 'walks_allowed',       label: 'Walks Allowed',         playerType: 'pitcher' },
-  { key: 'pitcher_outs',        label: 'Pitcher Outs',          playerType: 'pitcher' },
-  { key: 'hits_allowed',        label: 'Hits Allowed',          playerType: 'pitcher' },
-  { key: 'innings_pitched',     label: 'Innings Pitched',       playerType: 'pitcher' },
-  { key: 'home_runs_allowed',   label: 'Home Runs Allowed',     playerType: 'pitcher' },
-  { key: 'pitches_thrown',      label: 'Pitches Thrown',        playerType: 'pitcher' },
+  { key: 'ks',                    label: 'Strikeouts (Pitcher)',  playerType: 'pitcher' },
+  { key: 'earned_runs_allowed',   label: 'Earned Runs Allowed',   playerType: 'pitcher' },
+  { key: 'walks_allowed',         label: 'Walks Allowed',         playerType: 'pitcher' },
+  { key: 'pitcher_outs',          label: 'Pitcher Outs',          playerType: 'pitcher' },
+  { key: 'hits_allowed',          label: 'Hits Allowed',          playerType: 'pitcher' },
+  { key: 'innings_pitched',       label: 'Innings Pitched',       playerType: 'pitcher' },
+  { key: 'home_runs_allowed',     label: 'Home Runs Allowed',     playerType: 'pitcher' },
+  { key: 'pitches_thrown',        label: 'Pitches Thrown',        playerType: 'pitcher' },
+  { key: 'pitcher_fantasy_score', label: 'Pitcher Fantasy Score', playerType: 'pitcher' },
 ];
 
 const ALL: StatMeta[] = [...HITTER_STATS, ...PITCHER_STATS];
@@ -111,6 +115,7 @@ export type HittingRow = {
   walks: number | null;
   strikeouts: number | null;
   stolen_bases: number | null;
+  plate_appearances: number | null;
 };
 
 export function valueFromHittingRow(
@@ -129,6 +134,7 @@ export function valueFromHittingRow(
     case 'walks':        return r.walks;
     case 'strikeouts':   return r.strikeouts;
     case 'stolen_bases': return r.stolen_bases;
+    case 'plate_appearances': return r.plate_appearances;
     case 'hits_runs_rbis': {
       // Computed: H + R + RBI. Any null component → null overall.
       if (r.hits === null || r.runs === null || r.rbis === null) return null;
@@ -183,5 +189,25 @@ export function valueFromPitchingRow(
       return r.innings_pitched;
     case 'home_runs_allowed':   return r.home_runs_allowed;
     case 'pitches_thrown':      return r.pitches_thrown;
+    case 'pitcher_fantasy_score': {
+      // PrizePicks-style starter fantasy score: 3 × IP + 3 × K - 3 × ER.
+      // Lines like Kirby/Eovaldi at 27.5-32.5 are consistent with this
+      // formula (~6 IP + 6-8 K + 2 ER → ~24-30 pts). Win bonus is
+      // omitted — wins aren't tracked in mlb_pitching_stats, and
+      // PrizePicks props are pre-game / pre-decision anyway.
+      const ip = r.innings_pitched === null
+        ? null
+        : typeof r.innings_pitched === 'string'
+          ? (Number.isFinite(Number(r.innings_pitched)) ? Number(r.innings_pitched) : null)
+          : r.innings_pitched;
+      // Prefer outs_recorded when innings_pitched is missing — outs/3
+      // is the same quantity and avoids losing games where the import
+      // only populated one column.
+      const effectiveIp = ip ?? (r.outs_recorded === null ? null : r.outs_recorded / 3);
+      if (effectiveIp === null || r.strikeouts === null || r.earned_runs_allowed === null) {
+        return null;
+      }
+      return 3 * effectiveIp + 3 * r.strikeouts - 3 * r.earned_runs_allowed;
+    }
   }
 }
